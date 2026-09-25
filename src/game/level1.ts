@@ -25,7 +25,9 @@
  */
 
 import { buildLevel, type Level, type SectorDef } from '../columns/level.ts'
+import type { LevelDef } from './levels.ts'
 import type { MoverKind } from './movers.ts'
+import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from './things.ts'
 
 const WALL_HEIGHT = 3.2
 const HALL_HEIGHT = 4.5
@@ -246,4 +248,22 @@ export const LEVEL_1_MOVERS: { readonly tag: string; readonly kind: MoverKind }[
 /** The index of a tagged sector, or -1. */
 export function sectorIndexByTag(level: Level, tag: string): number {
   return level.sectors.findIndex((sector) => sector.tag === tag)
+}
+
+/**
+ * The same level as a bundle that can be loaded more than once.
+ *
+ * Added beside the pieces above rather than replacing them, because several
+ * modules import `LEVEL_1` directly and swapping them all at once would mean a
+ * single change nothing could check in isolation. The built map stays for them;
+ * anything that wants to start a fresh copy uses this.
+ */
+export const LEVEL_1_DEF: LevelDef = {
+  name: 'the outpost',
+  sectors: SECTORS,
+  spawn: SPAWN,
+  movers: LEVEL_1_MOVERS,
+  actors: LEVEL_1_ACTORS,
+  pickups: LEVEL_1_PICKUPS,
+  exitTag: 'exit',
 }

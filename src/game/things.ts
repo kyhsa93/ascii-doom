@@ -22,6 +22,9 @@
 
 import type { Sprite } from '../columns/sprite.ts'
 import type { ActorKind } from './ai.ts'
+// The placement shape lives with the level bundle now, so that two levels
+// describe their casts the same way and nothing has two spellings of it.
+import type { ActorPlacement } from './levels.ts'
 import type { Pickup } from './pickups.ts'
 
 /**
@@ -400,15 +403,6 @@ export const DRIFTER_KIND: ActorKind = {
     projectile: { sprite: BOLT, speed: 9, damage: 8, life: 4 },
     range: 18,
   },
-}
-
-/** Where the creatures start, before anything has noticed you. */
-export interface ActorPlacement {
-  readonly kind: ActorKind
-  readonly x: number
-  readonly y: number
-  /** Which way it faces while asleep, which decides whether it sees you first. */
-  readonly angle: number
 }
 
 export const LEVEL_1_ACTORS: ActorPlacement[] = [

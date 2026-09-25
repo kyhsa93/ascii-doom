@@ -27,7 +27,9 @@ import {
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
+import { LEVELS } from '../src/game/campaign.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import { loadLevel } from '../src/game/levels.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -1114,6 +1116,81 @@ test('the use key finds the door you are facing and nothing else', () => {
 
   const away = sectorAt(LEVEL_1, 2, 3)
   assert(moverInFront(LEVEL_1, built, away, 2, 3, 0) === null, 'a door was found from the other end of the level')
+})
+
+console.log('\nevery level')
+
+test('every shipped level loads, and loads clean each time', () => {
+  // A definition is a template and loading copies it. If that ever stops being
+  // true the second run of a level starts with its doors open and its supplies
+  // gone, which is exactly the state the playthrough check has to save and
+  // restore around itself — and the reason this bundle exists.
+  for (const def of LEVELS) {
+    const first = loadLevel(def)
+    first.pickups[0]!.taken = true
+    first.level.sectors[0]!.ceiling = 99
+
+    const second = loadLevel(def)
+    assert(second.pickups[0]!.taken === false, `${def.name}: a second load remembered a collected supply`)
+    assert(second.level.sectors[0]!.ceiling !== 99, `${def.name}: a second load inherited a moved ceiling`)
+  }
+})
+
+test('every shipped level is closed, with no holes to see through', () => {
+  // The check that catches an unmatched edge, run against every map rather than
+  // the first one. Two sectors share a wall only when they share an edge
+  // endpoint for endpoint; miss a vertex and the wall silently becomes solid
+  // on one side and a hole on the other. A sealed map draws something in every
+  // cell, and an undrawn cell in the middle of the view is the only symptom.
+  const holes: string[] = []
+  for (const def of LEVELS) {
+    const state = loadLevel(def)
+    // Several directions, because a hole is only visible from some of them.
+    for (const turn of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      const fb = new Framebuffer(120, 40)
+      fb.clear(0, 0, 0, 0)
+      const view: View = {
+        x: state.player.x,
+        y: state.player.y,
+        z: 1.6,
+        angle: state.def.spawn.angle + turn,
+        sector: state.player.sector,
+        fovY: DEFAULT_FOV_Y,
+      }
+      renderView(fb, state.level, view, 0.574, {})
+
+      let undrawn = 0
+      for (let i = 0; i < fb.depth.length; i++) {
+        if (fb.depth[i]! <= 0) undrawn++
+      }
+      if (undrawn > 0) holes.push(`${def.name} facing ${turn.toFixed(2)}: ${undrawn} cells`)
+    }
+  }
+  assert(holes.length === 0, `undrawn cells, which means an edge did not pair: ${holes.join('; ')}`)
+})
+
+test('every shipped level can be left the way it is meant to be', () => {
+  // Not a playthrough — those are routed by hand and do not generalise. This is
+  // the weaker claim that does: every lock in a level has a key somewhere in
+  // that same level.
+  //
+  // There is deliberately nothing here about the exit existing. `loadLevel`
+  // refuses a definition whose exit tag names no sector, so an assertion about
+  // it could never fail and would only look like coverage.
+  const broken: string[] = []
+  for (const def of LEVELS) {
+    const state = loadLevel(def)
+    const keysHeld = new Set(
+      def.pickups.filter((pickup) => pickup.grant.kind === 'key').map((pickup) => (pickup.grant as { key: string }).key),
+    )
+    for (const mover of state.movers) {
+      const needed = mover.kind.requiresKey
+      if (needed !== undefined && !keysHeld.has(needed)) {
+        broken.push(`${def.name} locks a door with the ${needed} key and never gives you one`)
+      }
+    }
+  }
+  assert(broken.length === 0, broken.join('; '))
 })
 
 console.log('\nplaying it through')

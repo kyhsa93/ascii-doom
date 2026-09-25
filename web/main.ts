@@ -13,7 +13,6 @@ import { drawText } from '../vendor/ascii-engine/src/core/overlay.ts'
 import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
-import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import {
@@ -21,52 +20,29 @@ import {
   damageActor,
   isAlive,
   provoke,
-  spawnActor,
   updateActors,
-  type Actor,
 } from '../src/game/ai.ts'
-import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import { LEVELS } from '../src/game/campaign.ts'
+import { reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
-import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
-import { activate, makeMover, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
+import { loadLevel, type LevelState } from '../src/game/levels.ts'
+import { activate, moverInFront, updateMovers } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
 import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
-import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
-import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from '../src/game/things.ts'
+import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/player.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
 const hint = document.getElementById('hint')!
 const surface = new PreSurface(screen)
 
-const player = spawnPlayer(LEVEL_1, SPAWN.x, SPAWN.y, SPAWN.angle)
-
-const actors: Actor[] = LEVEL_1_ACTORS.map((placement) => {
-  const sector = sectorAt(LEVEL_1, placement.x, placement.y)
-  if (sector < 0) throw new Error(`${placement.kind.name} at (${placement.x}, ${placement.y}) is outside the map`)
-  const actor = spawnActor(placement.kind, placement.x, placement.y, sector, LEVEL_1.sectors[sector]!.floor)
-  actor.angle = placement.angle
-  return actor
-})
-
-const movers: Mover[] = LEVEL_1_MOVERS.map((entry) => {
-  const sector = sectorIndexByTag(LEVEL_1, entry.tag)
-  if (sector < 0) throw new Error(`no sector tagged ${entry.tag}`)
-  return makeMover(sector, entry.kind)
-})
-const liftSector = sectorIndexByTag(LEVEL_1, 'lift')
-
-const exitSector = sectorIndexByTag(LEVEL_1, 'exit')
-if (exitSector < 0) throw new Error('the level has no exit')
-const goal = makeGoal(exitSector)
-
 /**
- * Everything the player is carrying, in one place.
+ * What the player keeps between levels.
  *
- * Health and ammunition used to be loose variables beside each other, which
- * worked until pickups arrived and needed to know the maximums to stop at.
- * Gathering them means the collection rule can be a pure function that Node
- * checks, and the page only has to hand it this.
+ * Health and ammunition carry; keys do not. Each level locks its own doors and
+ * hides its own key, so a key brought forward would open a door it was never
+ * meant to — and the check that every lock has a key in the same level is
+ * written on the assumption that it does not.
  */
 const carrier: Carrier = {
   health: 100,
@@ -76,17 +52,21 @@ const carrier: Carrier = {
   keys: new Set<string>(),
 }
 
-/**
- * Everything in flight.
- *
- * Collision is resolved against `[...actors, player]` in that order, because a
- * projectile records its owner as an index into the actor list and those
- * indices have to keep meaning the same thing. The player being last is what
- * lets one array answer both "did it hit you" and "did it hit something else" —
- * and the second of those is creatures hurting each other, which falls out of
- * "hits anything that is not its owner" rather than being written anywhere.
- */
-const projectiles: Projectile[] = []
+let levelIndex = 0
+let state: LevelState = loadLevel(LEVELS[0]!)
+/** Everything in flight, emptied whenever a level is. */
+let projectiles: Projectile[] = []
+/** Seconds left on the summary before the next level starts. */
+let advanceIn = 0
+
+function startLevel(index: number): void {
+  levelIndex = index
+  state = loadLevel(LEVELS[index]!)
+  projectiles = []
+  advanceIn = 0
+  carrier.keys.clear()
+  say(state.def.name)
+}
 
 let weaponIndex = 0
 let cooldown = 0
@@ -135,10 +115,18 @@ const pressed = (...keys: string[]): boolean => keys.some((key) => held.has(key)
 const STEP = 1 / 60
 
 function step(): void {
-  // Once the level is over, everything stops together: no walking, no firing,
-  // no creatures closing in behind the summary. A world that carries on
-  // underneath a result screen is a world that can kill you after you have won.
-  if (goal.reached) return
+  const { level, player, actors, movers, pickups, goal } = state
+
+  if (goal.reached) {
+    // The level is over: nothing walks, nothing fires, nothing closes in behind
+    // the summary. After a pause the next one starts, or the last one simply
+    // stays on screen.
+    if (levelIndex + 1 < LEVELS.length) {
+      advanceIn -= STEP
+      if (advanceIn <= 0) startLevel(levelIndex + 1)
+    }
+    return
+  }
 
   const running = pressed('Shift')
   const speed = (running ? RUN_SPEED : WALK_SPEED) * STEP
@@ -179,11 +167,11 @@ function step(): void {
   }
 
   const length = Math.hypot(dx, dy)
-  if (length > 0) moveBody(LEVEL_1, player, (dx / length) * speed, (dy / length) * speed)
+  if (length > 0) moveBody(level, player, (dx / length) * speed, (dy / length) * speed)
 
   // Walked over. Nothing is taken that would give nothing, so crossing a room
   // at full health leaves the kit there for when it is worth something.
-  for (const taken of collect(LEVEL_1_PICKUPS, player.x, player.y, PLAYER_RADIUS, carrier)) {
+  for (const taken of collect(pickups, player.x, player.y, PLAYER_RADIUS, carrier)) {
     const grant = taken.grant
     if (grant.kind === 'health') say(`+${grant.amount} health`)
     else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
@@ -202,7 +190,7 @@ function step(): void {
     // The player's index in the body list the flight is resolved against, which
     // is `[...actors, player]` — so a slug cannot detonate on the person who
     // fired it, by the same rule that keeps a creature from shooting itself.
-    const result = fire(LEVEL_1, player, weapon, actors, EYE_HEIGHT, actors.length)
+    const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length)
     pelletsLanded += result.hits
     kills += result.kills
     for (const shot of result.shots) projectiles.push(shot)
@@ -211,29 +199,29 @@ function step(): void {
   // Use: opens whatever you are facing, if you are carrying what it asks for.
   // The lock is on the door rather than here, so this cannot forget to check.
   if (pressed('e')) {
-    const target = moverInFront(LEVEL_1, movers, player.sector, player.x, player.y, player.angle)
+    const target = moverInFront(level, movers, player.sector, player.x, player.y, player.angle)
     if (target && !activate(target, carrier.keys)) {
       say(`locked — needs the ${target.kind.requiresKey} key`)
     }
   }
-  // A lift is called by standing on it. Nothing else in the level needs a
-  // button, and a platform that waits to be asked is a platform people stand
-  // on wondering what to do.
-  if (player.sector === liftSector) {
-    const lift = movers.find((mover) => mover.sector === liftSector)
+  // A lift is called by standing on it. Nothing else needs a button, and a
+  // platform that waits to be asked is a platform people stand on wondering
+  // what to do.
+  if (state.liftSectors.includes(player.sector)) {
+    const lift = movers.find((mover) => mover.sector === player.sector)
     if (lift) activate(lift, carrier.keys)
   }
 
   // Bodies are the player and every creature, so a closing door reverses off
   // either. The rule is about height, not about what kind of thing is under it.
-  updateMovers(LEVEL_1, movers, [player, ...actors], STEP)
+  updateMovers(level, movers, [player, ...actors], STEP)
 
-  const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
+  const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP)
   if (outcome.damage > 0) carrier.health = Math.max(0, carrier.health - outcome.damage)
   for (const shot of outcome.shots) projectiles.push(shot)
 
   const targets = [...actors, player]
-  for (const impact of updateProjectiles(LEVEL_1, projectiles, targets, STEP, (index) => {
+  for (const impact of updateProjectiles(level, projectiles, targets, STEP, (index) => {
     const actor = actors[index]
     return actor === undefined || isAlive(actor)
   })) {
@@ -243,9 +231,9 @@ function step(): void {
       const struck = actors[impact.body]
       if (struck) {
         damageActor(struck, impact.projectile.kind.damage)
-        // Whoever fired it just made an enemy. Only the impact knows both
-        // ends of that, which is why the grudge is set here rather than
-        // inside the creature rules.
+        // Whoever fired it just made an enemy. Only the impact knows both ends
+        // of that, which is why the grudge is set here rather than inside the
+        // creature rules.
         const owner = impact.projectile.owner
         if (owner >= 0 && owner < actors.length && owner !== impact.body) provoke(struck, owner)
       }
@@ -254,7 +242,10 @@ function step(): void {
   sweep(projectiles)
 
   // Last, so that walking into the exit on this step counts on this step.
-  if (reachExit(goal, player.sector, STEP)) say('level complete')
+  if (reachExit(goal, player.sector, STEP)) {
+    advanceIn = 3.5
+    say(levelIndex + 1 < LEVELS.length ? 'level complete' : 'that was the last of them')
+  }
 }
 
 let previous = performance.now()
@@ -279,6 +270,8 @@ function frame(now: number): void {
     accumulator -= STEP
   }
 
+  const { level, player, actors, pickups, goal } = state
+
   surface.measure()
   const fb: Framebuffer = surface.framebuffer()
   // Glyph 0 means "auto", and `resolve` fills only those. Clearing to the
@@ -293,15 +286,15 @@ function frame(now: number): void {
     sector: player.sector,
     fovY: FOV_Y,
   }
-  renderView(fb, LEVEL_1, view, surface.cellAspect, { horizonShift })
+  renderView(fb, level, view, surface.cellAspect, { horizonShift })
 
   visible.length = 0
-  for (const pickup of LEVEL_1_PICKUPS) {
+  for (const pickup of pickups) {
     if (!pickup.taken) visible.push(pickup)
   }
   for (const actor of actors) {
     // Lit by the sector it stands in, the way the original lights a thing.
-    visible.push(billboardOf(actor, LEVEL_1.sectors[actor.sector]?.light ?? 0.5))
+    visible.push(billboardOf(actor, level.sectors[actor.sector]?.light ?? 0.5))
   }
   for (const shot of projectiles) {
     if (!shot.alive) continue
@@ -326,8 +319,6 @@ function frame(now: number): void {
   const weapon = WEAPONS[weaponIndex]!
   const centre = Math.floor(fb.width / 2)
   const middle = Math.floor(fb.height / 2) + Math.round(horizonShift)
-  // A crosshair, and a flash under it while a shot is in the air. The flash is
-  // the only feedback a still frame carries that anything was fired.
   drawText(fb, centre, middle, flash > 0 ? '*' : '+', {
     color: flash > 0 ? vec3(1, 0.95, 0.6) : vec3(0.55, 0.55, 0.6),
   })
@@ -343,12 +334,9 @@ function frame(now: number): void {
       seconds: goal.elapsed,
       kills,
       creatures: actors.length,
-      collected: LEVEL_1_PICKUPS.filter((pickup) => pickup.taken).length,
-      supplies: LEVEL_1_PICKUPS.length,
+      collected: pickups.filter((pickup) => pickup.taken).length,
+      supplies: pickups.length,
     })
-    // Placed by the same function a check can run, and drawn left-aligned at
-    // the column it returns — the centring rule lives in one place rather than
-    // here and in whatever measures it.
     summaryLayout(fb.width, fb.height, lines).forEach((piece, index) => {
       drawText(fb, piece.col, piece.row, piece.text, {
         color: index === 0 ? vec3(1.2, 1, 0.6) : vec3(0.85, 0.85, 0.8),
@@ -356,13 +344,13 @@ function frame(now: number): void {
     })
   }
 
-  const sector = LEVEL_1.sectors[player.sector]
+  const sector = level.sectors[player.sector]
   const keys = [...carrier.keys].join(' ')
   const line = layoutHud(fb.width, [
     { text: `${carrier.health}`, align: 'left', priority: 4 },
     { text: `${weapon.name} ${carrier.ammo[weaponIndex]}`, align: 'left', priority: 3 },
     { text: keys === '' ? '' : `keys ${keys}`, align: 'left', priority: 2 },
-    { text: `${sector?.tag ?? '?'} · ${fps.toFixed(0)} fps`, align: 'right', priority: 1 },
+    { text: `${state.def.name} · ${fps.toFixed(0)} fps`, align: 'right', priority: 1 },
   ])
   for (const piece of line) {
     if (piece.text === '') continue
@@ -399,6 +387,9 @@ function frame(now: number): void {
     angle: player.angle,
     sector: player.sector,
     tag: sector?.tag ?? null,
+    level: state.def.name,
+    levelIndex,
+    levelCount: LEVELS.length,
     health: carrier.health,
     awake: actors.filter((actor) => actor.awake).length,
     alive: actors.filter((actor) => isAlive(actor)).length,
@@ -408,13 +399,12 @@ function frame(now: number): void {
     pelletsLanded,
     kills,
     keys: [...carrier.keys],
-    pickupsLeft: LEVEL_1_PICKUPS.filter((pickup) => !pickup.taken).length,
+    pickupsLeft: pickups.filter((pickup) => !pickup.taken).length,
     inFlight: projectiles.length,
     complete: goal.reached,
     elapsed: goal.elapsed,
-    doorState: movers[0]?.state ?? null,
-    doorHeight: LEVEL_1.sectors[movers[0]?.sector ?? 0]?.ceiling ?? null,
-    liftHeight: LEVEL_1.sectors[liftSector]?.floor ?? null,
+    doorState: state.movers[0]?.state ?? null,
+    liftHeight: state.liftSectors[0] === undefined ? null : level.sectors[state.liftSectors[0]]?.floor ?? null,
   }
 
   requestAnimationFrame(frame)
