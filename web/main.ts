@@ -16,10 +16,12 @@ import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
-import { billboardOf, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
+import { billboardOf, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
+import { layoutHud } from '../src/game/hud.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
 import { EYE_HEIGHT, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
 import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from '../src/game/things.ts'
+import { WEAPONS, fire } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
 const hint = document.getElementById('hint')!
@@ -37,6 +39,14 @@ const actors: Actor[] = LEVEL_1_ACTORS.map((placement) => {
 
 const MAX_HEALTH = 100
 let health = MAX_HEALTH
+let weaponIndex = 0
+const ammo = [60, 24]
+let cooldown = 0
+let shotsFired = 0
+let pelletsLanded = 0
+let kills = 0
+/** Seconds of muzzle flash left, purely so a shot is visible on a still frame. */
+let flash = 0
 
 const WALK_SPEED = 3.4
 const RUN_SPEED = 5.8
@@ -77,6 +87,9 @@ function step(): void {
   if (pressed('ArrowUp')) horizonShift = Math.min(LOOK_LIMIT, horizonShift + LOOK_SPEED * STEP)
   if (pressed('ArrowDown')) horizonShift = Math.max(-LOOK_LIMIT, horizonShift - LOOK_SPEED * STEP)
 
+  if (pressed('1')) weaponIndex = 0
+  if (pressed('2')) weaponIndex = 1
+
   const fx = Math.cos(player.angle)
   const fy = Math.sin(player.angle)
   // Strafing is forward turned a quarter turn clockwise, the same vector the
@@ -105,6 +118,19 @@ function step(): void {
 
   const length = Math.hypot(dx, dy)
   if (length > 0) moveBody(LEVEL_1, player, (dx / length) * speed, (dy / length) * speed)
+
+  cooldown = Math.max(0, cooldown - STEP)
+  flash = Math.max(0, flash - STEP)
+  const weapon = WEAPONS[weaponIndex]!
+  if (pressed(' ') && cooldown <= 0 && ammo[weaponIndex]! >= weapon.cost && health > 0) {
+    ammo[weaponIndex] = ammo[weaponIndex]! - weapon.cost
+    cooldown = weapon.interval
+    flash = 0.06
+    shotsFired++
+    const result = fire(LEVEL_1, player, weapon, actors, EYE_HEIGHT)
+    pelletsLanded += result.hits
+    kills += result.kills
+  }
 
   const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
   if (outcome.damage > 0) health = Math.max(0, health - outcome.damage)
@@ -161,15 +187,35 @@ function frame(now: number): void {
 
   // After `resolve`, because text writes glyphs directly and anything that
   // fills glyphs afterwards would overwrite them.
+  const weapon = WEAPONS[weaponIndex]!
+  const centre = Math.floor(fb.width / 2)
+  const middle = Math.floor(fb.height / 2) + Math.round(horizonShift)
+  // A crosshair, and a flash under it while a shot is in the air. The flash is
+  // the only feedback a still frame carries that anything was fired.
+  drawText(fb, centre, middle, flash > 0 ? '*' : '+', {
+    color: flash > 0 ? vec3(1, 0.95, 0.6) : vec3(0.55, 0.55, 0.6),
+  })
+
   const sector = LEVEL_1.sectors[player.sector]
-  drawText(fb, 1, fb.height - 1, `${health}`, {
-    color: health > 40 ? vec3(0.95, 0.85, 0.5) : vec3(1, 0.4, 0.35),
-  })
-  drawText(fb, 7, fb.height - 1, `${sector?.tag ?? '?'}`, { color: vec3(0.5, 0.5, 0.55) })
-  drawText(fb, fb.width - 2, fb.height - 1, `${fps.toFixed(0)} fps`, {
-    color: vec3(0.45, 0.45, 0.5),
-    align: 'right',
-  })
+  // Laid out rather than positioned by hand: at phone width the three pieces
+  // ran into each other and the floor's own glyphs filled the space between,
+  // so the whole row read as one string. What does not fit is dropped, weakest
+  // first, and health never is.
+  const colors: Record<string, [number, number, number]> = {
+    health: health > 40 ? [0.95, 0.85, 0.5] : [1, 0.4, 0.35],
+    weapon: [0.8, 0.78, 0.6],
+    place: [0.45, 0.45, 0.5],
+  }
+  const line = layoutHud(fb.width, [
+    { text: `${health}`, align: 'left', priority: 3 },
+    { text: `${weapon.name} ${ammo[weaponIndex]}`, align: 'left', priority: 2 },
+    { text: `${sector?.tag ?? '?'} · ${fps.toFixed(0)} fps`, align: 'right', priority: 1 },
+  ])
+  for (const piece of line) {
+    const key = piece.align === 'right' ? 'place' : piece.text.includes(' ') ? 'weapon' : 'health'
+    const [r, g, b] = colors[key]!
+    drawText(fb, piece.col, fb.height - 1, piece.text, { color: vec3(r, g, b), align: piece.align })
+  }
 
   surface.present(fb)
 
@@ -193,10 +239,16 @@ function frame(now: number): void {
     tag: sector?.tag ?? null,
     health,
     awake: actors.filter((actor) => actor.awake).length,
+    alive: actors.filter((actor) => isAlive(actor)).length,
+    weapon: weapon.name,
+    ammo: ammo[weaponIndex],
+    shotsFired,
+    pelletsLanded,
+    kills,
   }
 
   requestAnimationFrame(frame)
 }
 
-hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run'
+hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 weapon'
 requestAnimationFrame(frame)

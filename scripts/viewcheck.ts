@@ -165,6 +165,10 @@ function readPlayer(page: Page): Promise<{
   tag: string | null
   awake: number
   health: number
+  alive: number
+  ammo: number
+  shotsFired: number
+  pelletsLanded: number
 }> {
   return page.evaluate(() => {
     const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
@@ -178,6 +182,10 @@ function readPlayer(page: Page): Promise<{
       // `undefined` and passes or fails for reasons unrelated to the game.
       awake: (d.awake as number) ?? -1,
       health: (d.health as number) ?? -1,
+      alive: (d.alive as number) ?? -1,
+      ammo: (d.ammo as number) ?? -1,
+      shotsFired: (d.shotsFired as number) ?? -1,
+      pelletsLanded: (d.pelletsLanded as number) ?? -1,
     }
   })
 }
@@ -207,6 +215,31 @@ check('the creatures are awake and the page knows how hurt you are', () => {
   assert(after.awake >= 0, 'the page reports no creature state at all')
   assert(after.awake > 0, 'nothing has noticed the player after walking into the corridor')
   assert(after.health > 0 && after.health <= 100, `health is ${after.health}`)
+})
+
+const beforeFiring = await readPlayer(page)
+await page.keyboard.down(' ')
+await page.waitForTimeout(900)
+await page.keyboard.up(' ')
+await page.waitForTimeout(150)
+const afterFiring = await readPlayer(page)
+
+check('pulling the trigger fires and spends ammunition', () => {
+  // Deliberately not "something died". Whether a pellet connects depends on
+  // where a creature has wandered by the time the key goes down, and a check
+  // whose truth depends on that fails on a slow machine for no reason. What can
+  // be claimed without timing is that the trigger reaches the simulation: shots
+  // went out, and the reserve paid for them.
+  assert(beforeFiring.shotsFired >= 0, 'the page reports no weapon state at all')
+  assert(
+    afterFiring.shotsFired > beforeFiring.shotsFired,
+    `shots fired stayed at ${beforeFiring.shotsFired} while the trigger was held`,
+  )
+  assert(
+    afterFiring.ammo < beforeFiring.ammo,
+    `ammunition stayed at ${beforeFiring.ammo} after firing ${afterFiring.shotsFired - beforeFiring.shotsFired} shots`,
+  )
+  assert(afterFiring.ammo >= 0, `ammunition went negative: ${afterFiring.ammo}`)
 })
 
 check('a wall stops the player rather than letting them through it', () => {

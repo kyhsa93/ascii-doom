@@ -24,7 +24,10 @@ import {
   rowOfHeight,
   type View,
 } from '../src/columns/render.ts'
+import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
+import { SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
+import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
 import {
   damageActor,
@@ -302,14 +305,20 @@ test('a nearer surface is brighter than the same surface further away', () => {
   )
 })
 
-console.log('\ncreatures')
-
 /**
  * A creature built for the checks rather than for the game.
  *
  * Testing the machinery against the shipped cast would mean every tuning change
  * breaks a check about state transitions, and a check that has to be edited
  * whenever a number moves stops being read.
+ *
+ * It sits above every section that uses it, and that placement is load-bearing.
+ * Function declarations are hoisted and a `const` is not, so a section further
+ * up the file reaching for one further down throws at the moment it runs — even
+ * indirectly, as the default argument of a helper it calls. That has now
+ * happened twice in this file, once by borrowing another section's light and
+ * once by borrowing this. Shared fixtures go above their users; sections do not
+ * reach downward.
  */
 const DUMMY_ART: Sprite = { rows: ['XX', 'XX'], tint: [1, 1, 1], width: 1, height: 1 }
 const DUMMY: ActorKind = {
@@ -330,6 +339,87 @@ const DUMMY: ActorKind = {
   painChance: 0.5,
   deathTime: 0.5,
 }
+
+console.log('\nshooting')
+
+/** A shooter standing somewhere, facing a given way. */
+function shooterAt(x: number, y: number, angle: number): Body & { angle: number } {
+  return { ...bodyAt(x, y), angle }
+}
+
+test('a shot down an empty corridor stops where the map says the wall is', () => {
+  // Same sight line the renderer walks: from the spawn, nothing solid until
+  // the hall's east wall at x=26. Twenty-four units, from the map rather than
+  // from the tracer.
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [])
+  close(shot.distance, 24, 0.05, 'distance to the hall east wall')
+  assert(shot.hit === null, 'an empty corridor reported a hit')
+})
+
+test('a creature in front of a wall is hit and the wall behind it is not reached', () => {
+  const target: ShotBody = { x: 12, y: 3, radius: 0.45 }
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [target])
+  assert(shot.hit !== null, 'a creature standing in the corridor was not hit')
+  close(shot.distance, 10, 0.5, 'distance to the creature')
+})
+
+test('a creature behind a wall is not hit, however well lined up', () => {
+  // Directly in line and within range, but on the other side of the hall's far
+  // wall. A nearest-body search that forgot to find the wall first would hit it.
+  const behind: ShotBody = { x: 28, y: 3, radius: 0.45 }
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [behind])
+  assert(shot.hit === null, 'a shot went through the wall')
+  close(shot.distance, 24, 0.05, 'the shot still stops at the wall')
+})
+
+test('a shot that passes wide of a creature misses it', () => {
+  // Half a metre off the line, against a radius of 0.45: the edge case that
+  // separates a cylinder test from "roughly in that direction".
+  const beside: ShotBody = { x: 12, y: 3.6, radius: 0.45 }
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [beside])
+  assert(shot.hit === null, 'a shot 0.6 units off centre hit a 0.45 radius body')
+
+  const clipped: ShotBody = { x: 12, y: 3.3, radius: 0.45 }
+  const grazing = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [clipped])
+  assert(grazing.hit !== null, 'a shot inside the radius missed')
+})
+
+test('the nearest of two creatures in line is the one hit', () => {
+  const near: ShotBody = { x: 10, y: 3, radius: 0.45 }
+  const far: ShotBody = { x: 16, y: 3, radius: 0.45 }
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [far, near])
+  assert(shot.hit !== null, 'neither creature was hit')
+  assert(shot.hit.index === 1, 'the far creature was hit through the near one')
+})
+
+test('a dead creature does not stop a shot', () => {
+  const bodies: ShotBody[] = [
+    { x: 10, y: 3, radius: 0.45 },
+    { x: 16, y: 3, radius: 0.45 },
+  ]
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, bodies, (i) => i !== 0)
+  assert(shot.hit !== null && shot.hit.index === 1, 'the shot did not pass through the dead one')
+})
+
+test('firing damages what it hits, and a cone spreads', () => {
+  const shooter = shooterAt(2, 3, 0)
+  const victim = actorAt(10, 3, Math.PI)
+  const before = victim.health
+  // Randomness pinned to the middle: no spread, no pain roll surprises.
+  const result = fire(LEVEL_1, shooter, SIDEARM, [victim], 1.6, () => 0.5)
+  assert(result.hits === 1, `expected one pellet to connect, got ${result.hits}`)
+  assert(victim.health === before - SIDEARM.damage, `health went ${before} to ${victim.health}`)
+
+  // The scattergun throws its pellets across a cone, so with the random source
+  // walking from one edge to the other the ends must not all be the same place.
+  const wide = shooterAt(2, 3, 0)
+  let roll = 0
+  const spread = fire(LEVEL_1, wide, SCATTERGUN, [], 1.6, () => (roll++ % 2 === 0 ? 0 : 1))
+  const ys = new Set(spread.ends.map((end) => end.y.toFixed(2)))
+  assert(ys.size > 1, 'every pellet of a spread weapon landed in the same place')
+})
+
+console.log('\ncreatures')
 
 /** A player-shaped body standing somewhere in the first level. */
 function bodyAt(x: number, y: number): Body {
@@ -638,6 +728,77 @@ test('a thing behind a wall is not drawn, and the same thing in front of it is',
 
   const front = markerBox(shootWithMarker([{ x: 24, y: 3, z: 0, light: 1, sprite: MARKER }]))
   assert(front.count > 0, 'a thing in the open hall was not drawn at all')
+})
+
+console.log('\nstatus line')
+
+const HUD_SAMPLE: HudSegment[] = [
+  { text: '100', align: 'left', priority: 3 },
+  { text: 'scattergun 24', align: 'left', priority: 2 },
+  { text: 'corridor · 60 fps', align: 'right', priority: 1 },
+]
+
+/** The columns a placed segment actually covers. */
+function span(piece: { text: string; col: number; align: 'left' | 'right' }): [number, number] {
+  return piece.align === 'left'
+    ? [piece.col, piece.col + piece.text.length - 1]
+    : [piece.col - piece.text.length + 1, piece.col]
+}
+
+test('everything fits on a wide grid', () => {
+  const placed = layoutHud(163, HUD_SAMPLE)
+  assert(placed.length === HUD_SAMPLE.length, `only ${placed.length} of ${HUD_SAMPLE.length} segments were placed`)
+})
+
+test('segments are placed in the order they were written', () => {
+  // The assertion that was missing, and the defect it would have caught. The
+  // first version sorted by priority and then placed from that sorted list, so
+  // the status line read "sidearm 56" before "86" — the weapon first, because
+  // it mattered less. Overlap and survival were both fine; only the order was
+  // wrong, and nothing was looking at the order.
+  const placed = layoutHud(163, HUD_SAMPLE)
+  const lefts = placed.filter((piece) => piece.align === 'left')
+  const expected = HUD_SAMPLE.filter((segment) => segment.align === 'left').map((segment) => segment.text)
+  assert(
+    lefts.map((piece) => piece.text).join('|') === expected.join('|'),
+    `left segments came out as ${JSON.stringify(lefts.map((p) => p.text))}, expected ${JSON.stringify(expected)}`,
+  )
+  for (let i = 1; i < lefts.length; i++) {
+    assert(lefts[i]!.col > lefts[i - 1]!.col, 'left segments do not run left to right')
+  }
+})
+
+test('nothing overlaps on a narrow one', () => {
+  // The defect this exists for. At 49 columns the three pieces written by hand
+  // ran together, and a character grid has no way to show that two runs of
+  // text are separate things — they are simply adjacent characters.
+  for (const width of [30, 40, 49, 60, 80, 163]) {
+    const placed = layoutHud(width, HUD_SAMPLE)
+    const spans = placed.map(span).sort((a, b) => a[0] - b[0])
+    for (let i = 1; i < spans.length; i++) {
+      assert(
+        spans[i]![0] > spans[i - 1]![1],
+        `at ${width} columns "${placed[i]?.text}" starts at ${spans[i]![0]} inside something ending at ${spans[i - 1]![1]}`,
+      )
+    }
+    for (const [from, to] of spans) {
+      assert(from >= 0 && to < width, `at ${width} columns a segment runs from ${from} to ${to}`)
+    }
+  }
+})
+
+test('what is dropped is dropped in priority order, and health never is', () => {
+  // A narrow grid has to lose something. Which something is the decision, and
+  // leaving it to whichever segment happened to be placed last is how a status
+  // line ends up showing the frame rate and not the health.
+  const narrow = layoutHud(24, HUD_SAMPLE)
+  const kept = narrow.map((piece) => piece.text)
+  assert(kept.includes('100'), `health was dropped, leaving ${JSON.stringify(kept)}`)
+  assert(!kept.includes('corridor · 60 fps'), `the least important segment survived: ${JSON.stringify(kept)}`)
+
+  // Narrower still: only the most important thing is left.
+  const tiny = layoutHud(12, HUD_SAMPLE)
+  assert(tiny.length === 1 && tiny[0]!.text === '100', `expected health alone, got ${JSON.stringify(tiny.map((p) => p.text))}`)
 })
 
 console.log('\nreadability')

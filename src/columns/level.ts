@@ -262,6 +262,31 @@ export function castRay(
  * up here would put a scan over every sector inside a call that AI makes many
  * times a frame.
  */
+/**
+ * The gap a two-sided line leaves: from the higher of the two floors to the
+ * lower of the two ceilings.
+ *
+ * Named once because three separate things ask it — whether a body fits
+ * through, whether a sight line passes, and whether a shot carries — and a rule
+ * written down three times is a rule that will disagree with itself. It is also
+ * the whole reason a shut door needs no flag: its ceiling has come down to its
+ * floor, the gap is nothing, and every one of those three answers turns out
+ * right without knowing what a door is.
+ */
+export function openingBetween(
+  level: Level,
+  nearSector: number,
+  farSector: number,
+): { bottom: number; top: number } | null {
+  const near = level.sectors[nearSector]
+  const far = level.sectors[farSector]
+  if (!near || !far) return null
+  return {
+    bottom: Math.max(near.floor, far.floor),
+    top: Math.min(near.ceiling, far.ceiling),
+  }
+}
+
 export function lineOfSight(
   level: Level,
   fromSector: number,
@@ -285,16 +310,13 @@ export function lineOfSight(
   for (const hit of hits) {
     const next = acrossFrom(hit.line, current)
     if (next < 0) return false
-    const near = level.sectors[current]
-    const far = level.sectors[next]
-    if (!near || !far) return false
+    const opening = openingBetween(level, current, next)
+    if (!opening) return false
 
     // Height of the sight line where it crosses, by similar triangles on the
     // map-plane distance travelled so far.
     const z = az + (bz - az) * (hit.t / distance)
-    const openingBottom = Math.max(near.floor, far.floor)
-    const openingTop = Math.min(near.ceiling, far.ceiling)
-    if (z <= openingBottom || z >= openingTop) return false
+    if (z <= opening.bottom || z >= opening.top) return false
 
     current = next
   }
