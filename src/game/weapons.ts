@@ -18,6 +18,8 @@ import { traceShot, type ShotBody } from '../columns/hitscan.ts'
 import type { Level } from '../columns/level.ts'
 import { damageActor, isAlive, type Actor } from './ai.ts'
 import type { Body } from './player.ts'
+import { spawnProjectile, type Projectile, type ProjectileKind } from './projectiles.ts'
+import { SLUG } from './things.ts'
 
 export interface Weapon {
   readonly name: string
@@ -33,6 +35,15 @@ export interface Weapon {
   readonly interval: number
   /** Rounds taken from the reserve per pull. */
   readonly cost: number
+  /**
+   * What it throws, for the ones that do not arrive instantly.
+   *
+   * With this the shot leaves the muzzle and has to get there, so `damage` and
+   * `range` on the weapon stop applying — the projectile carries its own. A
+   * thrown weapon is worth aiming ahead of something that is moving, and worth
+   * not firing at a wall you are standing against.
+   */
+  readonly projectile?: ProjectileKind
 }
 
 /** Accurate, cheap, and slow to finish anything. */
@@ -63,16 +74,36 @@ export const SCATTERGUN: Weapon = {
   cost: 1,
 }
 
-export const WEAPONS: readonly Weapon[] = [SIDEARM, SCATTERGUN]
+/**
+ * A launcher, throwing a heavy slug that arrives when it arrives.
+ *
+ * Slow enough to walk out of the way of, which cuts both ways: it is the only
+ * weapon here you can miss with by firing at where something was, and the only
+ * one that can be fired into a room before you walk into it.
+ */
+export const LAUNCHER: Weapon = {
+  name: 'launcher',
+  damage: 0,
+  pellets: 1,
+  spread: 0.02,
+  range: 0,
+  interval: 1.2,
+  cost: 1,
+  projectile: { sprite: SLUG, speed: 14, damage: 48, life: 5 },
+}
+
+export const WEAPONS: readonly Weapon[] = [SIDEARM, SCATTERGUN, LAUNCHER]
 
 /** What one pull of the trigger did. */
 export interface FireResult {
-  /** Pellets that connected with something. */
+  /** Pellets that connected with something. Always zero for a thrown weapon. */
   readonly hits: number
   /** Creatures that died from this shot. */
   readonly kills: number
-  /** Where each pellet ended, for drawing a spark. */
+  /** Where each pellet ended, for drawing a spark. Empty for a thrown weapon. */
   readonly ends: { x: number; y: number }[]
+  /** Anything now in flight, for the caller to add to what it is tracking. */
+  readonly shots: Projectile[]
 }
 
 /**
@@ -88,15 +119,27 @@ export function fire(
   weapon: Weapon,
   actors: Actor[],
   height: number,
+  owner: number,
   random: () => number = Math.random,
 ): FireResult {
   const bodies: ShotBody[] = actors
   let hits = 0
   let kills = 0
   const ends: { x: number; y: number }[] = []
+  const shots: Projectile[] = []
 
   for (let pellet = 0; pellet < weapon.pellets; pellet++) {
     const angle = shooter.angle + (random() * 2 - 1) * weapon.spread
+
+    if (weapon.projectile) {
+      // Nothing is resolved here. It leaves the muzzle and the flight decides,
+      // which is the whole difference between this and the instant weapons.
+      shots.push(
+        spawnProjectile(weapon.projectile, shooter.x, shooter.y, shooter.floor + height, angle, shooter.sector, owner),
+      )
+      continue
+    }
+
     const shot = traceShot(
       level,
       shooter.sector,
@@ -114,5 +157,5 @@ export function fire(
     if (damageActor(actors[shot.hit.index]!, weapon.damage, random)) kills++
   }
 
-  return { hits, kills, ends }
+  return { hits, kills, ends, shots }
 }

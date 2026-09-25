@@ -26,7 +26,7 @@ import {
 } from '../src/columns/render.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
-import { SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
+import { LAUNCHER, SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
@@ -424,7 +424,8 @@ test('firing damages what it hits, and a cone spreads', () => {
   const victim = actorAt(10, 3, Math.PI)
   const before = victim.health
   // Randomness pinned to the middle: no spread, no pain roll surprises.
-  const result = fire(LEVEL_1, shooter, SIDEARM, [victim], 1.6, () => 0.5)
+  const result = fire(LEVEL_1, shooter, SIDEARM, [victim], 1.6, -1, () => 0.5)
+  assert(result.shots.length === 0, 'an instant weapon put something in flight')
   assert(result.hits === 1, `expected one pellet to connect, got ${result.hits}`)
   assert(victim.health === before - SIDEARM.damage, `health went ${before} to ${victim.health}`)
 
@@ -432,9 +433,25 @@ test('firing damages what it hits, and a cone spreads', () => {
   // walking from one edge to the other the ends must not all be the same place.
   const wide = shooterAt(2, 3, 0)
   let roll = 0
-  const spread = fire(LEVEL_1, wide, SCATTERGUN, [], 1.6, () => (roll++ % 2 === 0 ? 0 : 1))
+  const spread = fire(LEVEL_1, wide, SCATTERGUN, [], 1.6, -1, () => (roll++ % 2 === 0 ? 0 : 1))
   const ys = new Set(spread.ends.map((end) => end.y.toFixed(2)))
   assert(ys.size > 1, 'every pellet of a spread weapon landed in the same place')
+})
+
+test('a thrown weapon resolves nothing at the muzzle', () => {
+  // The difference between the launcher and everything else. An instant weapon
+  // has already hit or missed by the time `fire` returns; this one has only
+  // put something in the air, and the flight decides later.
+  const shooter = shooterAt(2, 3, 0)
+  const victim = actorAt(10, 3, Math.PI)
+  const before = victim.health
+
+  const result = fire(LEVEL_1, shooter, LAUNCHER, [victim], 1.6, 7, () => 0.5)
+
+  assert(result.hits === 0, `a thrown weapon reported ${result.hits} immediate hits`)
+  assert(result.shots.length === 1, `expected one slug in flight, got ${result.shots.length}`)
+  assert(victim.health === before, 'the target was damaged before the slug had gone anywhere')
+  assert(result.shots[0]!.owner === 7, `the slug was fired by ${result.shots[0]!.owner} rather than its shooter`)
 })
 
 console.log('\nthings in flight')

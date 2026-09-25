@@ -126,6 +126,23 @@ export const BOLT: Sprite = {
   height: 0.35,
 }
 
+/**
+ * A launcher's slug: heavier and blunter than a drifter's bolt, and told apart
+ * from it by mass rather than by colour, since at this size the two are a
+ * handful of cells each.
+ */
+export const SLUG: Sprite = {
+  rows: [
+    '  ,--.  ',
+    ' /####\\ ',
+    '<######>',
+    " \\####/ ",
+  ],
+  tint: [1.3, 0.8, 0.5],
+  width: 0.5,
+  height: 0.45,
+}
+
 /** A canister of charge. Small and bright, unmistakably not a creature. */
 export const CANISTER: Sprite = {
   rows: [
@@ -362,6 +379,7 @@ export const ALL_SPRITES: Record<string, Sprite> = {
   KIT,
   KEY_TOKEN,
   BOLT,
+  SLUG,
   CRAWLER_DOWN,
   SENTRY_DOWN,
   DRIFTER_DOWN,

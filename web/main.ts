@@ -71,8 +71,8 @@ const goal = makeGoal(exitSector)
 const carrier: Carrier = {
   health: 100,
   maxHealth: 100,
-  ammo: [60, 24],
-  ammoMax: [120, 48],
+  ammo: [60, 24, 8],
+  ammoMax: [120, 48, 24],
   keys: new Set<string>(),
 }
 
@@ -150,6 +150,7 @@ function step(): void {
 
   if (pressed('1')) weaponIndex = 0
   if (pressed('2')) weaponIndex = 1
+  if (pressed('3')) weaponIndex = 2
 
   const fx = Math.cos(player.angle)
   const fy = Math.sin(player.angle)
@@ -198,9 +199,13 @@ function step(): void {
     cooldown = weapon.interval
     flash = 0.06
     shotsFired++
-    const result = fire(LEVEL_1, player, weapon, actors, EYE_HEIGHT)
+    // The player's index in the body list the flight is resolved against, which
+    // is `[...actors, player]` — so a slug cannot detonate on the person who
+    // fired it, by the same rule that keeps a creature from shooting itself.
+    const result = fire(LEVEL_1, player, weapon, actors, EYE_HEIGHT, actors.length)
     pelletsLanded += result.hits
     kills += result.kills
+    for (const shot of result.shots) projectiles.push(shot)
   }
 
   // Use: opens whatever you are facing, if you are carrying what it asks for.
@@ -415,5 +420,5 @@ function frame(now: number): void {
   requestAnimationFrame(frame)
 }
 
-hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 weapon · E use'
+hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'
 requestAnimationFrame(frame)
