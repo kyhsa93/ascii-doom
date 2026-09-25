@@ -176,6 +176,35 @@ export const KEY_TOKEN: Sprite = {
   height: 0.5,
 }
 
+/**
+ * A box of shells: paired cylinders, so it reads as loose rounds rather than
+ * as another crate.
+ */
+export const SHELL_BOX: Sprite = {
+  rows: [
+    ' ,-.,-. ',
+    '(:::)(:)',
+    " '-''-' ",
+    ' ______ ',
+  ],
+  tint: [1.15, 0.95, 0.55],
+  width: 0.55,
+  height: 0.45,
+}
+
+/** A crate of slugs. Banded and heavy, told from the shells by its corners. */
+export const SLUG_CRATE: Sprite = {
+  rows: [
+    '.-<##>-.',
+    '|#::::#|',
+    '|#::::#|',
+    "'-<##>-'",
+  ],
+  tint: [1.25, 0.8, 0.45],
+  width: 0.6,
+  height: 0.5,
+}
+
 /** A field kit. A plain box with a bar across it. */
 export const KIT: Sprite = {
   rows: [
@@ -222,6 +251,29 @@ export const LEVEL_1_PICKUPS: Pickup[] = [
     light: 0.95,
     sprite: KIT,
     grant: { kind: 'health', amount: 25 },
+    radius: 0.4,
+    taken: false,
+  },
+  {
+    // On the way to the key, so the scattergun is worth carrying into the hall.
+    x: 18,
+    y: 0,
+    z: 0,
+    light: 1,
+    sprite: SHELL_BOX,
+    grant: { kind: 'ammo', weapon: 1, amount: 8 },
+    radius: 0.4,
+    taken: false,
+  },
+  {
+    // Past the locked door, so the heaviest weapon is resupplied by getting
+    // somewhere rather than by walking in a circle.
+    x: 18.5,
+    y: 14,
+    z: 0,
+    light: 0.72,
+    sprite: SLUG_CRATE,
+    grant: { kind: 'ammo', weapon: 2, amount: 6 },
     radius: 0.4,
     taken: false,
   },
@@ -376,6 +428,8 @@ export const ALL_SPRITES: Record<string, Sprite> = {
   SENTRY,
   DRIFTER,
   CANISTER,
+  SHELL_BOX,
+  SLUG_CRATE,
   KIT,
   KEY_TOKEN,
   BOLT,

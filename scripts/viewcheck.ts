@@ -289,9 +289,12 @@ check('supplies are left alone while they would give nothing', () => {
   // a claim that does not depend on how fast the machine ran, unlike anything
   // phrased as "by now you should have picked something up".
   assert(afterFiring.pickupsLeft >= 0, 'the page reports no pickups at all')
+  // Compared against itself rather than against a number. The claim is that
+  // nothing was taken, and writing that as "there are still three" makes the
+  // check fail the next time the level gains a supply — which it just did.
   assert(
-    afterFiring.pickupsLeft === 3,
-    `${3 - afterFiring.pickupsLeft} supplies vanished while the player was at full health`,
+    afterFiring.pickupsLeft === beforeFiring.pickupsLeft,
+    `${beforeFiring.pickupsLeft - afterFiring.pickupsLeft} supplies vanished while the player was at full health`,
   )
   assert(afterFiring.keys.length === 0, `the player is holding ${afterFiring.keys.join(', ')} without finding it`)
 })

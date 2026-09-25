@@ -26,7 +26,7 @@ import {
 } from '../src/columns/render.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
-import { LAUNCHER, SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
+import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
@@ -1354,6 +1354,27 @@ test('reach is the sum of both radii, and the edge of it is the edge', () => {
   const inside = carrier({ ammo: [10, 0] })
   assert(collect([pickup], reach - 0.05, 0, 0.35, inside).length === 1, 'something just within reach was missed')
   assert(inside.ammo[1] === 8, `ammunition went to ${inside.ammo[1]}`)
+})
+
+test('every weapon can be resupplied somewhere in the level', () => {
+  // A content rule, checked because content is where this kind of mistake
+  // lives. Adding the launcher gave the player eight slugs and no way to find
+  // more, and the scattergun had been in the same position since it was
+  // written: one canister in the level, granting the sidearm only. Nothing
+  // failed, and the level was quietly worse for it.
+  //
+  // It was false until the same commit that added this, so it has not been
+  // watched failing — what makes it worth keeping is that the next weapon
+  // added without a box of its own will not get past here.
+  const supplied = new Set<number>()
+  for (const pickup of LEVEL_1_PICKUPS) {
+    if (pickup.grant.kind === 'ammo') supplied.add(pickup.grant.weapon)
+  }
+  const missing = WEAPONS.map((weapon, index) => ({ weapon, index })).filter(({ index }) => !supplied.has(index))
+  assert(
+    missing.length === 0,
+    `nothing in the level resupplies ${missing.map(({ weapon }) => weapon.name).join(', ')}`,
+  )
 })
 
 test('a key is taken once and then stops existing', () => {
