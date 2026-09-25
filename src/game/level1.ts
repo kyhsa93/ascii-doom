@@ -215,7 +215,7 @@ export const LEVEL_1_MOVERS: { readonly tag: string; readonly kind: MoverKind }[
     // A door: its ceiling sits on its floor until something opens it, then
     // lifts clear and settles back after a few seconds.
     tag: 'door-north',
-    kind: { surface: 'ceiling', shut: 0, open: 2.6, speed: 2.4, wait: 4 },
+    kind: { surface: 'ceiling', shut: 0, open: 2.6, speed: 2.4, wait: 4, requiresKey: 'amber' },
   },
   {
     // A lift: the same machine with the floor moving instead, and no wait, so

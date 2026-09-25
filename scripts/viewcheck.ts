@@ -166,6 +166,8 @@ function readPlayer(page: Page): Promise<{
   awake: number
   health: number
   doorState: string | null
+  pickupsLeft: number
+  keys: string[]
   alive: number
   ammo: number
   shotsFired: number
@@ -188,6 +190,8 @@ function readPlayer(page: Page): Promise<{
       shotsFired: (d.shotsFired as number) ?? -1,
       pelletsLanded: (d.pelletsLanded as number) ?? -1,
       doorState: (d.doorState as string | null) ?? null,
+      pickupsLeft: (d.pickupsLeft as number) ?? -1,
+      keys: (d.keys as string[]) ?? [],
     }
   })
 }
@@ -242,6 +246,20 @@ check('pulling the trigger fires and spends ammunition', () => {
     `ammunition stayed at ${beforeFiring.ammo} after firing ${afterFiring.shotsFired - beforeFiring.shotsFired} shots`,
   )
   assert(afterFiring.ammo >= 0, `ammunition went negative: ${afterFiring.ammo}`)
+})
+
+check('supplies are left alone while they would give nothing', () => {
+  // The walk above goes straight past both pickups in the starting room at
+  // full health. Nothing should have been taken, which is the "useful or leave
+  // it" rule holding in the running game rather than only in Node — and it is
+  // a claim that does not depend on how fast the machine ran, unlike anything
+  // phrased as "by now you should have picked something up".
+  assert(afterFiring.pickupsLeft >= 0, 'the page reports no pickups at all')
+  assert(
+    afterFiring.pickupsLeft === 3,
+    `${3 - afterFiring.pickupsLeft} supplies vanished while the player was at full health`,
+  )
+  assert(afterFiring.keys.length === 0, `the player is holding ${afterFiring.keys.join(', ')} without finding it`)
 })
 
 check('the level’s moving parts were built and are being reported', () => {

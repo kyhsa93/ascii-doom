@@ -45,6 +45,7 @@ import {
   type ActorKind,
   type ActorState,
 } from '../src/game/ai.ts'
+import { collect, isUseful, type Carrier, type Pickup } from '../src/game/pickups.ts'
 import { moveBody, type Body } from '../src/game/player.ts'
 import { ALL_SPRITES } from '../src/game/things.ts'
 
@@ -891,6 +892,23 @@ test('triggering a closing door sends it back up', () => {
   assert(level.sectors[1]!.ceiling > midway, 'a door triggered while closing kept closing')
 })
 
+test('a locked door refuses until the key is held', () => {
+  // The lock lives on the door rather than in whoever presses the button, so
+  // that every route to opening one has to go past it. A caller that forgot to
+  // ask would otherwise open it, and there is more than one caller.
+  const level = doorLevel()
+  const locked = makeMover(1, { ...DOOR_KIND, requiresKey: 'amber' })
+
+  assert(activate(locked) === false, 'a locked door opened for someone with no keys')
+  runMovers(level, [locked], [], 2)
+  close(level.sectors[1]!.ceiling, DOOR_KIND.shut, 1e-9, 'a locked door moved anyway')
+
+  assert(activate(locked, new Set(['brass'])) === false, 'the wrong key opened it')
+  assert(activate(locked, new Set(['amber'])) === true, 'the right key was refused')
+  runMovers(level, [locked], [], 2)
+  close(level.sectors[1]!.ceiling, DOOR_KIND.open, 1e-9, 'it did not open once unlocked')
+})
+
 test('the use key finds the door you are facing and nothing else', () => {
   // Which door a press opens is a rule with a right answer, so it is checked
   // at exact positions here rather than by driving a browser across the level
@@ -914,6 +932,73 @@ test('the use key finds the door you are facing and nothing else', () => {
 
   const away = sectorAt(LEVEL_1, 2, 3)
   assert(moverInFront(LEVEL_1, built, away, 2, 3, 0) === null, 'a door was found from the other end of the level')
+})
+
+console.log('\npickups')
+
+function carrier(overrides: Partial<Carrier> = {}): Carrier {
+  return {
+    health: 100,
+    maxHealth: 100,
+    ammo: [10, 4],
+    ammoMax: [60, 24],
+    keys: new Set<string>(),
+    ...overrides,
+  }
+}
+
+function pickupAt(x: number, y: number, grant: Pickup['grant']): Pickup {
+  return { x, y, z: 0, light: 1, sprite: DUMMY_ART, grant, radius: 0.4, taken: false }
+}
+
+test('a pickup that would give you nothing is left where it is', () => {
+  // The difference between a supply and a thing that punishes you for walking
+  // tidily through a room. At full health the kit stays on the floor for when
+  // it is worth something.
+  const full = carrier()
+  const kit = pickupAt(1, 1, { kind: 'health', amount: 25 })
+  assert(!isUseful(kit, full), 'a kit was useful at full health')
+  assert(collect([kit], 1, 1, 0.35, full).length === 0, 'a kit was taken at full health')
+  assert(!kit.taken, 'a kit that gave nothing was still marked taken')
+
+  const hurt = carrier({ health: 60 })
+  assert(collect([kit], 1, 1, 0.35, hurt).length === 1, 'a kit was not taken by someone hurt')
+  assert(hurt.health === 85, `health went to ${hurt.health}`)
+})
+
+test('nothing overfills', () => {
+  // The excess stays in the world rather than being quietly discarded.
+  const nearlyFull = carrier({ health: 90 })
+  collect([pickupAt(1, 1, { kind: 'health', amount: 25 })], 1, 1, 0.35, nearlyFull)
+  assert(nearlyFull.health === 100, `health overfilled to ${nearlyFull.health}`)
+
+  const stocked = carrier({ ammo: [55, 4] })
+  collect([pickupAt(1, 1, { kind: 'ammo', weapon: 0, amount: 20 })], 1, 1, 0.35, stocked)
+  assert(stocked.ammo[0] === 60, `ammunition overfilled to ${stocked.ammo[0]}`)
+})
+
+test('reach is the sum of both radii, and the edge of it is the edge', () => {
+  const pickup = pickupAt(0, 0, { kind: 'ammo', weapon: 1, amount: 8 })
+  const reach = pickup.radius + 0.35
+
+  const outside = carrier({ ammo: [10, 0] })
+  assert(collect([pickup], reach + 0.05, 0, 0.35, outside).length === 0, 'something just out of reach was taken')
+
+  const inside = carrier({ ammo: [10, 0] })
+  assert(collect([pickup], reach - 0.05, 0, 0.35, inside).length === 1, 'something just within reach was missed')
+  assert(inside.ammo[1] === 8, `ammunition went to ${inside.ammo[1]}`)
+})
+
+test('a key is taken once and then stops existing', () => {
+  const holder = carrier()
+  const key = pickupAt(2, 2, { kind: 'key', key: 'blue' })
+
+  assert(collect([key], 2, 2, 0.35, holder).length === 1, 'the key was not picked up')
+  assert(holder.keys.has('blue'), 'the key was picked up without being held')
+  assert(key.taken, 'the key is still on the floor')
+
+  // Walking back over it does nothing, whether or not it was marked taken.
+  assert(collect([key], 2, 2, 0.35, holder).length === 0, 'the key was picked up twice')
 })
 
 console.log('\nstatus line')

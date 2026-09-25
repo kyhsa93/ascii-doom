@@ -34,6 +34,15 @@ export interface MoverKind {
    * by a switch wants. A door in a wall usually wants a few seconds.
    */
   readonly wait: number
+  /**
+   * A key that must be held before this will move.
+   *
+   * A locked door is not a different machine; it is the same one that declines
+   * to start. Leaving the lock out here and putting it in the caller would mean
+   * every place that can open a door has to remember to ask, and one of them
+   * eventually would not.
+   */
+  readonly requiresKey?: string
 }
 
 export interface Mover {
@@ -60,13 +69,18 @@ export function makeMover(sector: number, kind: MoverKind): Mover {
  * Triggering a closing door reopens it, which is what makes a door you are
  * standing in forgiving; triggering an open one only refreshes its wait.
  */
-export function activate(mover: Mover): void {
+export function activate(mover: Mover, keys: ReadonlySet<string> = NO_KEYS): boolean {
+  const needed = mover.kind.requiresKey
+  if (needed !== undefined && !keys.has(needed)) return false
   if (mover.state === 'open') {
     mover.timer = mover.kind.wait
-    return
+    return true
   }
   mover.state = 'opening'
+  return true
 }
+
+const NO_KEYS: ReadonlySet<string> = new Set<string>()
 
 /** Puts a sector's moving surface back to a height, for a reset or a load. */
 export function applyHeight(level: Level, mover: Mover, height: number): void {

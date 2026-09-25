@@ -20,8 +20,9 @@
  * holds them to it.
  */
 
-import type { Billboard, Sprite } from '../columns/sprite.ts'
+import type { Sprite } from '../columns/sprite.ts'
 import type { ActorKind } from './ai.ts'
+import type { Pickup } from './pickups.ts'
 
 /**
  * A crawler: low and wide, weight forward on two heavy forelimbs.
@@ -121,6 +122,25 @@ export const CANISTER: Sprite = {
   height: 0.6,
 }
 
+/**
+ * An amber token: what a locked door asks for.
+ *
+ * Deliberately angular where the canister is round and the kit is square, so
+ * that at eight cells across the three are told apart by outline alone.
+ */
+export const KEY_TOKEN: Sprite = {
+  rows: [
+    ' .====. ',
+    '|  ()  |',
+    '|  ||  |',
+    "|  '-  |",
+    " '====' ",
+  ],
+  tint: [1.3, 0.95, 0.45],
+  width: 0.45,
+  height: 0.5,
+}
+
 /** A field kit. A plain box with a bar across it. */
 export const KIT: Sprite = {
   rows: [
@@ -149,9 +169,39 @@ export const KIT: Sprite = {
  * from their own positions each frame. Leaving them in both lists would draw
  * each one twice, once where it started and once where it is.
  */
-export const LEVEL_1_PICKUPS: Billboard[] = [
-  { x: 5.5, y: 1.5, z: 0, light: 0.95, sprite: CANISTER },
-  { x: 5.5, y: 4.5, z: 0, light: 0.95, sprite: KIT },
+export const LEVEL_1_PICKUPS: Pickup[] = [
+  {
+    x: 5.5,
+    y: 1.5,
+    z: 0,
+    light: 0.95,
+    sprite: CANISTER,
+    grant: { kind: 'ammo', weapon: 0, amount: 15 },
+    radius: 0.4,
+    taken: false,
+  },
+  {
+    x: 5.5,
+    y: 4.5,
+    z: 0,
+    light: 0.95,
+    sprite: KIT,
+    grant: { kind: 'health', amount: 25 },
+    radius: 0.4,
+    taken: false,
+  },
+  {
+    // In the hall, well away from the door it opens, so finding it is a
+    // reason to explore rather than a formality on the way past.
+    x: 24,
+    y: 8.5,
+    z: 0,
+    light: 1,
+    sprite: KEY_TOKEN,
+    grant: { kind: 'key', key: 'amber' },
+    radius: 0.5,
+    taken: false,
+  },
 ]
 
 /**
@@ -286,6 +336,7 @@ export const ALL_SPRITES: Record<string, Sprite> = {
   DRIFTER,
   CANISTER,
   KIT,
+  KEY_TOKEN,
   CRAWLER_DOWN,
   SENTRY_DOWN,
   DRIFTER_DOWN,

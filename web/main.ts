@@ -20,7 +20,8 @@ import { billboardOf, isAlive, spawnActor, updateActors, type Actor } from '../s
 import { layoutHud } from '../src/game/hud.ts'
 import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import { activate, makeMover, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
-import { EYE_HEIGHT, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
+import { collect, type Carrier } from '../src/game/pickups.ts'
+import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
 import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
 
@@ -45,16 +46,32 @@ const movers: Mover[] = LEVEL_1_MOVERS.map((entry) => {
 })
 const liftSector = sectorIndexByTag(LEVEL_1, 'lift')
 
-const MAX_HEALTH = 100
-let health = MAX_HEALTH
+/**
+ * Everything the player is carrying, in one place.
+ *
+ * Health and ammunition used to be loose variables beside each other, which
+ * worked until pickups arrived and needed to know the maximums to stop at.
+ * Gathering them means the collection rule can be a pure function that Node
+ * checks, and the page only has to hand it this.
+ */
+const carrier: Carrier = {
+  health: 100,
+  maxHealth: 100,
+  ammo: [60, 24],
+  ammoMax: [120, 48],
+  keys: new Set<string>(),
+}
+
 let weaponIndex = 0
-const ammo = [60, 24]
 let cooldown = 0
 let shotsFired = 0
 let pelletsLanded = 0
 let kills = 0
 /** Seconds of muzzle flash left, purely so a shot is visible on a still frame. */
 let flash = 0
+/** A line shown briefly when something has just happened. */
+let notice = ''
+let noticeTime = 0
 
 const WALK_SPEED = 3.4
 const RUN_SPEED = 5.8
@@ -65,6 +82,11 @@ const LOOK_LIMIT = 14
 const FOV_Y = DEFAULT_FOV_Y
 
 let horizonShift = 0
+
+function say(text: string): void {
+  notice = text
+  noticeTime = 2.5
+}
 
 const held = new Set<string>()
 const down = (event: KeyboardEvent) => {
@@ -127,11 +149,21 @@ function step(): void {
   const length = Math.hypot(dx, dy)
   if (length > 0) moveBody(LEVEL_1, player, (dx / length) * speed, (dy / length) * speed)
 
+  // Walked over. Nothing is taken that would give nothing, so crossing a room
+  // at full health leaves the kit there for when it is worth something.
+  for (const taken of collect(LEVEL_1_PICKUPS, player.x, player.y, PLAYER_RADIUS, carrier)) {
+    const grant = taken.grant
+    if (grant.kind === 'health') say(`+${grant.amount} health`)
+    else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
+    else say(`${grant.key} key`)
+  }
+
   cooldown = Math.max(0, cooldown - STEP)
   flash = Math.max(0, flash - STEP)
+  noticeTime = Math.max(0, noticeTime - STEP)
   const weapon = WEAPONS[weaponIndex]!
-  if (pressed(' ') && cooldown <= 0 && ammo[weaponIndex]! >= weapon.cost && health > 0) {
-    ammo[weaponIndex] = ammo[weaponIndex]! - weapon.cost
+  if (pressed(' ') && cooldown <= 0 && carrier.ammo[weaponIndex]! >= weapon.cost && carrier.health > 0) {
+    carrier.ammo[weaponIndex] = carrier.ammo[weaponIndex]! - weapon.cost
     cooldown = weapon.interval
     flash = 0.06
     shotsFired++
@@ -140,19 +172,20 @@ function step(): void {
     kills += result.kills
   }
 
-  // Use: opens whatever you are facing. Held rather than tapped, because a
-  // door that ignores you for holding the key too long is worse than one that
-  // hears you twice -- reopening an open door only refreshes its wait.
+  // Use: opens whatever you are facing, if you are carrying what it asks for.
+  // The lock is on the door rather than here, so this cannot forget to check.
   if (pressed('e')) {
     const target = moverInFront(LEVEL_1, movers, player.sector, player.x, player.y, player.angle)
-    if (target) activate(target)
+    if (target && !activate(target, carrier.keys)) {
+      say(`locked — needs the ${target.kind.requiresKey} key`)
+    }
   }
   // A lift is called by standing on it. Nothing else in the level needs a
   // button, and a platform that waits to be asked is a platform people stand
   // on wondering what to do.
   if (player.sector === liftSector) {
     const lift = movers.find((mover) => mover.sector === liftSector)
-    if (lift) activate(lift)
+    if (lift) activate(lift, carrier.keys)
   }
 
   // Bodies are the player and every creature, so a closing door reverses off
@@ -160,7 +193,7 @@ function step(): void {
   updateMovers(LEVEL_1, movers, [player, ...actors], STEP)
 
   const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
-  if (outcome.damage > 0) health = Math.max(0, health - outcome.damage)
+  if (outcome.damage > 0) carrier.health = Math.max(0, carrier.health - outcome.damage)
 }
 
 let previous = performance.now()
@@ -170,7 +203,7 @@ let totalFrames = 0
 let fpsAt = previous
 let fps = 0
 
-/** Rebuilt each frame: the pickups, plus every creature where it now stands. */
+/** Rebuilt each frame: what is still on the floor, plus every creature. */
 const visible: Billboard[] = []
 
 function frame(now: number): void {
@@ -202,7 +235,9 @@ function frame(now: number): void {
   renderView(fb, LEVEL_1, view, surface.cellAspect, { horizonShift })
 
   visible.length = 0
-  for (const pickup of LEVEL_1_PICKUPS) visible.push(pickup)
+  for (const pickup of LEVEL_1_PICKUPS) {
+    if (!pickup.taken) visible.push(pickup)
+  }
   for (const actor of actors) {
     // Lit by the sector it stands in, the way the original lights a thing.
     visible.push(billboardOf(actor, LEVEL_1.sectors[actor.sector]?.light ?? 0.5))
@@ -223,25 +258,31 @@ function frame(now: number): void {
     color: flash > 0 ? vec3(1, 0.95, 0.6) : vec3(0.55, 0.55, 0.6),
   })
 
-  const sector = LEVEL_1.sectors[player.sector]
-  // Laid out rather than positioned by hand: at phone width the three pieces
-  // ran into each other and the floor's own glyphs filled the space between,
-  // so the whole row read as one string. What does not fit is dropped, weakest
-  // first, and health never is.
-  const colors: Record<string, [number, number, number]> = {
-    health: health > 40 ? [0.95, 0.85, 0.5] : [1, 0.4, 0.35],
-    weapon: [0.8, 0.78, 0.6],
-    place: [0.45, 0.45, 0.5],
+  if (noticeTime > 0 && notice !== '') {
+    drawText(fb, centre, 1, notice, { color: vec3(0.95, 0.9, 0.7), align: 'center' })
   }
+
+  const sector = LEVEL_1.sectors[player.sector]
+  const keys = [...carrier.keys].join(' ')
   const line = layoutHud(fb.width, [
-    { text: `${health}`, align: 'left', priority: 3 },
-    { text: `${weapon.name} ${ammo[weaponIndex]}`, align: 'left', priority: 2 },
+    { text: `${carrier.health}`, align: 'left', priority: 4 },
+    { text: `${weapon.name} ${carrier.ammo[weaponIndex]}`, align: 'left', priority: 3 },
+    { text: keys === '' ? '' : `keys ${keys}`, align: 'left', priority: 2 },
     { text: `${sector?.tag ?? '?'} · ${fps.toFixed(0)} fps`, align: 'right', priority: 1 },
   ])
   for (const piece of line) {
-    const key = piece.align === 'right' ? 'place' : piece.text.includes(' ') ? 'weapon' : 'health'
-    const [r, g, b] = colors[key]!
-    drawText(fb, piece.col, fb.height - 1, piece.text, { color: vec3(r, g, b), align: piece.align })
+    if (piece.text === '') continue
+    const color =
+      piece.align === 'right'
+        ? vec3(0.45, 0.45, 0.5)
+        : piece.text.startsWith('keys')
+          ? vec3(1.2, 0.95, 0.45)
+          : piece.text.includes(' ')
+            ? vec3(0.8, 0.78, 0.6)
+            : carrier.health > 40
+              ? vec3(0.95, 0.85, 0.5)
+              : vec3(1, 0.4, 0.35)
+    drawText(fb, piece.col, fb.height - 1, piece.text, { color, align: piece.align })
   }
 
   surface.present(fb)
@@ -264,14 +305,16 @@ function frame(now: number): void {
     angle: player.angle,
     sector: player.sector,
     tag: sector?.tag ?? null,
-    health,
+    health: carrier.health,
     awake: actors.filter((actor) => actor.awake).length,
     alive: actors.filter((actor) => isAlive(actor)).length,
     weapon: weapon.name,
-    ammo: ammo[weaponIndex],
+    ammo: carrier.ammo[weaponIndex],
     shotsFired,
     pelletsLanded,
     kills,
+    keys: [...carrier.keys],
+    pickupsLeft: LEVEL_1_PICKUPS.filter((pickup) => !pickup.taken).length,
     doorState: movers[0]?.state ?? null,
     doorHeight: LEVEL_1.sectors[movers[0]?.sector ?? 0]?.ceiling ?? null,
     liftHeight: LEVEL_1.sectors[liftSector]?.floor ?? null,
