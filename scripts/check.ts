@@ -27,7 +27,7 @@ import {
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
-import { makeGoal, reachExit, summaryLines } from '../src/game/exit.ts'
+import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -966,6 +966,35 @@ test('the clock counts the level and not the summary', () => {
   close(goal.elapsed, atFinish, 1e-9, 'the clock kept running after the level ended')
 })
 
+test('the summary fits the screen it is shown on', () => {
+  // The gap I left and wrote down: nothing drives the player to the exit, so
+  // this screen has never been looked at. The risk is not the wide grid but the
+  // narrow one — at 49 columns the longest of these lines is most of the width,
+  // and centring it carelessly starts it off the left edge.
+  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3 })
+
+  for (const [width, height] of [
+    [163, 50],
+    [49, 59],
+    [40, 24],
+  ] as const) {
+    const placed = summaryLayout(width, height, lines)
+    assert(placed.length > 0, `nothing was placed on a ${width}x${height} grid`)
+
+    const rows = new Set<number>()
+    for (const piece of placed) {
+      assert(piece.col >= 0, `"${piece.text}" starts at column ${piece.col} on a ${width}-wide grid`)
+      assert(
+        piece.col + piece.text.length <= width,
+        `"${piece.text}" ends at ${piece.col + piece.text.length} on a ${width}-wide grid`,
+      )
+      assert(piece.row >= 0 && piece.row < height, `"${piece.text}" is on row ${piece.row} of ${height}`)
+      assert(!rows.has(piece.row), `two lines share row ${piece.row}`)
+      rows.add(piece.row)
+    }
+  }
+})
+
 test('the summary reads as a clock and a pair of counts', () => {
   const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3 })
   assert(lines.length === 4, `expected four lines, got ${lines.length}`)
@@ -1099,6 +1128,31 @@ test('nothing overlaps on a narrow one', () => {
     for (const [from, to] of spans) {
       assert(from >= 0 && to < width, `at ${width} columns a segment runs from ${from} to ${to}`)
     }
+  }
+})
+
+test('the real status line survives a phone once a key is held', () => {
+  // The other gap I wrote down. Every screenshot so far has had an empty keys
+  // segment, so what has actually been looked at is three items and not four.
+  // These are the four the game builds, at the width a phone gives.
+  const real: HudSegment[] = [
+    { text: '100', align: 'left', priority: 4 },
+    { text: 'scattergun 24', align: 'left', priority: 3 },
+    { text: 'keys amber', align: 'left', priority: 2 },
+    { text: 'chamber · 60 fps', align: 'right', priority: 1 },
+  ]
+  const placed = layoutHud(49, real)
+  const texts = placed.map((piece) => piece.text)
+
+  assert(texts.includes('100'), `health was dropped on a phone, leaving ${JSON.stringify(texts)}`)
+  assert(
+    texts.includes('keys amber') || !texts.includes('chamber · 60 fps'),
+    `the frame rate survived while the key did not: ${JSON.stringify(texts)}`,
+  )
+
+  const spans = placed.map(span).sort((a, b) => a[0] - b[0])
+  for (let i = 1; i < spans.length; i++) {
+    assert(spans[i]![0] > spans[i - 1]![1], `segments overlap on a phone: ${JSON.stringify(texts)}`)
   }
 })
 

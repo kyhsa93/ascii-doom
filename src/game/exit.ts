@@ -57,6 +57,45 @@ export interface Tally {
   readonly supplies: number
 }
 
+/** A summary line, already placed. */
+export interface PlacedLine {
+  readonly text: string
+  /** Leftmost column, resolved here so nothing downstream repeats the centring. */
+  readonly col: number
+  readonly row: number
+}
+
+/**
+ * Places the summary on a grid.
+ *
+ * Separated from the page for the same reason the status line was: a summary
+ * that fits on a wide screen and runs off a narrow one is a thing with a right
+ * answer, and the page is the one place a check cannot look. On a 49-column
+ * phone grid the longest of these lines is most of the width, so centring it
+ * carelessly pushes its left edge off the screen.
+ *
+ * The column returned is the left edge rather than the centre, so the caller
+ * draws left-aligned and the centring rule lives in exactly one place. Lines
+ * that will not fit vertically are dropped rather than drawn off the bottom.
+ */
+export function summaryLayout(width: number, height: number, lines: readonly string[]): PlacedLine[] {
+  const spacing = 2
+  const tall = (lines.length - 1) * spacing + 1
+  const top = Math.max(0, Math.floor((height - tall) / 2))
+  const placed: PlacedLine[] = []
+
+  for (let index = 0; index < lines.length; index++) {
+    const text = lines[index]!
+    const row = top + index * spacing
+    if (row >= height) break
+    // Clamped, so a line wider than the grid loses its right-hand end rather
+    // than starting off the left of it.
+    const col = Math.max(0, Math.floor((width - text.length) / 2))
+    placed.push({ text, col, row })
+  }
+  return placed
+}
+
 /**
  * The summary as lines of text, longest-lived first.
  *

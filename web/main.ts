@@ -17,7 +17,7 @@ import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
-import { makeGoal, reachExit, summaryLines } from '../src/game/exit.ts'
+import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import { activate, makeMover, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
@@ -285,11 +285,12 @@ function frame(now: number): void {
       collected: LEVEL_1_PICKUPS.filter((pickup) => pickup.taken).length,
       supplies: LEVEL_1_PICKUPS.length,
     })
-    const top = Math.max(1, Math.floor(fb.height / 2) - lines.length)
-    lines.forEach((text, index) => {
-      drawText(fb, centre, top + index * 2, text, {
+    // Placed by the same function a check can run, and drawn left-aligned at
+    // the column it returns — the centring rule lives in one place rather than
+    // here and in whatever measures it.
+    summaryLayout(fb.width, fb.height, lines).forEach((piece, index) => {
+      drawText(fb, piece.col, piece.row, piece.text, {
         color: index === 0 ? vec3(1.2, 1, 0.6) : vec3(0.85, 0.85, 0.8),
-        align: 'center',
       })
     })
   }
