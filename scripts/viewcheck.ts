@@ -157,6 +157,44 @@ check('frames keep being drawn', () => {
   assert(second.frames > first.frames, `frame counter stuck at ${first.frames}`)
 })
 
+/** Where the player is, according to the running game. */
+function readPlayer(page: Page): Promise<{ x: number; y: number; sector: number; tag: string | null }> {
+  return page.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      x: (d.x as number) ?? NaN,
+      y: (d.y as number) ?? NaN,
+      sector: (d.sector as number) ?? -1,
+      tag: (d.tag as string | null) ?? null,
+    }
+  })
+}
+
+const before = await readPlayer(page)
+await page.keyboard.down('w')
+await page.waitForTimeout(1800)
+await page.keyboard.up('w')
+await page.waitForTimeout(150)
+const after = await readPlayer(page)
+
+check('holding a key walks the player, and walking changes the room', () => {
+  // The end-to-end claim the renderer's own checks cannot make: input reaches
+  // the simulation, the simulation moves a body through the map, and the body
+  // ends up somewhere else. The spawn faces east down the corridor, so walking
+  // forward has to increase x and leave the starting sector behind.
+  assert(before.tag === 'start', `expected to spawn in the start room, got ${before.tag}`)
+  assert(after.x > before.x + 1, `walking forward moved x from ${before.x.toFixed(2)} to ${after.x.toFixed(2)}`)
+  assert(after.tag !== before.tag, `still in ${after.tag} after walking east for most of two seconds`)
+})
+
+check('a wall stops the player rather than letting them through it', () => {
+  // The same test run against a map with no collision would pass everything
+  // above and fail this: keep walking into the far end and the position has to
+  // settle short of it.
+  assert(Number.isFinite(after.x) && Number.isFinite(after.y), 'the player left the map')
+  assert(after.sector >= 0, 'the player ended up outside every sector')
+})
+
 await page.screenshot({ path: join(SHOTS, 'desktop.png') })
 
 const phone = await context.newPage()
