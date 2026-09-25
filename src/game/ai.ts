@@ -73,6 +73,17 @@ export interface Actor extends Body {
   angle: number
   /** Set once it has noticed the target; a woken creature does not go back to sleep. */
   awake: boolean
+  /**
+   * Index of another creature it would rather be fighting, or -1 for the player.
+   *
+   * Set when something other than the player hurts it. The original's monsters
+   * turn on each other this way, and it is most of what makes a room full of
+   * them worth walking away from rather than shooting into.
+   *
+   * An index rather than a reference, to match how a projectile names its
+   * owner; the caller passes the same array every tick either way.
+   */
+  grudge: number
 }
 
 export function spawnActor(kind: ActorKind, x: number, y: number, sector: number, floor: number): Actor {
@@ -89,6 +100,24 @@ export function spawnActor(kind: ActorKind, x: number, y: number, sector: number
     timer: 0,
     angle: 0,
     awake: false,
+    grudge: -1,
+  }
+}
+
+/**
+ * Points a creature at another one.
+ *
+ * Called by whoever worked out that something other than the player did the
+ * hurting — this module never learns that on its own, because the thing that
+ * knows is the impact, and the impact belongs to the caller.
+ */
+export function provoke(actor: Actor, attacker: number): void {
+  if (actor.state === 'dead' || actor.state === 'dying') return
+  actor.grudge = attacker
+  actor.awake = true
+  if (actor.state === 'dormant') {
+    actor.state = 'chasing'
+    actor.timer = 0
   }
 }
 
@@ -134,8 +163,17 @@ export function updateActors(
   for (const actor of actors) {
     if (actor.state === 'dead') continue
 
-    const dx = target.x - actor.x
-    const dy = target.y - actor.y
+    // Who this one is actually after. A grudge outranks the player, and lapses
+    // the moment its object stops being worth fighting — otherwise a creature
+    // would stand over a corpse forever while you shot it in the back.
+    const wanted = actor.grudge >= 0 ? actors[actor.grudge] : undefined
+    const fighting = wanted !== undefined && wanted !== actor && isAlive(wanted)
+    if (actor.grudge >= 0 && !fighting) actor.grudge = -1
+    const aim: Body = fighting ? wanted : target
+    const aimEye = fighting ? wanted.kind.eye : targetEye
+
+    const dx = aim.x - actor.x
+    const dy = aim.y - actor.y
     const distance = Math.hypot(dx, dy)
     const facing = Math.atan2(dy, dx)
 
@@ -159,9 +197,9 @@ export function updateActors(
         actor.x,
         actor.y,
         actor.floor + actor.kind.eye,
-        target.x,
-        target.y,
-        target.floor + targetEye,
+        aim.x,
+        aim.y,
+        aim.floor + aimEye,
         scratchHits,
       )
 
@@ -192,8 +230,12 @@ export function updateActors(
       // committed, so closing on a shooter mid-wind-up gets you clubbed and
       // backing away from a brawler gets you shot at by anything that can.
       const ranged = actor.kind.ranged
-      if (distance <= actor.kind.reach + target.radius && canSee) {
-        damage += actor.kind.damage
+      if (distance <= actor.kind.reach + aim.radius && canSee) {
+        // Only the player's share is reported. A creature clawing another
+        // creature must not turn up in the number the page subtracts from your
+        // health, which is the one way this could go quietly and badly wrong.
+        if (fighting) damageActor(wanted, actor.kind.damage, options.random ?? Math.random)
+        else damage += actor.kind.damage
       } else if (ranged && canSee && distance <= ranged.range) {
         shots.push(
           spawnProjectile(
@@ -217,7 +259,7 @@ export function updateActors(
     if (canSee) actor.angle = facing
 
     const ranged = actor.kind.ranged
-    const inMelee = distance <= actor.kind.reach + target.radius
+    const inMelee = distance <= actor.kind.reach + aim.radius
     const inShot = ranged !== undefined && distance <= ranged.range
     if (canSee && (inMelee || inShot) && actor.timer <= 0) {
       actor.state = 'winding'

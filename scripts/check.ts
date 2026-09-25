@@ -44,6 +44,7 @@ import {
   updateActors,
   type Actor,
   type ActorKind,
+  provoke,
   type ActorState,
 } from '../src/game/ai.ts'
 import { collect, isUseful, type Carrier, type Pickup } from '../src/game/pickups.ts'
@@ -656,6 +657,53 @@ test('pain chance decides whether a hit interrupts, and death always does', () =
   const killed = damageActor(dying, DUMMY.health, () => 0.99)
   assert(killed, 'the killing blow was not reported as one')
   assert(dying.state === 'dying', `a creature at zero health is ${dying.state}`)
+})
+
+test('a creature turned on another one goes for it instead of you', () => {
+  // The thing the README said was missing. Everything needed was already
+  // there — the impact knows who fired, the damage knows who was hit — so this
+  // is a grudge on the creature and a target resolved through it, not a second
+  // kind of enemy.
+  const player = bodyAt(16, 4)
+  const angry = actorAt(20, 4, Math.PI)
+  const victim = actorAt(24, 4, Math.PI)
+  angry.state = 'chasing'
+
+  const toPlayer = Math.hypot(angry.x - player.x, angry.y - player.y)
+  const toVictim = Math.hypot(angry.x - victim.x, angry.y - victim.y)
+
+  provoke(angry, 1)
+  simulate([angry, victim], player, 1.2)
+
+  const nowPlayer = Math.hypot(angry.x - player.x, angry.y - player.y)
+  const nowVictim = Math.hypot(angry.x - victim.x, angry.y - victim.y)
+  assert(nowVictim < toVictim - 0.5, `it did not close on the creature it was provoked by (${toVictim.toFixed(2)} to ${nowVictim.toFixed(2)})`)
+  assert(nowPlayer > toPlayer, 'it walked toward the player while holding a grudge against something else')
+})
+
+test('a grudge lapses when the thing it is against dies', () => {
+  // Otherwise a creature stands over a corpse indefinitely while you shoot it
+  // in the back, which is worse than it sounds: the level stops fighting you.
+  const player = bodyAt(16, 4)
+  const angry = actorAt(20, 4, Math.PI)
+  const victim = actorAt(24, 4, Math.PI)
+  angry.state = 'chasing'
+
+  provoke(angry, 1)
+  damageActor(victim, 9999, () => 0.99)
+  simulate([angry, victim], player, 2)
+
+  assert(angry.grudge === -1, `the grudge survived its object, still pointing at ${angry.grudge}`)
+})
+
+test('hurting the player creates no grudge', () => {
+  // The default is the player and stays the player. A creature that could be
+  // provoked by the person it is already hunting would forget what it was
+  // doing every time it landed a blow.
+  const angry = actorAt(20, 4, Math.PI)
+  assert(angry.grudge === -1, 'a creature spawned already angry at something')
+  damageActor(angry, 1, () => 0.99)
+  assert(angry.grudge === -1, 'being hurt set a grudge by itself')
 })
 
 test('the dead stop acting', () => {

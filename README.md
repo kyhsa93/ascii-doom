@@ -18,8 +18,10 @@ spread, doors and lifts, supplies you walk over, a key and a door that asks for
 it, and an exit that ends the level and tallies what you did.
 
 A bolt hits anything that is not the thing that fired it, so a shot that goes
-wide lands on whatever was behind you. Creatures do not yet turn on each other
-when that happens — the damage crosses over, the grudge does not.
+wide lands on whatever was behind you — and whatever it lands on turns on
+whoever threw it. Two creatures that have started on each other keep at it
+until one of them is dead, and walking away from that is often the better move.
+The grudge lapses when its object dies, and then they remember you.
 
 The map is one loop: the key lies in the hall, the key opens the north door,
 the door leads to a chamber, the lift is the only way onto the ledge, and the

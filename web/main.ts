@@ -16,7 +16,15 @@ import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
-import { billboardOf, damageActor, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
+import {
+  billboardOf,
+  damageActor,
+  isAlive,
+  provoke,
+  spawnActor,
+  updateActors,
+  type Actor,
+} from '../src/game/ai.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
@@ -228,7 +236,14 @@ function step(): void {
       carrier.health = Math.max(0, carrier.health - impact.projectile.kind.damage)
     } else if (impact.body >= 0) {
       const struck = actors[impact.body]
-      if (struck) damageActor(struck, impact.projectile.kind.damage)
+      if (struck) {
+        damageActor(struck, impact.projectile.kind.damage)
+        // Whoever fired it just made an enemy. Only the impact knows both
+        // ends of that, which is why the grudge is set here rather than
+        // inside the creature rules.
+        const owner = impact.projectile.owner
+        if (owner >= 0 && owner < actors.length && owner !== impact.body) provoke(struck, owner)
+      }
     }
   }
   sweep(projectiles)
