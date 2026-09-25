@@ -170,6 +170,7 @@ function readPlayer(page: Page): Promise<{
   keys: string[]
   complete: boolean | null
   elapsed: number
+  inFlight: number
   alive: number
   ammo: number
   shotsFired: number
@@ -196,6 +197,7 @@ function readPlayer(page: Page): Promise<{
       keys: (d.keys as string[]) ?? [],
       complete: (d.complete as boolean) ?? null,
       elapsed: (d.elapsed as number) ?? -1,
+      inFlight: (d.inFlight as number) ?? -1,
     }
   })
 }
@@ -250,6 +252,17 @@ check('pulling the trigger fires and spends ammunition', () => {
     `ammunition stayed at ${beforeFiring.ammo} after firing ${afterFiring.shotsFired - beforeFiring.shotsFired} shots`,
   )
   assert(afterFiring.ammo >= 0, `ammunition went negative: ${afterFiring.ammo}`)
+})
+
+check('nothing is in flight before anything has been thrown', () => {
+  // Deliberately not "a bolt is in the air by now". The only creature that
+  // throws them stands deep in the hall and the walk above never gets near it,
+  // so anything stronger would be false or would depend on how far the machine
+  // managed to walk. What this does say is that the list exists, is wired into
+  // the frame, and starts empty — the flight rules themselves are checked in
+  // Node, where a bolt can be fired at a wall on purpose.
+  assert(beforeFiring.inFlight >= 0, 'the page reports nothing about projectiles at all')
+  assert(beforeFiring.inFlight === 0, `${beforeFiring.inFlight} projectiles existed before anything fired`)
 })
 
 check('the level is running and not yet finished', () => {

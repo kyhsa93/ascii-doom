@@ -16,12 +16,13 @@ import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
-import { billboardOf, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
+import { billboardOf, damageActor, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import { activate, makeMover, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
+import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
 import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
 import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
@@ -66,6 +67,18 @@ const carrier: Carrier = {
   ammoMax: [120, 48],
   keys: new Set<string>(),
 }
+
+/**
+ * Everything in flight.
+ *
+ * Collision is resolved against `[...actors, player]` in that order, because a
+ * projectile records its owner as an index into the actor list and those
+ * indices have to keep meaning the same thing. The player being last is what
+ * lets one array answer both "did it hit you" and "did it hit something else" —
+ * and the second of those is creatures hurting each other, which falls out of
+ * "hits anything that is not its owner" rather than being written anywhere.
+ */
+const projectiles: Projectile[] = []
 
 let weaponIndex = 0
 let cooldown = 0
@@ -204,6 +217,21 @@ function step(): void {
 
   const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
   if (outcome.damage > 0) carrier.health = Math.max(0, carrier.health - outcome.damage)
+  for (const shot of outcome.shots) projectiles.push(shot)
+
+  const targets = [...actors, player]
+  for (const impact of updateProjectiles(LEVEL_1, projectiles, targets, STEP, (index) => {
+    const actor = actors[index]
+    return actor === undefined || isAlive(actor)
+  })) {
+    if (impact.body === actors.length) {
+      carrier.health = Math.max(0, carrier.health - impact.projectile.kind.damage)
+    } else if (impact.body >= 0) {
+      const struck = actors[impact.body]
+      if (struck) damageActor(struck, impact.projectile.kind.damage)
+    }
+  }
+  sweep(projectiles)
 
   // Last, so that walking into the exit on this step counts on this step.
   if (reachExit(goal, player.sector, STEP)) say('level complete')
@@ -254,6 +282,19 @@ function frame(now: number): void {
   for (const actor of actors) {
     // Lit by the sector it stands in, the way the original lights a thing.
     visible.push(billboardOf(actor, LEVEL_1.sectors[actor.sector]?.light ?? 0.5))
+  }
+  for (const shot of projectiles) {
+    if (!shot.alive) continue
+    // Drawn at full brightness whatever room it is crossing: a bolt is its own
+    // light, and one that dims with the sector reads as a smudge on the wall
+    // behind it rather than as something coming at you.
+    visible.push({
+      x: shot.x,
+      y: shot.y,
+      z: shot.z - shot.kind.sprite.height / 2,
+      light: 1,
+      sprite: shot.kind.sprite,
+    })
   }
   // After the world, so the depth it wrote decides what is hidden.
   drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
@@ -348,6 +389,7 @@ function frame(now: number): void {
     kills,
     keys: [...carrier.keys],
     pickupsLeft: LEVEL_1_PICKUPS.filter((pickup) => !pickup.taken).length,
+    inFlight: projectiles.length,
     complete: goal.reached,
     elapsed: goal.elapsed,
     doorState: movers[0]?.state ?? null,

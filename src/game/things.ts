@@ -108,6 +108,24 @@ export const DRIFTER: Sprite = {
   height: 1.6,
 }
 
+/**
+ * What a drifter throws: a small knot of light with a tail.
+ *
+ * Six cells across is enough at the distance it is met, and the tail is what
+ * says which way it is going — a symmetrical blob in a character grid reads as
+ * an object hanging in the air rather than as something coming at you.
+ */
+export const BOLT: Sprite = {
+  rows: [
+    ' ,-() ',
+    '===**>',
+    " '-() ",
+  ],
+  tint: [1.35, 1.1, 0.6],
+  width: 0.4,
+  height: 0.35,
+}
+
 /** A canister of charge. Small and bright, unmistakably not a creature. */
 export const CANISTER: Sprite = {
   rows: [
@@ -307,6 +325,12 @@ export const DRIFTER_KIND: ActorKind = {
   painTime: 0.35,
   painChance: 0.8,
   deathTime: 0.4,
+  // The one that does not have to reach you. Slow bolts, so they are something
+  // to step out of the way of rather than something that has already landed.
+  ranged: {
+    projectile: { sprite: BOLT, speed: 9, damage: 8, life: 4 },
+    range: 18,
+  },
 }
 
 /** Where the creatures start, before anything has noticed you. */
@@ -337,6 +361,7 @@ export const ALL_SPRITES: Record<string, Sprite> = {
   CANISTER,
   KIT,
   KEY_TOKEN,
+  BOLT,
   CRAWLER_DOWN,
   SENTRY_DOWN,
   DRIFTER_DOWN,

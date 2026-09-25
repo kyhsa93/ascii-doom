@@ -17,6 +17,7 @@
 import { lineOfSight, type Level, type RayHit } from '../columns/level.ts'
 import type { Billboard, Sprite } from '../columns/sprite.ts'
 import { moveBody, type Body } from './player.ts'
+import { spawnProjectile, type Projectile, type ProjectileKind } from './projectiles.ts'
 
 export type ActorState = 'dormant' | 'waking' | 'chasing' | 'winding' | 'hurt' | 'dying' | 'dead'
 
@@ -48,6 +49,18 @@ export interface ActorKind {
   readonly painChance: number
   /** Seconds the death animation holds before the corpse settles. */
   readonly deathTime: number
+  /**
+   * What it throws, for the ones that do not have to close the distance.
+   *
+   * A creature with this still prefers its claws when you are inside `reach` —
+   * the choice is made when the blow lands rather than when it is decided, so
+   * walking into a shooter during its wind-up gets you clubbed instead.
+   */
+  readonly ranged?: {
+    readonly projectile: ProjectileKind
+    /** How far it will shoot from. Beyond this it keeps walking. */
+    readonly range: number
+  }
 }
 
 export interface Actor extends Body {
@@ -79,10 +92,12 @@ export function spawnActor(kind: ActorKind, x: number, y: number, sector: number
   }
 }
 
-/** What the creatures did to the player this step. */
+/** What the creatures did this step. */
 export interface ActorOutcome {
-  /** Total damage landed on the target. */
+  /** Total damage landed on the target by claws and teeth. */
   damage: number
+  /** Anything thrown, for the caller to add to whatever it keeps in flight. */
+  shots: Projectile[]
 }
 
 export interface UpdateOptions {
@@ -114,6 +129,7 @@ export function updateActors(
 ): ActorOutcome {
   const wakeCone = options.wakeCone ?? Math.PI * 0.75
   let damage = 0
+  const shots: Projectile[] = []
 
   for (const actor of actors) {
     if (actor.state === 'dead') continue
@@ -171,7 +187,26 @@ export function updateActors(
       // The blow lands now, and only if you are still there to be hit. Backing
       // out of reach during the wind-up is the whole of how a melee creature is
       // played around.
-      if (distance <= actor.kind.reach + target.radius && canSee) damage += actor.kind.damage
+      //
+      // Which attack it turns out to be is decided here rather than when it was
+      // committed, so closing on a shooter mid-wind-up gets you clubbed and
+      // backing away from a brawler gets you shot at by anything that can.
+      const ranged = actor.kind.ranged
+      if (distance <= actor.kind.reach + target.radius && canSee) {
+        damage += actor.kind.damage
+      } else if (ranged && canSee && distance <= ranged.range) {
+        shots.push(
+          spawnProjectile(
+            ranged.projectile,
+            actor.x,
+            actor.y,
+            actor.floor + actor.kind.eye,
+            facing,
+            actor.sector,
+            actors.indexOf(actor),
+          ),
+        )
+      }
       actor.state = 'chasing'
       actor.timer = actor.kind.recovery
       continue
@@ -181,11 +216,17 @@ export function updateActors(
     actor.timer = Math.max(0, actor.timer - dt)
     if (canSee) actor.angle = facing
 
-    if (canSee && distance <= actor.kind.reach + target.radius && actor.timer <= 0) {
+    const ranged = actor.kind.ranged
+    const inMelee = distance <= actor.kind.reach + target.radius
+    const inShot = ranged !== undefined && distance <= ranged.range
+    if (canSee && (inMelee || inShot) && actor.timer <= 0) {
       actor.state = 'winding'
       actor.timer = actor.kind.windUp
       continue
     }
+    // A shooter that can already see you has no reason to close, so only the
+    // ones with nothing to throw keep walking once they are in range.
+    if (inShot && canSee) continue
 
     if (distance > 1e-6) {
       const step = actor.kind.speed * dt
@@ -200,7 +241,7 @@ export function updateActors(
     }
   }
 
-  return { damage }
+  return { damage, shots }
 }
 
 /** Wakes a creature, whether it saw you or you shot it in the back. */

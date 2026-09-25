@@ -47,6 +47,13 @@ import {
   type ActorState,
 } from '../src/game/ai.ts'
 import { collect, isUseful, type Carrier, type Pickup } from '../src/game/pickups.ts'
+import {
+  spawnProjectile,
+  sweep,
+  updateProjectiles,
+  type Projectile,
+  type ProjectileKind,
+} from '../src/game/projectiles.ts'
 import { PLAYER_RADIUS, moveBody, spawnPlayer, type Body } from '../src/game/player.ts'
 import { ALL_SPRITES, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 
@@ -427,6 +434,84 @@ test('firing damages what it hits, and a cone spreads', () => {
   const spread = fire(LEVEL_1, wide, SCATTERGUN, [], 1.6, () => (roll++ % 2 === 0 ? 0 : 1))
   const ys = new Set(spread.ends.map((end) => end.y.toFixed(2)))
   assert(ys.size > 1, 'every pellet of a spread weapon landed in the same place')
+})
+
+console.log('\nthings in flight')
+
+const BOLT: ProjectileKind = { sprite: DUMMY_ART, speed: 12, damage: 6, life: 4 }
+
+/**
+ * Reads a length without letting the compiler narrow it.
+ *
+ * Third time in this file. Asserting `list.length === 2` narrows that
+ * expression to the literal 2, so a later comparison against any other number
+ * is reported as impossible — even though the call in between changes it.
+ */
+function countOf(list: readonly unknown[]): number {
+  return list.length
+}
+
+/** Runs a flight for a while and hands back everything it hit. */
+function fly(projectiles: Projectile[], bodies: ShotBody[], seconds: number): ReturnType<typeof updateProjectiles> {
+  const dt = 1 / 60
+  const all: ReturnType<typeof updateProjectiles> = []
+  for (let t = 0; t < seconds; t += dt) {
+    for (const impact of updateProjectiles(LEVEL_1, projectiles, bodies, dt)) all.push(impact)
+  }
+  return all
+}
+
+test('a bolt stops at the wall the map says is there', () => {
+  // The same twenty-four units the sight line and the hitscan both find, now
+  // travelled over time. Reusing the traced step rather than writing a second
+  // collision path is what makes that agreement automatic.
+  const bolt = spawnProjectile(BOLT, 2, 3, 1.6, 0, sectorAt(LEVEL_1, 2, 3), -1)
+  const impacts = fly([bolt], [], 5)
+  assert(impacts.length === 1, `expected one impact, got ${impacts.length}`)
+  assert(impacts[0]!.body === -1, 'the bolt reported hitting a body in an empty corridor')
+  close(impacts[0]!.x, 26, 0.2, 'where the bolt stopped')
+  assert(!bolt.alive, 'the bolt survived hitting a wall')
+})
+
+test('a bolt does not hit whoever fired it', () => {
+  // Creatures stand inside their own radius at the moment they shoot, so
+  // without this every ranged attack detonates on its author.
+  const shooter: ShotBody = { x: 2, y: 3, radius: 0.45 }
+  const bolt = spawnProjectile(BOLT, 2, 3, 1.6, 0, sectorAt(LEVEL_1, 2, 3), 0)
+  const impacts = fly([bolt], [shooter], 5)
+  assert(impacts.length === 1 && impacts[0]!.body === -1, 'the bolt hit its own shooter')
+})
+
+test('a bolt hits the nearest thing in its way', () => {
+  const near: ShotBody = { x: 10, y: 3, radius: 0.45 }
+  const far: ShotBody = { x: 16, y: 3, radius: 0.45 }
+  const bolt = spawnProjectile(BOLT, 2, 3, 1.6, 0, sectorAt(LEVEL_1, 2, 3), -1)
+  const impacts = fly([bolt], [far, near], 5)
+  assert(impacts.length === 1, `expected one impact, got ${impacts.length}`)
+  assert(impacts[0]!.body === 1, 'the bolt passed through the near body to reach the far one')
+})
+
+test('a bolt that hits nothing gives up rather than flying forever', () => {
+  // Without a life, a projectile aimed down a long open sector keeps costing a
+  // trace every frame for as long as the level is loaded.
+  const brief: ProjectileKind = { ...BOLT, life: 0.2, speed: 2 }
+  const bolt = spawnProjectile(brief, 16, 8, 1.6, Math.PI / 2, sectorAt(LEVEL_1, 16, 8), -1)
+  const impacts = fly([bolt], [], 1)
+  assert(impacts.length === 0, 'a bolt that ran out of time reported an impact')
+  assert(!bolt.alive, 'the bolt is still in flight after its life ran out')
+})
+
+test('spent bolts are swept, and only when asked', () => {
+  // They are left in the array while flying so that drawing them can iterate
+  // the same list without entries vanishing underneath it.
+  const bolts = [
+    spawnProjectile(BOLT, 2, 3, 1.6, 0, sectorAt(LEVEL_1, 2, 3), -1),
+    spawnProjectile(BOLT, 2, 3, 1.6, 0, sectorAt(LEVEL_1, 2, 3), -1),
+  ]
+  fly(bolts, [], 5)
+  assert(countOf(bolts) === 2, 'the update removed entries while they were being iterated')
+  sweep(bolts)
+  assert(countOf(bolts) === 0, `sweeping left ${bolts.length} spent bolts behind`)
 })
 
 console.log('\ncreatures')
