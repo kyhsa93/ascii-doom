@@ -8,10 +8,30 @@ Play it at <https://kyhsa93.github.io/ascii-doom/>.
 ## What this is
 
 The rendering techniques and gameplay systems of the 1993 shooter, implemented
-against a character grid: a sector-based level, a column renderer for walls,
+against a character grid.
+
+What is in it now: a sector-based level, a column renderer for walls with
 horizontal spans for floors and ceilings, light that falls off with distance,
-billboard sprites, hitscan and projectile weapons, doors, lifts, keys and
-switches.
+billboard creatures that wake when they see you and swing when they reach you,
+hitscan weapons with spread, doors and lifts, supplies you walk over, a key and
+a door that asks for it, and an exit that ends the level and tallies what you
+did.
+
+The map is one loop: the key lies in the hall, the key opens the north door,
+the door leads to a chamber, the lift is the only way onto the ledge, and the
+ledge opens onto the way out.
+
+## Controls
+
+| | |
+| --- | --- |
+| `W` `A` `S` `D` | move and strafe |
+| `←` `→` | turn |
+| `↑` `↓` | look up and down |
+| `Shift` | run |
+| `Space` | fire |
+| `1` `2` | sidearm, scattergun |
+| `E` | open what you are facing |
 
 **All content is original.** The levels, the creatures, the weapons, the
 textures and the names are written for this project. Nothing is extracted from

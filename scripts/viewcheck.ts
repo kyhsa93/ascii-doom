@@ -168,6 +168,8 @@ function readPlayer(page: Page): Promise<{
   doorState: string | null
   pickupsLeft: number
   keys: string[]
+  complete: boolean | null
+  elapsed: number
   alive: number
   ammo: number
   shotsFired: number
@@ -192,6 +194,8 @@ function readPlayer(page: Page): Promise<{
       doorState: (d.doorState as string | null) ?? null,
       pickupsLeft: (d.pickupsLeft as number) ?? -1,
       keys: (d.keys as string[]) ?? [],
+      complete: (d.complete as boolean) ?? null,
+      elapsed: (d.elapsed as number) ?? -1,
     }
   })
 }
@@ -246,6 +250,23 @@ check('pulling the trigger fires and spends ammunition', () => {
     `ammunition stayed at ${beforeFiring.ammo} after firing ${afterFiring.shotsFired - beforeFiring.shotsFired} shots`,
   )
   assert(afterFiring.ammo >= 0, `ammunition went negative: ${afterFiring.ammo}`)
+})
+
+check('the level is running and not yet finished', () => {
+  // Reaching the exit means finding the key in the hall, unlocking the north
+  // door, crossing the chamber, riding the lift and walking off the ledge —
+  // a long scripted walk that would fail for a dozen reasons having nothing to
+  // do with the goal. Arrival is checked in Node, where it is three lines.
+  //
+  // What the browser can claim honestly is that the goal exists, has not
+  // fired, and that its clock is actually advancing — which is the wiring, and
+  // the part Node cannot see.
+  assert(beforeFiring.complete !== null, 'the page reports no goal at all')
+  assert(beforeFiring.complete === false, 'the level reported itself finished at the start')
+  assert(
+    afterFiring.elapsed > beforeFiring.elapsed,
+    `the clock stayed at ${beforeFiring.elapsed} across two seconds of play`,
+  )
 })
 
 check('supplies are left alone while they would give nothing', () => {

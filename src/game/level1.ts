@@ -197,6 +197,24 @@ const SECTORS: SectorDef[] = [
     light: 1,
     tag: 'ledge',
   },
+  {
+    // The way out, past the ledge. Reaching it is the whole loop of the level:
+    // the key lies in the hall, the key opens the north door, the door leads to
+    // the chamber, the lift is the only way up to the ledge, and the ledge
+    // opens onto this. Its south edge repeats the ledge's north edge exactly,
+    // because two sectors share a wall only when they share an edge endpoint
+    // for endpoint.
+    polygon: [
+      [18, 23],
+      [22, 23],
+      [22, 26],
+      [18, 26],
+    ],
+    floor: 1.5,
+    ceiling: 4,
+    light: 1,
+    tag: 'exit',
+  },
 ]
 
 export const LEVEL_1: Level = buildLevel(SECTORS)

@@ -17,6 +17,7 @@ import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
+import { makeGoal, reachExit, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import { activate, makeMover, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
@@ -45,6 +46,10 @@ const movers: Mover[] = LEVEL_1_MOVERS.map((entry) => {
   return makeMover(sector, entry.kind)
 })
 const liftSector = sectorIndexByTag(LEVEL_1, 'lift')
+
+const exitSector = sectorIndexByTag(LEVEL_1, 'exit')
+if (exitSector < 0) throw new Error('the level has no exit')
+const goal = makeGoal(exitSector)
 
 /**
  * Everything the player is carrying, in one place.
@@ -109,6 +114,11 @@ const pressed = (...keys: string[]): boolean => keys.some((key) => held.has(key)
 const STEP = 1 / 60
 
 function step(): void {
+  // Once the level is over, everything stops together: no walking, no firing,
+  // no creatures closing in behind the summary. A world that carries on
+  // underneath a result screen is a world that can kill you after you have won.
+  if (goal.reached) return
+
   const running = pressed('Shift')
   const speed = (running ? RUN_SPEED : WALK_SPEED) * STEP
 
@@ -194,6 +204,9 @@ function step(): void {
 
   const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
   if (outcome.damage > 0) carrier.health = Math.max(0, carrier.health - outcome.damage)
+
+  // Last, so that walking into the exit on this step counts on this step.
+  if (reachExit(goal, player.sector, STEP)) say('level complete')
 }
 
 let previous = performance.now()
@@ -262,6 +275,25 @@ function frame(now: number): void {
     drawText(fb, centre, 1, notice, { color: vec3(0.95, 0.9, 0.7), align: 'center' })
   }
 
+  if (goal.reached) {
+    // Drawn over the frozen frame rather than replacing it, so the room you
+    // finished in is still behind the result.
+    const lines = summaryLines({
+      seconds: goal.elapsed,
+      kills,
+      creatures: actors.length,
+      collected: LEVEL_1_PICKUPS.filter((pickup) => pickup.taken).length,
+      supplies: LEVEL_1_PICKUPS.length,
+    })
+    const top = Math.max(1, Math.floor(fb.height / 2) - lines.length)
+    lines.forEach((text, index) => {
+      drawText(fb, centre, top + index * 2, text, {
+        color: index === 0 ? vec3(1.2, 1, 0.6) : vec3(0.85, 0.85, 0.8),
+        align: 'center',
+      })
+    })
+  }
+
   const sector = LEVEL_1.sectors[player.sector]
   const keys = [...carrier.keys].join(' ')
   const line = layoutHud(fb.width, [
@@ -315,6 +347,8 @@ function frame(now: number): void {
     kills,
     keys: [...carrier.keys],
     pickupsLeft: LEVEL_1_PICKUPS.filter((pickup) => !pickup.taken).length,
+    complete: goal.reached,
+    elapsed: goal.elapsed,
     doorState: movers[0]?.state ?? null,
     doorHeight: LEVEL_1.sectors[movers[0]?.sector ?? 0]?.ceiling ?? null,
     liftHeight: LEVEL_1.sectors[liftSector]?.floor ?? null,

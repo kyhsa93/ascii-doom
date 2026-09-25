@@ -27,6 +27,7 @@ import {
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
+import { makeGoal, reachExit, summaryLines } from '../src/game/exit.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -932,6 +933,49 @@ test('the use key finds the door you are facing and nothing else', () => {
 
   const away = sectorAt(LEVEL_1, 2, 3)
   assert(moverInFront(LEVEL_1, built, away, 2, 3, 0) === null, 'a door was found from the other end of the level')
+})
+
+console.log('\nfinishing')
+
+test('the exit fires once, and only in the right sector', () => {
+  // Everything hung on finishing a level wants to happen once — a summary
+  // appearing, a clock stopping, a sound. Making the edge this module's
+  // business rather than each caller's is what stops three of them disagreeing
+  // about whether the level is over.
+  const goal = makeGoal(7)
+
+  assert(reachExit(goal, 3, 1 / 60) === false, 'the exit fired in the wrong sector')
+  assert(!goal.reached, 'the goal was marked reached without reaching it')
+
+  assert(reachExit(goal, 7, 1 / 60) === true, 'arriving at the exit did not fire')
+  assert(goal.reached, 'arriving did not mark the goal reached')
+
+  assert(reachExit(goal, 7, 1 / 60) === false, 'the exit fired a second time')
+})
+
+test('the clock counts the level and not the summary', () => {
+  // The number shown afterwards is how long it took, not how long you have
+  // been looking at the result.
+  const goal = makeGoal(7)
+  for (let i = 0; i < 120; i++) reachExit(goal, 1, 1 / 60)
+  close(goal.elapsed, 2, 1e-9, 'two seconds of play')
+
+  reachExit(goal, 7, 1 / 60)
+  const atFinish = goal.elapsed
+  for (let i = 0; i < 300; i++) reachExit(goal, 7, 1 / 60)
+  close(goal.elapsed, atFinish, 1e-9, 'the clock kept running after the level ended')
+})
+
+test('the summary reads as a clock and a pair of counts', () => {
+  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3 })
+  assert(lines.length === 4, `expected four lines, got ${lines.length}`)
+  assert(lines[1]!.includes('1:35'), `ninety-five seconds rendered as ${JSON.stringify(lines[1])}`)
+  assert(lines[2]!.includes('3 / 5'), `kills rendered as ${JSON.stringify(lines[2])}`)
+  assert(lines[3]!.includes('2 / 3'), `supplies rendered as ${JSON.stringify(lines[3])}`)
+
+  // Under a minute still reads as a clock rather than as a bare number.
+  const quick = summaryLines({ seconds: 7, kills: 0, creatures: 1, collected: 0, supplies: 1 })
+  assert(quick[1]!.includes('0:07'), `seven seconds rendered as ${JSON.stringify(quick[1])}`)
 })
 
 console.log('\npickups')
