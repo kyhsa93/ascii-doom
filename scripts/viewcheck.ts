@@ -352,6 +352,31 @@ const padShown = await mobile.evaluate(() => {
   return pad !== null && getComputedStyle(pad).display !== 'none'
 })
 
+/**
+ * Where the grid ends and where the controls begin, in pixels.
+ *
+ * Measured rather than eyeballed because "the controls are visible" was true
+ * while the stick was sitting on the status line. The topmost edge of any
+ * control is what the grid has to stay above.
+ */
+const overlap = await mobile.evaluate(() => {
+  const screenEl = document.getElementById('screen')
+  if (!screenEl) return null
+  const probe = (window as unknown as { __doom?: Record<string, number> }).__doom ?? {}
+  const tops: number[] = []
+  for (const id of ['stick', 'fire', 'use', 'swap']) {
+    const element = document.getElementById(id)
+    if (element && getComputedStyle(element).display !== 'none') tops.push(element.getBoundingClientRect().top)
+  }
+  if (tops.length === 0) return null
+  return {
+    screenBottom: screenEl.getBoundingClientRect().bottom,
+    controlsTop: Math.min(...tops),
+    cols: probe.cols ?? 0,
+    rows: probe.rows ?? 0,
+  }
+})
+
 const beforeThumb = await readPlayer(mobile)
 // Push the stick straight up: down at its centre, then drag to its top edge.
 const stickBox = await mobile.locator('#stick').boundingBox()
@@ -374,6 +399,18 @@ const afterThumb = await readPlayer(mobile)
 check('a phone gets controls it can actually reach', () => {
   assert(padShown, 'the touch controls are hidden on a touch device')
   assert(stickBox !== null, 'there is no movement stick to put a thumb on')
+})
+
+check('the controls do not sit on top of the picture', () => {
+  // Asserted in pixels because "the controls are visible" was true while the
+  // stick was resting on the status line, and the bottom-left of that line is
+  // the health. A screenshot caught it; this is what would have.
+  assert(overlap !== null, 'could not measure the screen against the controls')
+  assert(
+    overlap.screenBottom <= overlap.controlsTop + 1,
+    `the grid runs ${(overlap.screenBottom - overlap.controlsTop).toFixed(0)}px under the controls`,
+  )
+  assert(overlap.rows > 30, `only ${overlap.rows} rows left once the controls were given their band`)
 })
 
 check('pushing the stick walks the player', () => {
@@ -426,7 +463,13 @@ try {
 
 console.log(
   `  grid ${first.cols}x${first.rows} cells, cell aspect ${first.cellAspect.toFixed(3)}, ` +
-    `phone ${small.cols}x${small.rows}`,
+    `phone ${small.cols}x${small.rows}` +
+    // The phone above has no touch, so the control band never applies to it and
+    // its row count says nothing about what a real handset gets. This is the
+    // one that does.
+    (overlap === null
+      ? ', touch layout unmeasured'
+      : `, touch ${overlap.cols}x${overlap.rows} with ${(overlap.controlsTop - overlap.screenBottom).toFixed(0)}px clear of the controls`),
 )
 
 await browser.close()

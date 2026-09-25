@@ -53,6 +53,20 @@ meant to.
 | `1` `2` `3` | sidearm, scattergun, launcher |
 | `E` | open what you are facing |
 
+On a touch screen the same controls appear as a stick and three buttons, and
+the keyboard ones keep working if there is one attached.
+
+| | |
+| --- | --- |
+| left stick | walk and strafe — pushed to its edge, run |
+| right half | drag to turn and look; it keeps turning while held out |
+| fire | shoot |
+| use | open what you are facing |
+| weapon | cycle to the next one |
+
+There is deliberately no run button. Pushing the stick all the way is the run,
+which is one gesture rather than two and leaves the other thumb for aiming.
+
 **All content is original.** The levels, the creatures, the weapons, the
 textures and the names are written for this project. Nothing is extracted from
 a commercial game, and no commercial data file is needed to play. If you want

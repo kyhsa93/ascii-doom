@@ -59,10 +59,11 @@
       }
 
       /*
-        The controls sit over the view rather than beside it. Vertical cells are
-        the scarcest thing on a phone — the grid is about fifty rows there — and
-        a control strip that pushed the picture up would cost more of the game
-        than it gave back.
+        The controls own a band at the foot of the screen rather than floating
+        over the view. Overlaying was tried first, on the reasoning that
+        vertical cells are the scarcest thing on a phone and a strip that
+        pushed the picture up would cost more of the game than it gave back.
+        It cost more than it looked: see the note on `#screen` below.
       */
       #pad {
         position: fixed;
@@ -77,6 +78,22 @@
         }
         #hint {
           display: none;
+        }
+        /*
+          The grid stops above the controls rather than running under them.
+          Overlaying looked fine until the stick was sitting on the status line
+          — and the bottom-left corner of that line is the health, which is the
+          one number you cannot afford to have a thumb parked on.
+
+          Margin rather than padding: the presenter measures this element's box
+          to decide how many rows fit, and padding is inside that box, so the
+          grid would keep its rows and simply draw them underneath. Measured on
+          a 390x844 screen it costs twelve rows — 59 down to 47 — which is the
+          price of a legible status line. The topmost control is the weapon
+          button, not the stick, and it is what the 190px is sized against.
+        */
+        #screen {
+          margin-bottom: 190px;
         }
       }
 
