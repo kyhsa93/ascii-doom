@@ -158,7 +158,14 @@ check('frames keep being drawn', () => {
 })
 
 /** Where the player is, according to the running game. */
-function readPlayer(page: Page): Promise<{ x: number; y: number; sector: number; tag: string | null }> {
+function readPlayer(page: Page): Promise<{
+  x: number
+  y: number
+  sector: number
+  tag: string | null
+  awake: number
+  health: number
+}> {
   return page.evaluate(() => {
     const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
     return {
@@ -166,6 +173,11 @@ function readPlayer(page: Page): Promise<{ x: number; y: number; sector: number;
       y: (d.y as number) ?? NaN,
       sector: (d.sector as number) ?? -1,
       tag: (d.tag as string | null) ?? null,
+      // Read here rather than cast at the call site: a probe that claims to
+      // measure something has to actually fetch it, or the assertion is about
+      // `undefined` and passes or fails for reasons unrelated to the game.
+      awake: (d.awake as number) ?? -1,
+      health: (d.health as number) ?? -1,
     }
   })
 }
@@ -185,6 +197,16 @@ check('holding a key walks the player, and walking changes the room', () => {
   assert(before.tag === 'start', `expected to spawn in the start room, got ${before.tag}`)
   assert(after.x > before.x + 1, `walking forward moved x from ${before.x.toFixed(2)} to ${after.x.toFixed(2)}`)
   assert(after.tag !== before.tag, `still in ${after.tag} after walking east for most of two seconds`)
+})
+
+check('the creatures are awake and the page knows how hurt you are', () => {
+  // The end-to-end claim Node cannot make: the state machine is wired into the
+  // frame loop and not merely importable. Deliberately not "you took damage by
+  // now" — that depends on how fast a creature crosses a corridor, and a check
+  // whose truth depends on timing fails on a slow machine for no reason.
+  assert(after.awake >= 0, 'the page reports no creature state at all')
+  assert(after.awake > 0, 'nothing has noticed the player after walking into the corridor')
+  assert(after.health > 0 && after.health <= 100, `health is ${after.health}`)
 })
 
 check('a wall stops the player rather than letting them through it', () => {

@@ -14,7 +14,7 @@
 
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
-import { acrossFrom, buildLevel, castRay, sectorAt, type SectorDef } from '../src/columns/level.ts'
+import { acrossFrom, buildLevel, castRay, lineOfSight, sectorAt, type SectorDef } from '../src/columns/level.ts'
 import {
   DEFAULT_FOV_Y,
   MATERIALS,
@@ -26,6 +26,15 @@ import {
 } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
+import {
+  damageActor,
+  spawnActor,
+  updateActors,
+  type Actor,
+  type ActorKind,
+  type ActorState,
+} from '../src/game/ai.ts'
+import type { Body } from '../src/game/player.ts'
 import { ALL_SPRITES } from '../src/game/things.ts'
 
 let failed = 0
@@ -291,6 +300,215 @@ test('a nearer surface is brighter than the same surface further away', () => {
     luminance(near) > luminance(far),
     `the near floor (${luminance(near).toFixed(3)}) is not brighter than the far floor (${luminance(far).toFixed(3)})`,
   )
+})
+
+console.log('\ncreatures')
+
+/**
+ * A creature built for the checks rather than for the game.
+ *
+ * Testing the machinery against the shipped cast would mean every tuning change
+ * breaks a check about state transitions, and a check that has to be edited
+ * whenever a number moves stops being read.
+ */
+const DUMMY_ART: Sprite = { rows: ['XX', 'XX'], tint: [1, 1, 1], width: 1, height: 1 }
+const DUMMY: ActorKind = {
+  name: 'dummy',
+  sprite: DUMMY_ART,
+  corpse: DUMMY_ART,
+  radius: 0.4,
+  height: 1.5,
+  eye: 1.1,
+  health: 20,
+  speed: 2,
+  sightRange: 20,
+  reach: 0.8,
+  damage: 10,
+  windUp: 0.3,
+  recovery: 0.5,
+  painTime: 0.3,
+  painChance: 0.5,
+  deathTime: 0.5,
+}
+
+/** A player-shaped body standing somewhere in the first level. */
+function bodyAt(x: number, y: number): Body {
+  const sector = sectorAt(LEVEL_1, x, y)
+  assert(sector >= 0, `(${x}, ${y}) is outside the map`)
+  return { x, y, sector, floor: LEVEL_1.sectors[sector]!.floor, radius: 0.35, height: 1.75 }
+}
+
+function actorAt(x: number, y: number, angle: number, kind: ActorKind = DUMMY): Actor {
+  const sector = sectorAt(LEVEL_1, x, y)
+  assert(sector >= 0, `(${x}, ${y}) is outside the map`)
+  const actor = spawnActor(kind, x, y, sector, LEVEL_1.sectors[sector]!.floor)
+  actor.angle = angle
+  return actor
+}
+
+/**
+ * Reads a creature's state without letting the compiler narrow it.
+ *
+ * Assigning `actor.state = 'chasing'` narrows the property to that one literal,
+ * and TypeScript has no way to know that passing the actor to `updateActors`
+ * can change it — so a later comparison against any other state is reported as
+ * impossible. Reading through a function typed to return the whole union says
+ * what is actually true: the state is whatever the simulation left there.
+ */
+function stateOf(actor: Actor): ActorState {
+  return actor.state
+}
+
+/** Runs the simulation for a while at a fixed step, and totals the damage. */
+function simulate(actors: Actor[], target: Body, seconds: number, random = () => 0.5): number {
+  let damage = 0
+  const step = 1 / 60
+  for (let t = 0; t < seconds; t += step) {
+    damage += updateActors(LEVEL_1, actors, target, 1.6, step, { random }).damage
+  }
+  return damage
+}
+
+test('a creature facing away does not notice you, and one facing you does', () => {
+  // The difference between walking into a room and being seen walking into it.
+  // Both creatures have identical sight lines; only the facing differs.
+  const player = bodyAt(16, 4)
+  const away = actorAt(20, 4, 0)
+  const toward = actorAt(20, 4, Math.PI)
+
+  simulate([away], player, 0.5)
+  assert(away.state === 'dormant', `a creature facing away woke anyway (${away.state})`)
+
+  simulate([toward], player, 0.5)
+  assert(toward.state !== 'dormant', 'a creature facing you stayed asleep')
+})
+
+test('a wall keeps a creature asleep however close you stand', () => {
+  // The start room and the hall are nowhere near each other in a straight line.
+  const player = bodyAt(2, 3)
+  const actor = actorAt(20, 8, Math.PI)
+  simulate([actor], player, 1)
+  assert(actor.state === 'dormant', `a creature two rooms away woke (${actor.state})`)
+})
+
+test('a woken creature closes the distance', () => {
+  const player = bodyAt(16, 4)
+  const actor = actorAt(24, 4, Math.PI)
+  const before = Math.hypot(actor.x - player.x, actor.y - player.y)
+  simulate([actor], player, 1.5)
+  const after = Math.hypot(actor.x - player.x, actor.y - player.y)
+  assert(after < before - 1, `distance went from ${before.toFixed(2)} to ${after.toFixed(2)}`)
+})
+
+test('standing still in reach gets you hit; backing off during the wind-up does not', () => {
+  // The whole of how a melee creature is played around, and the reason the blow
+  // is resolved when it lands rather than when it is decided.
+  const standing = bodyAt(16, 4)
+  const attacker = actorAt(16.9, 4, Math.PI)
+  attacker.state = 'chasing'
+  const taken = simulate([attacker], standing, 2)
+  assert(taken > 0, 'a creature stood next to you for two seconds without landing a blow')
+
+  const dodger = bodyAt(16, 4)
+  const other = actorAt(16.9, 4, Math.PI)
+  other.state = 'chasing'
+  let dodged = 0
+  const step = 1 / 60
+  for (let t = 0; t < 2; t += step) {
+    dodged += updateActors(LEVEL_1, [other], dodger, 1.6, step, { random: () => 0.5 }).damage
+    // Step away the moment it commits, and keep going.
+    if (stateOf(other) === 'winding') dodger.x -= 0.12
+  }
+  assert(dodged < taken, `backing away took ${dodged} against ${taken} for standing still`)
+})
+
+test('pain chance decides whether a hit interrupts, and death always does', () => {
+  // Pinned randomness, because "sometimes flinches" is untestable and the
+  // reason the chance exists — a creature that always flinches can be held in
+  // place forever by the weakest weapon.
+  const never = actorAt(20, 4, 0, { ...DUMMY, painChance: 0 })
+  never.state = 'chasing'
+  damageActor(never, 1, () => 0)
+  assert(stateOf(never) === 'chasing', `a creature with no pain chance flinched (${never.state})`)
+
+  const always = actorAt(20, 4, 0, { ...DUMMY, painChance: 1 })
+  always.state = 'chasing'
+  damageActor(always, 1, () => 0)
+  assert(stateOf(always) === 'hurt', `a creature that always flinches did not (${always.state})`)
+
+  const dying = actorAt(20, 4, 0)
+  const killed = damageActor(dying, DUMMY.health, () => 0.99)
+  assert(killed, 'the killing blow was not reported as one')
+  assert(dying.state === 'dying', `a creature at zero health is ${dying.state}`)
+})
+
+test('the dead stop acting', () => {
+  const player = bodyAt(16, 4)
+  const actor = actorAt(16.9, 4, Math.PI)
+  damageActor(actor, 999, () => 0.99)
+  const damage = simulate([actor], player, 3)
+  assert(damage === 0, `a dead creature dealt ${damage} damage`)
+  assert(actor.state === 'dead', `after three seconds it is ${actor.state}`)
+})
+
+console.log('\nsight')
+
+/** Eye height above a floor, matching the player's. */
+const EYE = 1.6
+
+test('two points in the same room can see each other', () => {
+  const a = sectorAt(LEVEL_1, 2, 2)
+  assert(lineOfSight(LEVEL_1, a, 2, 2, EYE, 6, 5, EYE), 'across the start room')
+})
+
+test('a solid wall blocks sight', () => {
+  // The start room's south wall is at y=0; a point past it is outside the map
+  // entirely, which is the strongest form of "not visible".
+  const a = sectorAt(LEVEL_1, 2, 3)
+  assert(!lineOfSight(LEVEL_1, a, 2, 3, EYE, 2, -4, EYE), 'through the south wall')
+})
+
+test('a doorway is see-through and the wall beside it is not', () => {
+  // The corridor mouth spans y=2 to y=4 in the room's east wall. Same origin,
+  // two targets a metre apart: one through the hole, one into the wall.
+  const a = sectorAt(LEVEL_1, 2, 3)
+  assert(lineOfSight(LEVEL_1, a, 2, 3, EYE, 13, 3, EYE), 'along the corridor')
+  assert(!lineOfSight(LEVEL_1, a, 2, 3, EYE, 13, 5.5, EYE), 'into the wall beside the corridor mouth')
+})
+
+test('sight is symmetric', () => {
+  // A property rather than a restatement of the walk, and the one that catches
+  // a bug in how the sector chain is followed: if A can see B, then B can see
+  // A, whichever end the crossings are enumerated from.
+  const pairs: [number, number, number, number][] = [
+    [2, 3, 13, 3],
+    [2, 2, 6, 5],
+    [2, 3, 20, 4],
+    [16, 0, 24, 8],
+    [20, 4, 2, 3],
+  ]
+  const wrong: string[] = []
+  for (const [ax, ay, bx, by] of pairs) {
+    const sa = sectorAt(LEVEL_1, ax, ay)
+    const sb = sectorAt(LEVEL_1, bx, by)
+    if (sa < 0 || sb < 0) continue
+    const forward = lineOfSight(LEVEL_1, sa, ax, ay, EYE, bx, by, EYE)
+    const back = lineOfSight(LEVEL_1, sb, bx, by, EYE, ax, ay, EYE)
+    if (forward !== back) wrong.push(`(${ax},${ay})->(${bx},${by}) is ${forward} but the reverse is ${back}`)
+  }
+  assert(wrong.length === 0, wrong.join('; '))
+})
+
+test('a step blocks a low sight line and not a standing one', () => {
+  // The platform floor is at 0.6. Looking across the hall at ankle height the
+  // step is in the way; at eye height it is not. No flag decides this — the
+  // opening between the two floors does, which is the same arithmetic that
+  // makes a shut door opaque.
+  const a = sectorAt(LEVEL_1, 16, 4)
+  const b = sectorAt(LEVEL_1, 24, 4)
+  assert(a >= 0 && b >= 0, 'both ends of the hall should be inside sectors')
+  assert(lineOfSight(LEVEL_1, a, 16, 4, 1.6, 24, 4, 1.6), 'standing, across the platform')
+  assert(!lineOfSight(LEVEL_1, a, 16, 4, 0.3, 24, 4, 0.3), 'at ankle height, through the step')
 })
 
 console.log('\nsprites')

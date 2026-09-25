@@ -13,17 +13,30 @@ import { drawText } from '../vendor/ascii-engine/src/core/overlay.ts'
 import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
+import { sectorAt } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
-import { drawBillboards } from '../src/columns/sprite.ts'
+import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
+import { billboardOf, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
-import { LEVEL_1_THINGS } from '../src/game/things.ts'
-import { eyeHeight, movePlayer, spawnPlayer } from '../src/game/player.ts'
+import { EYE_HEIGHT, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
+import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 
 const screen = document.getElementById('screen')!
 const hint = document.getElementById('hint')!
 const surface = new PreSurface(screen)
 
 const player = spawnPlayer(LEVEL_1, SPAWN.x, SPAWN.y, SPAWN.angle)
+
+const actors: Actor[] = LEVEL_1_ACTORS.map((placement) => {
+  const sector = sectorAt(LEVEL_1, placement.x, placement.y)
+  if (sector < 0) throw new Error(`${placement.kind.name} at (${placement.x}, ${placement.y}) is outside the map`)
+  const actor = spawnActor(placement.kind, placement.x, placement.y, sector, LEVEL_1.sectors[sector]!.floor)
+  actor.angle = placement.angle
+  return actor
+})
+
+const MAX_HEALTH = 100
+let health = MAX_HEALTH
 
 const WALK_SPEED = 3.4
 const RUN_SPEED = 5.8
@@ -91,7 +104,10 @@ function step(): void {
   }
 
   const length = Math.hypot(dx, dy)
-  if (length > 0) movePlayer(LEVEL_1, player, (dx / length) * speed, (dy / length) * speed)
+  if (length > 0) moveBody(LEVEL_1, player, (dx / length) * speed, (dy / length) * speed)
+
+  const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
+  if (outcome.damage > 0) health = Math.max(0, health - outcome.damage)
 }
 
 let previous = performance.now()
@@ -100,6 +116,9 @@ let framesThisSecond = 0
 let totalFrames = 0
 let fpsAt = previous
 let fps = 0
+
+/** Rebuilt each frame: the pickups, plus every creature where it now stands. */
+const visible: Billboard[] = []
 
 function frame(now: number): void {
   totalFrames++
@@ -128,17 +147,25 @@ function frame(now: number): void {
     fovY: FOV_Y,
   }
   renderView(fb, LEVEL_1, view, surface.cellAspect, { horizonShift })
-  // After the world, so the depth it wrote decides what is hidden; before
-  // `resolve`, though it makes no difference to sprites — they write their own
-  // glyphs and `resolve` only fills cells still on auto.
-  drawBillboards(fb, view, surface.cellAspect, LEVEL_1_THINGS, { horizonShift })
+
+  visible.length = 0
+  for (const pickup of LEVEL_1_PICKUPS) visible.push(pickup)
+  for (const actor of actors) {
+    // Lit by the sector it stands in, the way the original lights a thing.
+    visible.push(billboardOf(actor, LEVEL_1.sectors[actor.sector]?.light ?? 0.5))
+  }
+  // After the world, so the depth it wrote decides what is hidden.
+  drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
 
   fb.resolve(RAMPS.short)
 
   // After `resolve`, because text writes glyphs directly and anything that
   // fills glyphs afterwards would overwrite them.
   const sector = LEVEL_1.sectors[player.sector]
-  drawText(fb, 1, fb.height - 1, `${sector?.tag ?? '?'}`, { color: vec3(0.9, 0.8, 0.5) })
+  drawText(fb, 1, fb.height - 1, `${health}`, {
+    color: health > 40 ? vec3(0.95, 0.85, 0.5) : vec3(1, 0.4, 0.35),
+  })
+  drawText(fb, 7, fb.height - 1, `${sector?.tag ?? '?'}`, { color: vec3(0.5, 0.5, 0.55) })
   drawText(fb, fb.width - 2, fb.height - 1, `${fps.toFixed(0)} fps`, {
     color: vec3(0.45, 0.45, 0.5),
     align: 'right',
@@ -164,6 +191,8 @@ function frame(now: number): void {
     angle: player.angle,
     sector: player.sector,
     tag: sector?.tag ?? null,
+    health,
+    awake: actors.filter((actor) => actor.awake).length,
   }
 
   requestAnimationFrame(frame)

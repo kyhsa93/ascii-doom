@@ -21,6 +21,7 @@
  */
 
 import type { Billboard, Sprite } from '../columns/sprite.ts'
+import type { ActorKind } from './ai.ts'
 
 /**
  * A crawler: low and wide, weight forward on two heavy forelimbs.
@@ -141,22 +142,151 @@ export const KIT: Sprite = {
  * thing carries its own lighting in the original too — it is lit by the sector
  * it stands in, and reading that here keeps the renderer from needing the map.
  */
-export const LEVEL_1_THINGS: Billboard[] = [
-  // In the start room, where you cannot miss them.
+/**
+ * Things that sit still and wait to be picked up.
+ *
+ * Creatures are not here any more: they move, so they are actors and are drawn
+ * from their own positions each frame. Leaving them in both lists would draw
+ * each one twice, once where it started and once where it is.
+ */
+export const LEVEL_1_PICKUPS: Billboard[] = [
   { x: 5.5, y: 1.5, z: 0, light: 0.95, sprite: CANISTER },
   { x: 5.5, y: 4.5, z: 0, light: 0.95, sprite: KIT },
+]
 
-  // Down the corridor, half-lit: the first thing you see moving.
-  { x: 12, y: 3, z: 0, light: 0.55, sprite: CRAWLER },
+/**
+ * What is left behind. A corpse is wide and low where the living shape was
+ * tall, so the silhouette alone says the fight there is over.
+ */
+export const CRAWLER_DOWN: Sprite = {
+  rows: [
+    '      ..--~~~~--..      ',
+    "  .-'  o        o  '-.  ",
+    ' /__.____________.__\\   ',
+    "  ``     ''''''     ``  ",
+  ],
+  tint: [0.85, 0.5, 0.4],
+  width: 1.6,
+  height: 0.4,
+}
 
-  // In the hall, spread so that turning a corner reveals them one at a time.
-  { x: 16, y: 0, z: 0, light: 1, sprite: SENTRY },
-  { x: 24, y: 8, z: 0, light: 1, sprite: CRAWLER },
-  { x: 20, y: 9, z: 0, light: 1, sprite: DRIFTER },
+export const SENTRY_DOWN: Sprite = {
+  rows: [
+    '     .-------------.    ',
+    "  .-'  (oo)         '-. ",
+    ' /_______________ ___\\  ',
+    "  '''             '''   ",
+  ],
+  tint: [0.7, 0.68, 0.62],
+  width: 1.8,
+  height: 0.4,
+}
 
-  // On the platform, so something is visibly standing above you.
-  { x: 20, y: 4, z: 0.6, light: 1, sprite: SENTRY },
+export const DRIFTER_DOWN: Sprite = {
+  rows: [
+    '       .-~~~~~-.        ',
+    "    .-'   ....   '-.    ",
+    "   '--..._______...--'  ",
+    '        ` ` ` `         ',
+  ],
+  tint: [0.5, 0.62, 0.85],
+  width: 1.4,
+  height: 0.35,
+}
+
+/**
+ * The cast, as the rules see them.
+ *
+ * Numbers chosen to give the three different problems rather than three
+ * difficulties. The crawler is fast and weak and comes straight at you; the
+ * sentry is slow, tough and hits hard, so it is a thing to walk around; the
+ * drifter is quick to notice and quick to swing but dies to almost anything.
+ */
+export const CRAWLER_KIND: ActorKind = {
+  name: 'crawler',
+  sprite: CRAWLER,
+  corpse: CRAWLER_DOWN,
+  radius: 0.45,
+  height: 1.3,
+  eye: 0.9,
+  health: 24,
+  speed: 2.6,
+  sightRange: 22,
+  reach: 0.7,
+  damage: 7,
+  windUp: 0.35,
+  recovery: 0.6,
+  painTime: 0.3,
+  painChance: 0.6,
+  deathTime: 0.5,
+}
+
+export const SENTRY_KIND: ActorKind = {
+  name: 'sentry',
+  sprite: SENTRY,
+  corpse: SENTRY_DOWN,
+  radius: 0.4,
+  height: 2.1,
+  eye: 1.7,
+  health: 60,
+  speed: 1.5,
+  sightRange: 26,
+  reach: 0.9,
+  damage: 16,
+  windUp: 0.6,
+  recovery: 1.1,
+  painTime: 0.25,
+  painChance: 0.25,
+  deathTime: 0.8,
+}
+
+export const DRIFTER_KIND: ActorKind = {
+  name: 'drifter',
+  sprite: DRIFTER,
+  corpse: DRIFTER_DOWN,
+  radius: 0.35,
+  height: 1.6,
+  eye: 1.2,
+  health: 14,
+  speed: 2.2,
+  sightRange: 30,
+  reach: 0.8,
+  damage: 5,
+  windUp: 0.2,
+  recovery: 0.45,
+  painTime: 0.35,
+  painChance: 0.8,
+  deathTime: 0.4,
+}
+
+/** Where the creatures start, before anything has noticed you. */
+export interface ActorPlacement {
+  readonly kind: ActorKind
+  readonly x: number
+  readonly y: number
+  /** Which way it faces while asleep, which decides whether it sees you first. */
+  readonly angle: number
+}
+
+export const LEVEL_1_ACTORS: ActorPlacement[] = [
+  // Down the corridor, facing you: the first thing that moves.
+  { kind: CRAWLER_KIND, x: 12, y: 3, angle: Math.PI },
+  // In the hall, facing away, so walking in quietly is rewarded.
+  { kind: SENTRY_KIND, x: 16, y: 0, angle: Math.PI / 2 },
+  { kind: CRAWLER_KIND, x: 24, y: 8, angle: Math.PI },
+  { kind: DRIFTER_KIND, x: 20, y: 9, angle: -Math.PI / 2 },
+  // On the platform, looking down at the way in.
+  { kind: SENTRY_KIND, x: 20, y: 4, angle: Math.PI },
 ]
 
 /** Every sprite the game ships, for checks that want to hold them all to a rule. */
-export const ALL_SPRITES: Record<string, Sprite> = { CRAWLER, SENTRY, DRIFTER, CANISTER, KIT }
+export const ALL_SPRITES: Record<string, Sprite> = {
+  CRAWLER,
+  SENTRY,
+  DRIFTER,
+  CANISTER,
+  KIT,
+  CRAWLER_DOWN,
+  SENTRY_DOWN,
+  DRIFTER_DOWN,
+}

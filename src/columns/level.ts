@@ -242,6 +242,65 @@ export function castRay(
   return out
 }
 
+/**
+ * Whether one point in the world can see another.
+ *
+ * Walks the same crossings a rendered column walks, and stops for the same
+ * reasons: a solid wall, or a portal whose opening the sight line misses. The
+ * opening is the gap between the higher of the two floors and the lower of the
+ * two ceilings, so a shut door blocks sight without being flagged as anything
+ * — its ceiling has come down to its floor and there is no gap left. A low
+ * parapet blocks a crouching shot and not a standing one, for the same reason
+ * and with the same arithmetic.
+ *
+ * Movement blocking is deliberately ignored. A rail you cannot walk through is
+ * still something you can see and shoot over, and conflating the two is how a
+ * creature ends up firing at a wall because it believes it has a clear line.
+ *
+ * `fromSector` must be the sector containing the first point. The caller
+ * usually has it already — a creature knows where it stands — and looking it
+ * up here would put a scan over every sector inside a call that AI makes many
+ * times a frame.
+ */
+export function lineOfSight(
+  level: Level,
+  fromSector: number,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+  hits: RayHit[] = [],
+): boolean {
+  if (fromSector < 0) return false
+  const dx = bx - ax
+  const dy = by - ay
+  const distance = Math.hypot(dx, dy)
+  if (distance < 1e-9) return true
+
+  castRay(level, ax, ay, dx / distance, dy / distance, distance, hits)
+
+  let current = fromSector
+  for (const hit of hits) {
+    const next = acrossFrom(hit.line, current)
+    if (next < 0) return false
+    const near = level.sectors[current]
+    const far = level.sectors[next]
+    if (!near || !far) return false
+
+    // Height of the sight line where it crosses, by similar triangles on the
+    // map-plane distance travelled so far.
+    const z = az + (bz - az) * (hit.t / distance)
+    const openingBottom = Math.max(near.floor, far.floor)
+    const openingTop = Math.min(near.ceiling, far.ceiling)
+    if (z <= openingBottom || z >= openingTop) return false
+
+    current = next
+  }
+  return true
+}
+
 /** The sector on the other side of a line from `from`, or -1 at a solid wall. */
 export function acrossFrom(line: Line, from: number): number {
   if (line.back === null) return -1
