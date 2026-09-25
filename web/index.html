@@ -166,6 +166,37 @@
         width: 98px;
         height: 52px;
       }
+
+      /*
+        Landscape is where a band at the foot of the screen falls apart. The
+        band is a fixed number of pixels and a phone on its side is only about
+        390 of them tall, so it took three quarters of the picture: 14 rows at
+        844x390 and 12 at 740x360, against 47 in portrait. A view thirteen rows
+        tall is not a view.
+
+        What landscape has instead is columns — 107 of them — so the controls
+        take a strip of those and the grid keeps its full height. The buttons
+        stack rather than sitting side by side, which is what makes the right
+        strip one button wide instead of two.
+
+        This block has to come last: it shares its specificity with the button
+        rules above and wins on order, not on weight.
+      */
+      @media (pointer: coarse) and (orientation: landscape) {
+        #screen {
+          margin-bottom: 0;
+          margin-left: 150px;
+          margin-right: 122px;
+        }
+        #use {
+          right: max(16px, env(safe-area-inset-right));
+          bottom: calc(max(18px, env(safe-area-inset-bottom)) + 106px);
+          width: 98px;
+        }
+        #swap {
+          bottom: calc(max(18px, env(safe-area-inset-bottom)) + 174px);
+        }
+      }
     </style>
   </head>
   <body>

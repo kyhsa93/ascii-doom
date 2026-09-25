@@ -352,30 +352,58 @@ const padShown = await mobile.evaluate(() => {
   return pad !== null && getComputedStyle(pad).display !== 'none'
 })
 
+interface Band {
+  cols: number
+  rows: number
+  /**
+   * How far the worst control reaches into the grid, in pixels. Negative when
+   * the two are apart, which is the passing case.
+   */
+  intrusion: number
+  /** Which control reaches furthest in, so a failure names itself. */
+  worst: string
+}
+
 /**
- * Where the grid ends and where the controls begin, in pixels.
+ * The grid against the controls, as rectangles.
  *
  * Measured rather than eyeballed because "the controls are visible" was true
- * while the stick was sitting on the status line. The topmost edge of any
- * control is what the grid has to stay above.
+ * while the stick was sitting on the status line.
+ *
+ * This began as "the bottom of the grid is above the top of the controls",
+ * which is a portrait-shaped claim. In landscape the controls stand in columns
+ * either side of the grid, and that comparison reports a 244px overlap where
+ * there is none. Two rectangles either intersect or they do not, and the one
+ * rule reads both layouts.
  */
-const overlap = await mobile.evaluate(() => {
-  const screenEl = document.getElementById('screen')
-  if (!screenEl) return null
-  const probe = (window as unknown as { __doom?: Record<string, number> }).__doom ?? {}
-  const tops: number[] = []
-  for (const id of ['stick', 'fire', 'use', 'swap']) {
-    const element = document.getElementById(id)
-    if (element && getComputedStyle(element).display !== 'none') tops.push(element.getBoundingClientRect().top)
-  }
-  if (tops.length === 0) return null
-  return {
-    screenBottom: screenEl.getBoundingClientRect().bottom,
-    controlsTop: Math.min(...tops),
-    cols: probe.cols ?? 0,
-    rows: probe.rows ?? 0,
-  }
-})
+function measureBand(page: Page): Promise<Band | null> {
+  return page.evaluate(() => {
+    const screenEl = document.getElementById('screen')
+    if (!screenEl) return null
+    const probe = (window as unknown as { __doom?: Record<string, number> }).__doom ?? {}
+    const grid = screenEl.getBoundingClientRect()
+    let intrusion = -Infinity
+    let worst = ''
+    for (const id of ['stick', 'fire', 'use', 'swap']) {
+      const element = document.getElementById(id)
+      if (!element || getComputedStyle(element).display === 'none') continue
+      const box = element.getBoundingClientRect()
+      const across = Math.min(grid.right, box.right) - Math.max(grid.left, box.left)
+      const down = Math.min(grid.bottom, box.bottom) - Math.max(grid.top, box.top)
+      // Overlapping in one axis only is not an overlap, so the smaller of the
+      // two is how far in the control actually is.
+      const reach = Math.min(across, down)
+      if (reach > intrusion) {
+        intrusion = reach
+        worst = id
+      }
+    }
+    if (worst === '') return null
+    return { cols: probe.cols ?? 0, rows: probe.rows ?? 0, intrusion, worst }
+  })
+}
+
+const upright = await measureBand(mobile)
 
 const beforeThumb = await readPlayer(mobile)
 // Push the stick straight up: down at its centre, then drag to its top edge.
@@ -401,16 +429,39 @@ check('a phone gets controls it can actually reach', () => {
   assert(stickBox !== null, 'there is no movement stick to put a thumb on')
 })
 
+// A phone held sideways is the natural way to hold a shooter, and it is the
+// orientation the bottom band was worst in: fixed pixels against a screen only
+// 390 of them tall left fourteen rows of picture.
+const sideways = await browser.newContext({
+  viewport: { width: 844, height: 390 },
+  hasTouch: true,
+  isMobile: true,
+})
+const turned = await sideways.newPage()
+turned.on('pageerror', (error) => problems.push(`landscape: ${error.message}`))
+await turned.goto(base, { waitUntil: 'domcontentloaded' })
+await turned.waitForTimeout(900)
+const lying = await measureBand(turned)
+await turned.screenshot({ path: join(SHOTS, 'landscape.png') })
+
 check('the controls do not sit on top of the picture', () => {
   // Asserted in pixels because "the controls are visible" was true while the
   // stick was resting on the status line, and the bottom-left of that line is
   // the health. A screenshot caught it; this is what would have.
-  assert(overlap !== null, 'could not measure the screen against the controls')
-  assert(
-    overlap.screenBottom <= overlap.controlsTop + 1,
-    `the grid runs ${(overlap.screenBottom - overlap.controlsTop).toFixed(0)}px under the controls`,
-  )
-  assert(overlap.rows > 30, `only ${overlap.rows} rows left once the controls were given their band`)
+  //
+  // The floors come from what the two layouts actually measure -- 49x47 and
+  // 73x28 -- set low enough to be about a regression rather than about the
+  // font. The landscape band before this was 107x14, which is what they catch.
+  const layouts = [
+    { name: 'portrait', band: upright, leastCols: 40, leastRows: 40 },
+    { name: 'landscape', band: lying, leastCols: 60, leastRows: 22 },
+  ]
+  for (const { name, band, leastCols, leastRows } of layouts) {
+    assert(band !== null, `could not measure the ${name} screen against the controls`)
+    assert(band.intrusion <= 1, `${name}: ${band.worst} reaches ${band.intrusion.toFixed(0)}px into the grid`)
+    assert(band.cols >= leastCols, `${name}: only ${band.cols} columns left beside the controls`)
+    assert(band.rows >= leastRows, `${name}: only ${band.rows} rows left once the controls were given their room`)
+  }
 })
 
 check('pushing the stick walks the player', () => {
@@ -467,9 +518,9 @@ console.log(
     // The phone above has no touch, so the control band never applies to it and
     // its row count says nothing about what a real handset gets. This is the
     // one that does.
-    (overlap === null
+    (upright === null || lying === null
       ? ', touch layout unmeasured'
-      : `, touch ${overlap.cols}x${overlap.rows} with ${(overlap.controlsTop - overlap.screenBottom).toFixed(0)}px clear of the controls`),
+      : `, touch ${upright.cols}x${upright.rows} upright and ${lying.cols}x${lying.rows} sideways`),
 )
 
 await browser.close()
