@@ -701,6 +701,68 @@ check('the map opens on a press and holds still while the key is held', () => {
   assert(afterHold.mapOpen === first, 'letting go of the key changed the map')
 })
 
+// Installable, and playable with the network off. The service worker is the
+// one file here that neither tsc nor a Node check can see, so this section is
+// the whole of what holds it up.
+const installed = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const app = await installed.newPage()
+await app.goto(base, { waitUntil: 'domcontentloaded' })
+
+const workerState = await app.evaluate(async () => {
+  if (!('serviceWorker' in navigator)) return 'unsupported'
+  const registration = await Promise.race([
+    navigator.serviceWorker.ready,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+  ])
+  if (!registration) return 'never became ready'
+  return registration.active ? registration.active.state : 'ready with no active worker'
+})
+
+const manifestResponse = await app.request.get(new URL('manifest.webmanifest', base).href)
+const manifestStatus = manifestResponse.status()
+const manifest = manifestStatus === 200 ? ((await manifestResponse.json()) as Record<string, unknown>) : null
+
+const iconStatus: Record<string, number> = {}
+for (const name of ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png']) {
+  iconStatus[name] = (await app.request.get(new URL(name, base).href)).status()
+}
+
+// The claim worth making: one visit, then the network goes away.
+await installed.setOffline(true)
+let offline: { cols: number; frames: number } | null = null
+let offlineFailure = ''
+try {
+  await app.reload({ waitUntil: 'domcontentloaded' })
+  await app.waitForTimeout(1200)
+  offline = await app.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return { cols: (probe.cols as number) ?? 0, frames: (probe.frames as number) ?? 0 }
+  })
+} catch (error) {
+  offlineFailure = (error as Error).message
+}
+await installed.setOffline(false)
+
+check('the game is installable', () => {
+  assert(manifestStatus === 200, `the manifest answered ${manifestStatus}`)
+  assert(manifest !== null, 'the manifest did not parse as JSON')
+  // Both have to carry the repository prefix. Without it the app installs and
+  // then opens on a 404, which is the failure this whole arrangement invites.
+  assert(manifest.start_url === BASE_PATH, `start_url is ${String(manifest.start_url)}, not ${BASE_PATH}`)
+  assert(manifest.scope === BASE_PATH, `scope is ${String(manifest.scope)}, not ${BASE_PATH}`)
+  assert(Array.isArray(manifest.icons) && manifest.icons.length > 0, 'the manifest offers no icons')
+  for (const [name, status] of Object.entries(iconStatus)) {
+    assert(status === 200, `${name} answered ${status}`)
+  }
+})
+
+check('one visit is enough to play with the network off', () => {
+  assert(workerState === 'activated', `the service worker is "${workerState}"`)
+  assert(offline !== null, `the page would not load offline: ${offlineFailure}`)
+  assert(offline.cols > 20, `offline the grid came back ${offline.cols} columns wide`)
+  assert(offline.frames > 0, 'the page loaded offline but never drew a frame')
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

@@ -1,0 +1,19 @@
+{
+  "name": "ascii-doom",
+  "short_name": "ascii-doom",
+  "description": "A first-person shooter drawn with characters.",
+  "id": "/ascii-doom/",
+  "start_url": "/ascii-doom/",
+  "scope": "/ascii-doom/",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#05050a",
+  "theme_color": "#05050a",
+  "categories": ["games"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

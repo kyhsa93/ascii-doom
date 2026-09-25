@@ -672,5 +672,28 @@ if (new URLSearchParams(location.search).has('probe')) {
   }
 }
 
+/*
+ * Installed, and playable with the network off.
+ *
+ * Only from a built bundle. The test is this module's own URL: the dev server
+ * hands it over as `main.ts` and a build gives it a hashed `.js`, which is
+ * exactly the question being asked — a service worker answering the dev
+ * server's requests out of a cache is how you spend an afternoon editing a
+ * file that never reloads.
+ *
+ * Note what this is not: "am I on localhost". The browser checks serve the
+ * built page from 127.0.0.1, so a host test would switch the worker off in the
+ * one place anything looks at it.
+ */
+if ('serviceWorker' in navigator && !import.meta.url.endsWith('.ts')) {
+  window.addEventListener('load', () => {
+    // Relative to the page, so the worker's scope is the game's directory and
+    // nothing else on the domain.
+    void navigator.serviceWorker.register('./sw.js').catch(() => {
+      // A worker that will not install is a game that still runs, online.
+    })
+  })
+}
+
 hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'
 requestAnimationFrame(frame)

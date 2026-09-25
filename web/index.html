@@ -13,6 +13,21 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <title>ascii-doom</title>
+
+    <!--
+      Installable. Every path here is relative so that it resolves against
+      `/ascii-doom/` on Pages without the repository name being written down a
+      second place — the one in the Vite config is already the thing that
+      breaks when it is wrong.
+    -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <meta name="theme-color" content="#05050a" />
+    <link rel="icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
+    <!-- iOS reads these rather than the manifest's display mode. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ascii-doom" />
     <style>
       :root {
         color-scheme: dark;

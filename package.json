@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "check": "tsc && node scripts/check.ts",
-    "viewcheck": "vite build && node scripts/viewcheck.ts"
+    "viewcheck": "vite build && node scripts/viewcheck.ts",
+    "icon": "node scripts/icon.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -91,6 +91,30 @@ to run genuinely Doom-compatible content one day,
 [Freedoom](https://freedoom.github.io/) is the freely licensed asset set that
 belongs in that slot.
 
+## Installing it
+
+The page is a progressive web app: it can be installed from the browser's own
+menu and then runs from the home screen with no address bar, which on a phone
+is the difference between a web page and a game.
+
+One visit is enough to play it with the network off. That takes a little doing,
+because the build hashes its asset names and the service worker is copied
+through the build untouched — so the only place those names exist is the page
+that refers to them. The worker reads them out of it while installing. Without
+that, a first visit caches a page whose scripts were fetched before the worker
+was in charge, and going offline serves you a shell pointing at files that are
+not there.
+
+The page itself is fetched from the network first and falls back to the cache,
+since it is the one file the build does not hash; everything else is
+content-addressed, so a cache hit is always the right bytes.
+
+The icons are generated rather than drawn — `npm run icon` renders them from
+the game's own characters in the game's own colours. They are wider than they
+are tall in character counts for the same reason the sprites are: a monospace
+cell is about 0.6 as wide as it is high, so an eleven-by-eleven mark is a tall
+rectangle.
+
 ## Why characters suit this
 
 A character grid is a grid of *columns*, and the renderer this game needs is a
