@@ -165,6 +165,7 @@ function readPlayer(page: Page): Promise<{
   tag: string | null
   awake: number
   health: number
+  doorState: string | null
   alive: number
   ammo: number
   shotsFired: number
@@ -186,6 +187,7 @@ function readPlayer(page: Page): Promise<{
       ammo: (d.ammo as number) ?? -1,
       shotsFired: (d.shotsFired as number) ?? -1,
       pelletsLanded: (d.pelletsLanded as number) ?? -1,
+      doorState: (d.doorState as string | null) ?? null,
     }
   })
 }
@@ -240,6 +242,16 @@ check('pulling the trigger fires and spends ammunition', () => {
     `ammunition stayed at ${beforeFiring.ammo} after firing ${afterFiring.shotsFired - beforeFiring.shotsFired} shots`,
   )
   assert(afterFiring.ammo >= 0, `ammunition went negative: ${afterFiring.ammo}`)
+})
+
+check('the level’s moving parts were built and are being reported', () => {
+  // Cheap, and still real evidence. The movers are built by looking their
+  // sectors up by tag, so a mistyped tag throws during construction and the
+  // page never boots; an empty list would report null here. Whether the door
+  // then opens is geometry, and geometry is checked in Node at exact positions
+  // rather than by walking a browser the length of the level.
+  assert(afterFiring.doorState !== null, 'the page reports no door at all')
+  assert(afterFiring.doorState === 'shut', `the door starts as ${afterFiring.doorState}`)
 })
 
 check('a wall stops the player rather than letting them through it', () => {

@@ -28,7 +28,15 @@ import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { SCATTERGUN, SIDEARM, fire } from '../src/game/weapons.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
-import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
+import {
+  activate,
+  makeMover,
+  moverInFront,
+  updateMovers,
+  type Mover,
+  type MoverKind,
+} from '../src/game/movers.ts'
+import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import {
   damageActor,
   spawnActor,
@@ -37,7 +45,7 @@ import {
   type ActorKind,
   type ActorState,
 } from '../src/game/ai.ts'
-import type { Body } from '../src/game/player.ts'
+import { moveBody, type Body } from '../src/game/player.ts'
 import { ALL_SPRITES } from '../src/game/things.ts'
 
 let failed = 0
@@ -728,6 +736,184 @@ test('a thing behind a wall is not drawn, and the same thing in front of it is',
 
   const front = markerBox(shootWithMarker([{ x: 24, y: 3, z: 0, light: 1, sprite: MARKER }]))
   assert(front.count > 0, 'a thing in the open hall was not drawn at all')
+})
+
+console.log('\ndoors and lifts')
+
+/**
+ * Room, door, room — three sectors in a line, sharing full-width edges so no
+ * junction needs splitting.
+ *
+ * Built here rather than borrowed from the game's map so that adding a door to
+ * the level cannot change what these checks mean, and so that the shut height
+ * is exactly the floor: a door with no gap at all is the case every one of the
+ * three consumers has to get right.
+ */
+function doorLevel() {
+  return buildLevel([
+    {
+      polygon: [
+        [0, 0],
+        [4, 0],
+        [4, 4],
+        [0, 4],
+      ],
+      floor: 0,
+      ceiling: 3,
+      light: 1,
+    },
+    {
+      polygon: [
+        [4, 0],
+        [6, 0],
+        [6, 4],
+        [4, 4],
+      ],
+      floor: 0,
+      ceiling: 0,
+      light: 1,
+    },
+    {
+      polygon: [
+        [6, 0],
+        [10, 0],
+        [10, 4],
+        [6, 4],
+      ],
+      floor: 0,
+      ceiling: 3,
+      light: 1,
+    },
+  ])
+}
+
+const DOOR_KIND: MoverKind = { surface: 'ceiling', shut: 0, open: 3, speed: 3, wait: 2 }
+
+/**
+ * Reads a body's sector without letting the compiler narrow it.
+ *
+ * The same shape as `stateOf` above: building a body with `sector: 0` narrows
+ * the property to that literal, and TypeScript cannot know that `moveBody`
+ * changes it, so comparing against any other sector is reported as impossible.
+ */
+function sectorOf(body: Body): number {
+  return body.sector
+}
+
+/** Runs movers for a while at the simulation's own step. */
+function runMovers(level: ReturnType<typeof doorLevel>, movers: Mover[], bodies: Body[], seconds: number): void {
+  const step = 1 / 60
+  for (let t = 0; t < seconds; t += step) updateMovers(level, movers, bodies, step)
+}
+
+test('a door opens to exactly its open height and no further', () => {
+  // Two seconds, deliberately. This door takes one second to travel and then
+  // waits two, so five seconds would run the whole cycle and find it shut
+  // again — which is what the first version of this check asserted against,
+  // and the failure was mine rather than the door's. Measuring a thing that
+  // moves means saying when.
+  const level = doorLevel()
+  const door = makeMover(1, DOOR_KIND)
+  activate(door)
+  runMovers(level, [door], [], 2)
+  close(level.sectors[1]!.ceiling, DOOR_KIND.open, 1e-9, 'the open height')
+  assert(door.state === 'open', `the door settled as ${door.state}`)
+})
+
+test('a shut door blocks movement and sight, and an open one does not', () => {
+  // The claim this whole module rests on. Nothing here knows what a door is:
+  // the collision code asks whether a body fits through the opening and the
+  // sight code asks whether a line clears it, and both already did that before
+  // movers existed. If a moving ceiling did not change those answers, the idea
+  // that one rule serves all three would simply be wrong.
+  const level = doorLevel()
+  const door = makeMover(1, DOOR_KIND)
+
+  const eye = 1.6
+  assert(!lineOfSight(level, 0, 2, 2, eye, 8, 2, eye), 'a shut door was see-through')
+
+  const walker: Body = { x: 3, y: 2, sector: 0, floor: 0, radius: 0.35, height: 1.75 }
+  for (let i = 0; i < 60; i++) moveBody(level, walker, 0.1, 0)
+  assert(sectorOf(walker) === 0, `a shut door was walked through into sector ${walker.sector}`)
+
+  activate(door)
+  runMovers(level, [door], [], 3)
+  assert(lineOfSight(level, 0, 2, 2, eye, 8, 2, eye), 'an open door was not see-through')
+
+  for (let i = 0; i < 80; i++) moveBody(level, walker, 0.1, 0)
+  assert(sectorOf(walker) === 2, `an open door was not walked through; ended in sector ${walker.sector}`)
+})
+
+test('a door with a wait shuts itself, and one without stays open', () => {
+  const level = doorLevel()
+  const door = makeMover(1, DOOR_KIND)
+  activate(door)
+  runMovers(level, [door], [], 1.5)
+  close(level.sectors[1]!.ceiling, DOOR_KIND.open, 1e-9, 'open before the wait runs out')
+  runMovers(level, [door], [], 4)
+  close(level.sectors[1]!.ceiling, DOOR_KIND.shut, 1e-9, 'shut again after the wait')
+
+  const held = doorLevel()
+  const lift = makeMover(1, { ...DOOR_KIND, wait: 0 })
+  activate(lift)
+  runMovers(held, [lift], [], 10)
+  close(held.sectors[1]!.ceiling, DOOR_KIND.open, 1e-9, 'a mover with no wait stays where it was sent')
+})
+
+test('a closing door reverses rather than crushing whoever is under it', () => {
+  // The original's behaviour, and the only reason this module knows bodies
+  // exist. A creature blocks a door exactly as a player does, because what is
+  // consulted is the height of the body and not what kind of thing it is.
+  const level = doorLevel()
+  const door = makeMover(1, DOOR_KIND)
+  const standing: Body = { x: 5, y: 2, sector: 1, floor: 0, radius: 0.35, height: 1.75 }
+
+  activate(door)
+  runMovers(level, [door], [standing], 5)
+  // Past the wait, it has tried to close and found somebody there.
+  assert(level.sectors[1]!.ceiling >= standing.height, `the ceiling came down to ${level.sectors[1]!.ceiling}`)
+
+  // Step out, and it finishes closing.
+  standing.sector = 2
+  runMovers(level, [door], [standing], 6)
+  close(level.sectors[1]!.ceiling, DOOR_KIND.shut, 1e-9, 'shut once the way is clear')
+})
+
+test('triggering a closing door sends it back up', () => {
+  const level = doorLevel()
+  const door = makeMover(1, DOOR_KIND)
+  activate(door)
+  runMovers(level, [door], [], 3.5)
+  assert(door.state === 'closing', `expected it to be closing, found ${door.state}`)
+  const midway = level.sectors[1]!.ceiling
+  activate(door)
+  runMovers(level, [door], [], 0.5)
+  assert(level.sectors[1]!.ceiling > midway, 'a door triggered while closing kept closing')
+})
+
+test('the use key finds the door you are facing and nothing else', () => {
+  // Which door a press opens is a rule with a right answer, so it is checked
+  // at exact positions here rather than by driving a browser across the level
+  // and hoping. Three cases: in front of it, turned away from it, and nowhere
+  // near it.
+  const built: Mover[] = LEVEL_1_MOVERS.map((entry) => {
+    const sector = sectorIndexByTag(LEVEL_1, entry.tag)
+    assert(sector >= 0, `no sector tagged ${entry.tag}`)
+    return makeMover(sector, entry.kind)
+  })
+  const door = sectorIndexByTag(LEVEL_1, 'door-north')
+
+  const inHall = sectorAt(LEVEL_1, 19, 9)
+  assert(inHall >= 0, 'the spot in front of the door is outside the map')
+
+  const facing = moverInFront(LEVEL_1, built, inHall, 19, 9, Math.PI / 2)
+  assert(facing !== null && facing.sector === door, 'standing in front of the door did not find it')
+
+  const turned = moverInFront(LEVEL_1, built, inHall, 19, 9, -Math.PI / 2)
+  assert(turned === null, 'facing away from the door still found it')
+
+  const away = sectorAt(LEVEL_1, 2, 3)
+  assert(moverInFront(LEVEL_1, built, away, 2, 3, 0) === null, 'a door was found from the other end of the level')
 })
 
 console.log('\nstatus line')

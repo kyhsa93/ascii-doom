@@ -25,6 +25,7 @@
  */
 
 import { buildLevel, type Level, type SectorDef } from '../columns/level.ts'
+import type { MoverKind } from './movers.ts'
 
 const WALL_HEIGHT = 3.2
 const HALL_HEIGHT = 4.5
@@ -77,12 +78,17 @@ const SECTORS: SectorDef[] = [
     tag: 'hall-s',
   },
   {
+    // The north edge carries two extra vertices so the door beyond it has
+    // something to share. A wall meeting a neighbour needs a vertex at each
+    // junction, and without them this edge would silently stay solid.
     polygon: [
       [14, 6],
       [18, 6],
       [22, 6],
       [26, 6],
       [26, 10],
+      [20, 10],
+      [18, 10],
       [14, 10],
     ],
     floor: 0,
@@ -133,8 +139,93 @@ const SECTORS: SectorDef[] = [
     light: 1,
     tag: 'platform',
   },
+  {
+    // A door in the hall's north wall. Shut means its ceiling is on its floor:
+    // no opening at all, which is what makes it opaque and impassable without
+    // anything anywhere knowing that doors exist.
+    polygon: [
+      [18, 10],
+      [20, 10],
+      [20, 12],
+      [18, 12],
+    ],
+    floor: 0,
+    ceiling: 0,
+    light: 0.5,
+    tag: 'door-north',
+  },
+  {
+    // The chamber past the door. Its north edge is split for the lift.
+    polygon: [
+      [16, 12],
+      [18, 12],
+      [20, 12],
+      [24, 12],
+      [24, 17],
+      [22, 17],
+      [18, 17],
+      [16, 17],
+    ],
+    floor: 0,
+    ceiling: 4,
+    light: 0.72,
+    tag: 'chamber',
+  },
+  {
+    // The lift. Its floor rises to meet the ledge beyond, which is the only
+    // way up: 1.5 is more than twice the height a body can step.
+    polygon: [
+      [18, 17],
+      [22, 17],
+      [22, 20],
+      [18, 20],
+    ],
+    floor: 0,
+    ceiling: 5,
+    light: 0.9,
+    tag: 'lift',
+  },
+  {
+    polygon: [
+      [18, 20],
+      [22, 20],
+      [22, 23],
+      [18, 23],
+    ],
+    floor: 1.5,
+    ceiling: 5,
+    light: 1,
+    tag: 'ledge',
+  },
 ]
 
 export const LEVEL_1: Level = buildLevel(SECTORS)
 
 export const SPAWN = { x: 2, y: 3, angle: 0 }
+
+/**
+ * Which sectors move, and how.
+ *
+ * Named by tag rather than by index, because the index is wherever a sector
+ * happens to sit in the list above and inserting a room would quietly repoint
+ * every door in the level.
+ */
+export const LEVEL_1_MOVERS: { readonly tag: string; readonly kind: MoverKind }[] = [
+  {
+    // A door: its ceiling sits on its floor until something opens it, then
+    // lifts clear and settles back after a few seconds.
+    tag: 'door-north',
+    kind: { surface: 'ceiling', shut: 0, open: 2.6, speed: 2.4, wait: 4 },
+  },
+  {
+    // A lift: the same machine with the floor moving instead, and no wait, so
+    // it stays where it was last sent.
+    tag: 'lift',
+    kind: { surface: 'floor', shut: 0, open: 1.5, speed: 1.4, wait: 0 },
+  },
+]
+
+/** The index of a tagged sector, or -1. */
+export function sectorIndexByTag(level: Level, tag: string): number {
+  return level.sectors.findIndex((sector) => sector.tag === tag)
+}

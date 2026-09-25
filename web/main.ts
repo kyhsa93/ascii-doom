@@ -18,7 +18,8 @@ import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, isAlive, spawnActor, updateActors, type Actor } from '../src/game/ai.ts'
 import { layoutHud } from '../src/game/hud.ts'
-import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
+import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
+import { activate, makeMover, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { EYE_HEIGHT, eyeHeight, moveBody, spawnPlayer } from '../src/game/player.ts'
 import { LEVEL_1_ACTORS, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
@@ -36,6 +37,13 @@ const actors: Actor[] = LEVEL_1_ACTORS.map((placement) => {
   actor.angle = placement.angle
   return actor
 })
+
+const movers: Mover[] = LEVEL_1_MOVERS.map((entry) => {
+  const sector = sectorIndexByTag(LEVEL_1, entry.tag)
+  if (sector < 0) throw new Error(`no sector tagged ${entry.tag}`)
+  return makeMover(sector, entry.kind)
+})
+const liftSector = sectorIndexByTag(LEVEL_1, 'lift')
 
 const MAX_HEALTH = 100
 let health = MAX_HEALTH
@@ -131,6 +139,25 @@ function step(): void {
     pelletsLanded += result.hits
     kills += result.kills
   }
+
+  // Use: opens whatever you are facing. Held rather than tapped, because a
+  // door that ignores you for holding the key too long is worse than one that
+  // hears you twice -- reopening an open door only refreshes its wait.
+  if (pressed('e')) {
+    const target = moverInFront(LEVEL_1, movers, player.sector, player.x, player.y, player.angle)
+    if (target) activate(target)
+  }
+  // A lift is called by standing on it. Nothing else in the level needs a
+  // button, and a platform that waits to be asked is a platform people stand
+  // on wondering what to do.
+  if (player.sector === liftSector) {
+    const lift = movers.find((mover) => mover.sector === liftSector)
+    if (lift) activate(lift)
+  }
+
+  // Bodies are the player and every creature, so a closing door reverses off
+  // either. The rule is about height, not about what kind of thing is under it.
+  updateMovers(LEVEL_1, movers, [player, ...actors], STEP)
 
   const outcome = updateActors(LEVEL_1, actors, player, EYE_HEIGHT, STEP)
   if (outcome.damage > 0) health = Math.max(0, health - outcome.damage)
@@ -245,10 +272,13 @@ function frame(now: number): void {
     shotsFired,
     pelletsLanded,
     kills,
+    doorState: movers[0]?.state ?? null,
+    doorHeight: LEVEL_1.sectors[movers[0]?.sector ?? 0]?.ceiling ?? null,
+    liftHeight: LEVEL_1.sectors[liftSector]?.floor ?? null,
   }
 
   requestAnimationFrame(frame)
 }
 
-hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 weapon'
+hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 weapon · E use'
 requestAnimationFrame(frame)
