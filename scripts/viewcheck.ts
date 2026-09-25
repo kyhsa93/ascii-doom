@@ -464,6 +464,80 @@ check('the controls do not sit on top of the picture', () => {
   }
 })
 
+// Asked of the page loaded without the flag, which is the one people play.
+const doorShut = await page.evaluate(() => (window as unknown as { __probe?: unknown }).__probe === undefined)
+
+check('the probe door is shut unless it is asked for', () => {
+  // The check below is handed a way to finish a level. That is a cheat sitting
+  // in the shipped bundle, and "it is behind a query flag" is a claim about
+  // code rather than about the page, so the page is asked instead.
+  assert(doorShut, 'the played page exposes __probe with no flag set')
+})
+
+// Finishing a level, which until now nothing had ever watched. The Node checks
+// walk both maps to their exits, so the route is not in question; what had
+// never been seen is the summary being drawn, and the pause behind it, both of
+// which live in the page. The page opens a door under `?probe` that puts the
+// body in the exit sector and lets the ordinary rule do the finishing.
+const ending = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const finish = await ending.newPage()
+finish.on('pageerror', (error) => problems.push(`summary: ${error.message}`))
+await finish.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await finish.waitForTimeout(900)
+
+function readEnding(page: Page) {
+  return page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      text: document.getElementById('screen')?.textContent ?? '',
+      complete: probe.complete === true,
+      levelIndex: (probe.levelIndex as number) ?? -1,
+      frames: (probe.frames as number) ?? 0,
+      x: (probe.x as number) ?? 0,
+      y: (probe.y as number) ?? 0,
+    }
+  })
+}
+
+const arrived = await finish.evaluate(
+  () => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit() ?? false,
+)
+await finish.waitForTimeout(300)
+const ended = await readEnding(finish)
+await finish.screenshot({ path: join(SHOTS, 'summary.png') })
+// Long enough to prove the pause is a pause and not a frame, short enough to
+// still be inside it.
+await finish.waitForTimeout(1500)
+const during = await readEnding(finish)
+// Past 3.5s from arrival, with room for the frames either side of it.
+await finish.waitForTimeout(2900)
+const handedOver = await readEnding(finish)
+
+check('finishing a level draws a summary you can read', () => {
+  assert(arrived, 'the page did not open its probe door, so the exit was never reached')
+  assert(ended.complete, 'walking into the exit did not finish the level')
+  for (const line of ['LEVEL COMPLETE', 'time', 'creatures', 'supplies']) {
+    assert(ended.text.includes(line), `the summary is missing "${line}"`)
+  }
+})
+
+check('the summary holds the level still, then hands over', () => {
+  // Frozen, not stopped: frames keep being drawn over the room you finished in,
+  // and nothing in it moves. Both halves matter -- a page that had crashed
+  // would also fail to move the player.
+  assert(during.complete, 'the summary was gone 1.5s in, so there is no pause to speak of')
+  assert(during.frames > ended.frames, 'no frames were drawn while the summary was up')
+  assert(
+    during.x === ended.x && during.y === ended.y,
+    `the player drifted ${Math.hypot(during.x - ended.x, during.y - ended.y).toFixed(2)} during the summary`,
+  )
+  assert(
+    handedOver.levelIndex === 1,
+    `after the pause the game was on level ${handedOver.levelIndex}, not the second one`,
+  )
+  assert(!handedOver.complete, 'the second level started already finished')
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

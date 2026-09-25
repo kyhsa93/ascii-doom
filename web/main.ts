@@ -12,6 +12,7 @@ import { drawText } from '../vendor/ascii-engine/src/core/overlay.ts'
 import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
+import { insideSector, type Sector } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, provoke, updateActors } from '../src/game/ai.ts'
@@ -512,6 +513,64 @@ function frame(now: number): void {
   }
 
   requestAnimationFrame(frame)
+}
+
+/**
+ * A point the sector actually contains.
+ *
+ * The average of the corners is the obvious answer and is outside a concave
+ * room, so it is tested rather than trusted and the bounds are scanned when it
+ * fails. `insideSector` is the same rule the player is placed by, which is the
+ * point of asking it rather than inventing a second idea of "inside".
+ */
+function somewhereInside(sector: Sector): { x: number; y: number } | null {
+  let sx = 0
+  let sy = 0
+  for (const [px, py] of sector.polygon) {
+    sx += px
+    sy += py
+  }
+  const middle = { x: sx / sector.polygon.length, y: sy / sector.polygon.length }
+  if (insideSector(sector, middle.x, middle.y)) return middle
+
+  const steps = 16
+  for (let i = 1; i < steps; i++) {
+    for (let j = 1; j < steps; j++) {
+      const x = sector.minX + ((sector.maxX - sector.minX) * i) / steps
+      const y = sector.minY + ((sector.maxY - sector.minY) * j) / steps
+      if (insideSector(sector, x, y)) return { x, y }
+    }
+  }
+  return null
+}
+
+/**
+ * A door for the browser checks, opened only by `?probe`.
+ *
+ * The summary screen and the pause behind it were the last things here nobody
+ * had looked at, because reaching an exit in a browser means a long scripted
+ * walk that fails for reasons which have nothing to do with what the summary
+ * claims. This hands a check a way to *arrive* rather than a way to skip: the
+ * body is put inside the exit sector and the ordinary rule notices on the next
+ * step, so `reachExit`, the pause and the drawing are all still on the path
+ * being checked. Only the walking is skipped, and Node already walks it.
+ *
+ * Undefined without the flag, so the page people play has no cheat in it.
+ */
+if (new URLSearchParams(location.search).has('probe')) {
+  ;(window as unknown as { __probe: Record<string, unknown> }).__probe = {
+    toExit(): boolean {
+      const sector = state.level.sectors[state.goal.exitSector]
+      if (!sector) return false
+      const spot = somewhereInside(sector)
+      if (!spot) return false
+      state.player.x = spot.x
+      state.player.y = spot.y
+      state.player.sector = state.goal.exitSector
+      state.player.floor = sector.floor
+      return true
+    },
+  }
 }
 
 hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'
