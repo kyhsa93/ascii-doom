@@ -333,6 +333,44 @@ check('a phone-width viewport neither overflows nor collapses', () => {
 
 await phone.screenshot({ path: join(SHOTS, 'phone.png') })
 
+// Pictures rather than assertions, and deliberately after everything that is
+// one. Five sprites have shipped whose only evidence of legibility is an
+// arithmetic rule about how many characters they are drawn from, and none of
+// them appear at the spot the frames above are taken from: the supply boxes are
+// out in the hall, and a bolt or a slug only exists once something fires. So
+// this walks somewhere they can be seen and captures it.
+//
+// Wrapped, because a failure here is a failure to take a photograph. It must
+// not colour the result of the checks that already ran.
+try {
+  await page.keyboard.down('w')
+  await page.waitForTimeout(3400)
+  await page.keyboard.up('w')
+  await page.waitForTimeout(200)
+
+  // Turn to look back across the hall, where the creatures and the shell box
+  // are, then switch to the launcher and throw one.
+  await page.keyboard.down('ArrowLeft')
+  await page.waitForTimeout(500)
+  await page.keyboard.up('ArrowLeft')
+  await page.keyboard.press('3')
+  await page.waitForTimeout(150)
+  await page.keyboard.down(' ')
+  await page.waitForTimeout(120)
+  await page.keyboard.up(' ')
+  // Short enough that the slug is still in the air a few units out.
+  await page.waitForTimeout(160)
+
+  await page.screenshot({ path: join(SHOTS, 'hall.png') })
+  const there = await readPlayer(page)
+  console.log(
+    `  hall shot: ${there.tag ?? '?'} at (${there.x.toFixed(1)}, ${there.y.toFixed(1)}), ` +
+      `${there.inFlight} in flight, ${there.alive} creatures alive`,
+  )
+} catch (error) {
+  console.log(`  (could not take the hall screenshot: ${(error as Error).message})`)
+}
+
 console.log(
   `  grid ${first.cols}x${first.rows} cells, cell aspect ${first.cellAspect.toFixed(3)}, ` +
     `phone ${small.cols}x${small.rows}`,

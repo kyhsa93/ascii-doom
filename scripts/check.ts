@@ -1561,6 +1561,12 @@ test('no single glyph is allowed to swallow the frame', () => {
     ['spawn', SPAWN.x, SPAWN.y, SPAWN.angle],
     ['corridor', 10, 3, 0],
     ['hall', 20, 8, -1.4],
+    // Standing on the platform with walls a stride away, which is the case the
+    // other three miss: they all look down something. A screenshot taken here
+    // read as a dense field of bright glyphs with no structure in it, and
+    // whether that is saturation or simply a crowded room is a thing to count
+    // rather than squint at.
+    ['platform', 19.8, 3, 1.2],
   ]
   const crowded: string[] = []
   const bland: string[] = []
