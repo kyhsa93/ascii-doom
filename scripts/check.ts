@@ -57,7 +57,7 @@ import {
   type Projectile,
   type ProjectileKind,
 } from '../src/game/projectiles.ts'
-import { PLAYER_RADIUS, moveBody, spawnPlayer, type Body } from '../src/game/player.ts'
+import { PLAYER_RADIUS, moveBody, type Body } from '../src/game/player.ts'
 import { ALL_SPRITES, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 
 let failed = 0
@@ -1228,116 +1228,143 @@ test('every shipped level can be left the way it is meant to be', () => {
 
 console.log('\nplaying it through')
 
-test('the level can actually be finished', () => {
-  // The gap every other check left open. They each exercise one piece, so a
-  // key placed out of reach, a lift that will not carry a body, or a door that
-  // opens onto nothing would leave all of them passing and the level
-  // impossible. Nobody had ever been from the spawn to the exit.
-  //
-  // This drives the same functions the page drives, in the same order, so what
-  // it proves is that the rules make the level completable. Whether the page
-  // wires them up correctly is a separate claim and the browser checks make it.
-  // The level and its pickups are module state shared with every other check
-  // in this file, and playing through mutates both: doors end up open, the lift
-  // ends up raised, supplies end up taken. Nothing below happens to depend on
-  // those today, which is exactly the kind of luck that stops holding. Saved
-  // here and put back before the assertions, so a failure leaves the world as
-  // clean as a pass does.
-  const savedHeights = LEVEL_1.sectors.map((sector) => ({ floor: sector.floor, ceiling: sector.ceiling }))
-  const savedTaken = LEVEL_1_PICKUPS.map((pickup) => pickup.taken)
-  const restore = () => {
-    LEVEL_1.sectors.forEach((sector, index) => {
-      sector.floor = savedHeights[index]!.floor
-      sector.ceiling = savedHeights[index]!.ceiling
-    })
-    LEVEL_1_PICKUPS.forEach((pickup, index) => {
-      pickup.taken = savedTaken[index]!
-    })
-  }
-
-  const player = spawnPlayer(LEVEL_1, SPAWN.x, SPAWN.y, SPAWN.angle)
+/**
+ * A body, a loaded level, and the few verbs a route needs.
+ *
+ * Split out from the first playthrough because writing a second one meant
+ * copying the whole of it. The walking is shared; what differs between levels
+ * is only the route, which is the part worth reading.
+ *
+ * Creatures are deliberately not simulated. These checks ask whether a level's
+ * geometry and locks let you reach the exit, and a sentry landing a blow
+ * halfway through would make a failure mean two things at once.
+ */
+function explorer(def: (typeof LEVELS)[number]) {
+  const state = loadLevel(def)
+  const { level, player, movers, pickups, goal } = state
   const carried: Carrier = {
     health: 100,
     maxHealth: 100,
-    ammo: [60, 24],
-    ammoMax: [120, 48],
+    ammo: [60, 24, 8],
+    ammoMax: [120, 48, 24],
     keys: new Set<string>(),
   }
-  const built: Mover[] = LEVEL_1_MOVERS.map((entry) => {
-    const sector = sectorIndexByTag(LEVEL_1, entry.tag)
-    assert(sector >= 0, `no sector tagged ${entry.tag}`)
-    return makeMover(sector, entry.kind)
-  })
-  const exitSector = sectorIndexByTag(LEVEL_1, 'exit')
-  assert(exitSector >= 0, 'the level has no exit')
-  const goal = makeGoal(exitSector)
 
   const dt = 1 / 60
   const speed = 3.4
 
-  /** One tick of the world, minus the creatures, who are not the subject here. */
   const tick = () => {
-    collect(LEVEL_1_PICKUPS, player.x, player.y, PLAYER_RADIUS, carried)
-    if (player.sector === sectorIndexByTag(LEVEL_1, 'lift')) {
-      const lift = built.find((mover) => mover.sector === player.sector)
+    collect(pickups, player.x, player.y, PLAYER_RADIUS, carried)
+    if (state.liftSectors.includes(player.sector)) {
+      const lift = movers.find((mover) => mover.sector === player.sector)
       if (lift) activate(lift, carried.keys)
     }
-    updateMovers(LEVEL_1, built, [player], dt)
+    updateMovers(level, movers, [player], dt)
     reachExit(goal, player.sector, dt)
   }
 
-  /** Walks toward a point using the real movement code. Fails if it cannot get there. */
-  const walkTo = (tx: number, ty: number, within = 0.6, seconds = 20) => {
-    const steps = Math.ceil(seconds / dt)
-    for (let i = 0; i < steps; i++) {
-      const dx = tx - player.x
-      const dy = ty - player.y
-      const distance = Math.hypot(dx, dy)
-      if (distance <= within) return
-      player.angle = Math.atan2(dy, dx)
-      moveBody(LEVEL_1, player, (dx / distance) * speed * dt, (dy / distance) * speed * dt)
-      tick()
-    }
-    assert(
-      Math.hypot(tx - player.x, ty - player.y) <= within,
-      `stuck at (${player.x.toFixed(2)}, ${player.y.toFixed(2)}) trying to reach (${tx}, ${ty})`,
-    )
+  return {
+    state,
+    carried,
+    /** Walks toward a point with the real movement code, or fails saying where it stuck. */
+    walkTo(tx: number, ty: number, within = 0.6, seconds = 25) {
+      const steps = Math.ceil(seconds / dt)
+      for (let i = 0; i < steps; i++) {
+        const dx = tx - player.x
+        const dy = ty - player.y
+        const distance = Math.hypot(dx, dy)
+        if (distance <= within) return
+        player.angle = Math.atan2(dy, dx)
+        moveBody(level, player, (dx / distance) * speed * dt, (dy / distance) * speed * dt)
+        tick()
+      }
+      assert(
+        Math.hypot(tx - player.x, ty - player.y) <= within,
+        `${def.name}: stuck at (${player.x.toFixed(2)}, ${player.y.toFixed(2)}) trying to reach (${tx}, ${ty})`,
+      )
+    },
+    /** Stands still, so doors and lifts can finish moving. */
+    waitFor(seconds: number) {
+      for (let i = 0; i < Math.ceil(seconds / dt); i++) tick()
+    },
+    /** Faces a direction and opens whatever is in front, failing if nothing is. */
+    open(angle: number) {
+      player.angle = angle
+      const door = moverInFront(level, movers, player.sector, player.x, player.y, angle)
+      assert(door !== null, `${def.name}: nothing to open at (${player.x.toFixed(1)}, ${player.y.toFixed(1)})`)
+      assert(
+        activate(door, carried.keys),
+        `${def.name}: the door needed the ${door.kind.requiresKey} key and it was not held`,
+      )
+    },
   }
+}
 
-  /** Stands still for a while, so doors and lifts can finish moving. */
-  const waitFor = (seconds: number) => {
-    for (let i = 0; i < Math.ceil(seconds / dt); i++) tick()
-  }
+test('the second level can be finished too', () => {
+  // Written because the level-one playthrough does not generalise and the
+  // second map had only the weak claims standing behind it: closed, and with a
+  // key for every lock. Neither of those says you can get from the spawn to the
+  // exit, and this map's route is newer and less walked than the first's.
+  const run = explorer(LEVELS[1]!)
 
-  try {
-    walkTo(12, 3)
-    walkTo(16, 4)
-    walkTo(16, 8)
-    walkTo(24, 8.5, 0.5)
-    assert(carried.keys.has('amber'), 'walked over the key without picking it up')
+  run.walkTo(5.3, 3, 0.4)
+  run.open(0)
+  run.waitFor(2)
 
-    walkTo(19, 9, 0.4)
-    player.angle = Math.PI / 2
-    const door = moverInFront(LEVEL_1, built, player.sector, player.x, player.y, player.angle)
-    assert(door !== null, 'no door in front of the player at the north wall')
-    assert(activate(door, carried.keys), 'the key did not open the door it was made for')
-    waitFor(2)
+  run.walkTo(10, 3)
+  run.walkTo(12, 5)
+  run.walkTo(12, 8)
+  run.walkTo(13, 9, 0.5)
+  assert(run.carried.keys.has('cobalt'), 'walked over the key in the store without picking it up')
 
-    walkTo(19, 14)
-    walkTo(20, 18.5)
-    // Standing on the lift calls it; it has no wait, so it stays up.
-    waitFor(3)
-    close(LEVEL_1.sectors[sectorIndexByTag(LEVEL_1, 'lift')]!.floor, 1.5, 1e-6, 'the lift did not rise')
+  run.walkTo(12, 5)
+  run.walkTo(12, -2)
+  run.walkTo(12, -5.2, 0.4)
+  run.open(-Math.PI / 2)
+  run.waitFor(2.5)
 
-    walkTo(20, 21.5)
-    walkTo(20, 24.5)
-
-    assert(goal.reached, `never reached the exit; ended in sector ${player.sector}`)
-    assert(goal.elapsed > 0, 'the level was finished in no time at all')
-  } finally {
-    restore()
-  }
+  run.walkTo(12, -9)
+  assert(run.state.goal.reached, `never reached the exit; ended in sector ${run.state.player.sector}`)
 })
+
+test('the first level can be finished', () => {
+  // Moved onto the shared harness, which retires something worth noting. This
+  // check used to save every sector height and every `taken` flag and put them
+  // back afterwards, because it played the one built map that the rest of the
+  // file also reads. Loading a level from its definition makes a private world
+  // each time, so there is nothing left to put back — which is the problem the
+  // level bundle was introduced to solve, actually gone rather than argued
+  // about.
+  const run = explorer(LEVELS[0]!)
+
+  run.walkTo(12, 3)
+  run.walkTo(16, 4)
+  run.walkTo(16, 8)
+  run.walkTo(24, 8.5, 0.5)
+  assert(run.carried.keys.has('amber'), 'walked over the key without picking it up')
+
+  run.walkTo(19, 9, 0.4)
+  run.open(Math.PI / 2)
+  run.waitFor(2)
+
+  run.walkTo(19, 14)
+  run.walkTo(20, 18.5)
+  // Standing on the lift calls it; it has no wait, so it stays up.
+  run.waitFor(3)
+  close(
+    run.state.level.sectors[sectorIndexByTag(run.state.level, 'lift')]!.floor,
+    1.5,
+    1e-6,
+    'the lift did not rise',
+  )
+
+  run.walkTo(20, 21.5)
+  run.walkTo(20, 24.5)
+
+  assert(run.state.goal.reached, `never reached the exit; ended in sector ${run.state.player.sector}`)
+  assert(run.state.goal.elapsed > 0, 'the level was finished in no time at all')
+})
+
 
 console.log('\nfinishing')
 
