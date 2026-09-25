@@ -37,8 +37,65 @@ export function nextLevel(index: number): number | null {
  * key in the same level, since that check assumes you arrive with none.
  */
 export function startLevel(index: number, carrier: Carrier): LevelState {
-  const def = LEVELS[index]
-  if (!def) throw new Error(`no level ${index}; the campaign has ${LEVELS.length}`)
+  carrier.keys.clear()
+  return loadLevel(levelOrThrow(index))
+}
+
+/**
+ * What a run begins with.
+ *
+ * Here rather than written out in the page because death gives it back, so two
+ * places need to agree about what "a full kit" is. A loadout that lives in the
+ * frame loop is also a loadout nothing can check.
+ */
+export const STARTING_HEALTH = 100
+export const STARTING_AMMO: readonly number[] = [60, 24, 8]
+export const AMMO_CAPACITY: readonly number[] = [120, 48, 24]
+
+export function freshCarrier(): Carrier {
+  return {
+    health: STARTING_HEALTH,
+    maxHealth: STARTING_HEALTH,
+    // Copied: the carrier spends its ammunition, and spending it out of the
+    // constant would leave the next run starting on whatever the last one had.
+    ammo: [...STARTING_AMMO],
+    ammoMax: AMMO_CAPACITY,
+    keys: new Set<string>(),
+  }
+}
+
+/**
+ * Whether the run is over.
+ *
+ * A function rather than `health <= 0` written wherever it is needed, because
+ * it was needed in three places the moment dying existed at all: the step that
+ * stops, the frame that draws the panel, and the check that asks.
+ */
+export function isDead(carrier: Carrier): boolean {
+  return carrier.health <= 0
+}
+
+/**
+ * Starts the level over, after dying in it.
+ *
+ * The opposite of `startLevel` in what it does to the carrier. Moving on is a
+ * reward and keeps what you earned; dying is not, and hands back the kit you
+ * began with. Both clear the keys, for the same reason: the level hides its
+ * own, and the copy you are holding came from a map that no longer exists.
+ *
+ * The index is the level you died in, not the start of the campaign. Losing an
+ * hour of progress to one bad room is the version of this rule nobody enjoys.
+ */
+export function restartLevel(index: number, carrier: Carrier): LevelState {
+  const def = levelOrThrow(index)
+  carrier.health = STARTING_HEALTH
+  carrier.ammo = [...STARTING_AMMO]
   carrier.keys.clear()
   return loadLevel(def)
+}
+
+function levelOrThrow(index: number): LevelDef {
+  const def = LEVELS[index]
+  if (!def) throw new Error(`no level ${index}; the campaign has ${LEVELS.length}`)
+  return def
 }

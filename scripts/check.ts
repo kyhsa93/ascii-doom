@@ -27,7 +27,16 @@ import {
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
-import { LEVELS, nextLevel, startLevel } from '../src/game/campaign.ts'
+import {
+  LEVELS,
+  STARTING_AMMO,
+  STARTING_HEALTH,
+  freshCarrier,
+  isDead,
+  nextLevel,
+  restartLevel,
+  startLevel,
+} from '../src/game/campaign.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
@@ -1168,6 +1177,71 @@ test('starting a level keeps what you earned and takes back the keys', () => {
 test('the campaign ends rather than wrapping round', () => {
   assert(nextLevel(0) === 1, 'the first level does not lead to the second')
   assert(nextLevel(LEVELS.length - 1) === null, 'the last level leads somewhere')
+})
+
+console.log('\ndying')
+
+test('a fresh kit is a copy, not the constant everyone spends', () => {
+  // The trap this exists for: handing out `STARTING_AMMO` itself means the
+  // rounds fired in one run are missing from the start of the next, which
+  // looks like a balance problem rather than a shared array.
+  const first = freshCarrier()
+  first.ammo[0] = 3
+  first.keys.add('amber')
+
+  const second = freshCarrier()
+  assert(second.ammo[0] === STARTING_AMMO[0], `a new run started with ${second.ammo[0]} rounds`)
+  assert(second.keys.size === 0, 'a new run started holding keys from the last one')
+  assert(STARTING_AMMO[0] !== 3, 'spending ammunition wrote into the loadout itself')
+})
+
+test('zero health is dead and one is not', () => {
+  const carrier = freshCarrier()
+  assert(carrier.health === STARTING_HEALTH, `a run begins on ${carrier.health}`)
+  assert(!isDead(carrier), 'a full kit counts as dead')
+
+  carrier.health = 1
+  assert(!isDead(carrier), 'one point of health counts as dead')
+  carrier.health = 0
+  assert(isDead(carrier), 'zero health does not count as dead')
+  // Damage is clamped at zero where it is applied, but the rule should not
+  // depend on the clamp being there.
+  carrier.health = -5
+  assert(isDead(carrier), 'health below zero does not count as dead')
+})
+
+test('dying hands back the starting kit; finishing a level does not', () => {
+  // The two are opposites on purpose, and the difference is the whole of what
+  // this rule is. Asked in one place so that a change to either has to be
+  // looked at against the other.
+  const died: Carrier = {
+    health: 0,
+    maxHealth: 100,
+    ammo: [2, 0, 0],
+    ammoMax: [120, 48, 24],
+    keys: new Set(['cobalt']),
+  }
+  const again = restartLevel(1, died)
+
+  assert(died.health === STARTING_HEALTH, `came back on ${died.health} health`)
+  assert(died.ammo.join(',') === STARTING_AMMO.join(','), `came back with ${died.ammo.join(',')}`)
+  assert(died.keys.size === 0, 'came back still holding the key the map hides')
+  assert(again.def === LEVELS[1], 'restarted a different level from the one that killed us')
+  assert(
+    again.pickups.every((pickup) => !pickup.taken),
+    'the level restarted with its supplies already collected',
+  )
+
+  const moved: Carrier = {
+    health: 12,
+    maxHealth: 100,
+    ammo: [2, 0, 0],
+    ammoMax: [120, 48, 24],
+    keys: new Set(['cobalt']),
+  }
+  startLevel(1, moved)
+  assert(moved.health === 12, `walking into the next level healed to ${moved.health}`)
+  assert(moved.ammo.join(',') === '2,0,0', `walking into the next level restocked to ${moved.ammo.join(',')}`)
 })
 
 test('every shipped level is closed, with no holes to see through', () => {

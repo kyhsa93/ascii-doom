@@ -18,6 +18,12 @@ one that throws, doors and lifts, supplies you walk over, keys and the doors
 that ask for them, and an exit that ends a level, tallies what you did and
 hands you to the next one.
 
+Running out of health ends the run rather than leaving you walking around
+unarmed. Everything stops, the room you died in stays on screen behind the
+panel, and firing starts that level again with the kit you began it with — the
+level you died in, not the campaign. There is a moment before the trigger is
+listened to, because the trigger you are holding is usually what killed you.
+
 A bolt hits anything that is not the thing that fired it, so a shot that goes
 wide lands on whatever was behind you — and whatever it lands on turns on
 whoever threw it. Two creatures that have started on each other keep at it
@@ -121,5 +127,6 @@ Already cloned without submodules? `git submodule update --init --recursive`.
 - `npm run dev` — the page, with hot reload
 - `npm run build` — typecheck and build into `dist/`
 - `npm run viewcheck` — the built page, driven in a real browser
-- `npm run check` — the renderer's checks, in Node. Arrives with the renderer;
-  there is nothing to check yet.
+- `npm run check` — everything with a right answer, in Node: the geometry, the
+  projection, both levels walked end to end, and the rules for shooting,
+  carrying, finishing and dying

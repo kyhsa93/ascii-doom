@@ -103,6 +103,18 @@ export function summaryLayout(width: number, height: number, lines: readonly str
  * with a shape, and because laying it out as strings makes it something a
  * check can read without a browser.
  */
+/**
+ * What the death panel says.
+ *
+ * Laid out by `summaryLayout` like the summary, because a second centring rule
+ * is a second thing to get wrong on a narrow grid. The second line names the
+ * thing to press rather than a key, since the same button is a thumb on a
+ * phone and a space bar on a desk.
+ */
+export function deathLines(): string[] {
+  return ['YOU DIED', 'fire to try again']
+}
+
 export function summaryLines(tally: Tally): string[] {
   const minutes = Math.floor(tally.seconds / 60)
   const seconds = Math.floor(tally.seconds % 60)

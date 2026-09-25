@@ -16,8 +16,15 @@ import { insideSector, type Sector } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, provoke, updateActors } from '../src/game/ai.ts'
-import { LEVELS, nextLevel, startLevel as beginLevel } from '../src/game/campaign.ts'
-import { reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import {
+  LEVELS,
+  freshCarrier,
+  isDead,
+  nextLevel,
+  restartLevel,
+  startLevel as beginLevel,
+} from '../src/game/campaign.ts'
+import { deathLines, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
@@ -38,13 +45,7 @@ const surface = new PreSurface(screen)
  * hides its own key, so a key brought forward would open a door it was never
  * meant to.
  */
-const carrier: Carrier = {
-  health: 100,
-  maxHealth: 100,
-  ammo: [60, 24, 8],
-  ammoMax: [120, 48, 24],
-  keys: new Set<string>(),
-}
+const carrier: Carrier = freshCarrier()
 
 let levelIndex = 0
 let state: LevelState = loadLevel(LEVELS[0]!)
@@ -52,6 +53,14 @@ let state: LevelState = loadLevel(LEVELS[0]!)
 let projectiles: Projectile[] = []
 /** Seconds left on the summary before the next level starts. */
 let advanceIn = 0
+/**
+ * Seconds spent dead.
+ *
+ * The trigger you were holding is usually what killed you, so a press is only
+ * taken as "again" once the panel has been up long enough to have been read.
+ */
+let deadFor = 0
+const REVIVE_DELAY = 1.2
 
 function startLevel(index: number): void {
   // What carries and what does not is decided in `campaign.ts`, where a check
@@ -61,6 +70,7 @@ function startLevel(index: number): void {
   state = beginLevel(index, carrier)
   projectiles = []
   advanceIn = 0
+  deadFor = 0
   say(state.def.name)
 }
 
@@ -242,10 +252,27 @@ function step(): void {
   if (goal.reached) {
     // The level is over: nothing walks, nothing fires, nothing closes in behind
     // the summary. After a pause the next one starts, or the last one stays.
+    //
+    // Before the death branch deliberately: a bolt still in the air when you
+    // stepped into the exit does not take the level back off you.
     const next = nextLevel(levelIndex)
     if (next !== null) {
       advanceIn -= STEP
       if (advanceIn <= 0) startLevel(next)
+    }
+    return
+  }
+
+  if (isDead(carrier)) {
+    // Everything stops, including the creatures standing over you. The level is
+    // still drawn behind the panel, so what killed you is still on screen.
+    deadFor += STEP
+    const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+    if (deadFor >= REVIVE_DELAY && (asked.fire || asked.use)) {
+      state = restartLevel(levelIndex, carrier)
+      projectiles = []
+      deadFor = 0
+      say(state.def.name)
     }
     return
   }
@@ -286,7 +313,8 @@ function step(): void {
   flash = Math.max(0, flash - STEP)
   noticeTime = Math.max(0, noticeTime - STEP)
   const weapon = WEAPONS[weaponIndex]!
-  if (intent.fire && cooldown <= 0 && carrier.ammo[weaponIndex]! >= weapon.cost && carrier.health > 0) {
+  // No test for being alive: the step above has already returned if you are not.
+  if (intent.fire && cooldown <= 0 && carrier.ammo[weaponIndex]! >= weapon.cost) {
     carrier.ammo[weaponIndex] = carrier.ammo[weaponIndex]! - weapon.cost
     cooldown = weapon.interval
     flash = 0.06
@@ -431,6 +459,16 @@ function frame(now: number): void {
     drawText(fb, centre, 1, notice, { color: vec3(0.95, 0.9, 0.7), align: 'center' })
   }
 
+  if (isDead(carrier)) {
+    // Laid out by the summary's rule, so the two panels cannot disagree about
+    // where the middle of a narrow grid is.
+    summaryLayout(fb.width, fb.height, deathLines()).forEach((piece, index) => {
+      drawText(fb, piece.col, piece.row, piece.text, {
+        color: index === 0 ? vec3(1.3, 0.4, 0.35) : vec3(0.8, 0.75, 0.7),
+      })
+    })
+  }
+
   if (goal.reached) {
     // Drawn over the frozen frame rather than replacing it, so the room you
     // finished in is still behind the result.
@@ -506,6 +544,11 @@ function frame(now: number): void {
     pickupsLeft: pickups.filter((pickup) => !pickup.taken).length,
     inFlight: projectiles.length,
     complete: goal.reached,
+    dead: isDead(carrier),
+    deadFor,
+    // Reported rather than written down twice: a check that hardcodes the delay
+    // is a check that disagrees with the game the moment the delay changes.
+    reviveDelay: REVIVE_DELAY,
     elapsed: goal.elapsed,
     doorState: state.movers[0]?.state ?? null,
     liftHeight:
@@ -559,6 +602,13 @@ function somewhereInside(sector: Sector): { x: number; y: number } | null {
  */
 if (new URLSearchParams(location.search).has('probe')) {
   ;(window as unknown as { __probe: Record<string, unknown> }).__probe = {
+    kill(): boolean {
+      // Through the health the game reads, not through a death flag: the rule
+      // being checked is "nothing survives at zero", and setting a flag would
+      // check that the flag works.
+      carrier.health = 0
+      return true
+    },
     toExit(): boolean {
       const sector = state.level.sectors[state.goal.exitSector]
       if (!sector) return false

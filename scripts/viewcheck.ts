@@ -504,11 +504,13 @@ const arrived = await finish.evaluate(
 )
 await finish.waitForTimeout(300)
 const ended = await readEnding(finish)
-await finish.screenshot({ path: join(SHOTS, 'summary.png') })
 // Long enough to prove the pause is a pause and not a frame, short enough to
-// still be inside it.
+// still be inside it. Nothing slow goes between these two reads: a screenshot
+// costs a few hundred milliseconds and spends them out of the pause being
+// measured.
 await finish.waitForTimeout(1500)
 const during = await readEnding(finish)
+await finish.screenshot({ path: join(SHOTS, 'summary.png') })
 // Past 3.5s from arrival, with room for the frames either side of it.
 await finish.waitForTimeout(2900)
 const handedOver = await readEnding(finish)
@@ -536,6 +538,91 @@ check('the summary holds the level still, then hands over', () => {
     `after the pause the game was on level ${handedOver.levelIndex}, not the second one`,
   )
   assert(!handedOver.complete, 'the second level started already finished')
+})
+
+// Dying, which until this round the game could not do. Health reaching zero
+// stopped you firing and did nothing else: you walked on, unarmed, forever.
+const grave = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const corpse = await grave.newPage()
+corpse.on('pageerror', (error) => problems.push(`death: ${error.message}`))
+await corpse.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await corpse.waitForTimeout(900)
+
+function readDeath(page: Page) {
+  return page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      text: document.getElementById('screen')?.textContent ?? '',
+      dead: probe.dead === true,
+      deadFor: (probe.deadFor as number) ?? 0,
+      reviveDelay: (probe.reviveDelay as number) ?? 0,
+      health: (probe.health as number) ?? -1,
+      levelIndex: (probe.levelIndex as number) ?? -1,
+      frames: (probe.frames as number) ?? 0,
+      x: (probe.x as number) ?? 0,
+      y: (probe.y as number) ?? 0,
+    }
+  })
+}
+
+const killed = await corpse.evaluate(
+  () => (window as unknown as { __probe?: { kill(): boolean } }).__probe?.kill() ?? false,
+)
+// Wall clock from the moment of death, because the page's own `deadFor` cannot
+// answer this: restarting resets it to zero, so a read that landed late and a
+// read that landed on a game which restarted far too early look identical from
+// inside the page.
+const killedAt = Date.now()
+await corpse.waitForTimeout(300)
+const died = await readDeath(corpse)
+// Held down from before the delay is up, so this also asks that a trigger held
+// through your own death does not skip the panel.
+//
+// Nothing slow may happen between here and the read below. A screenshot used to
+// sit above this line, and the few hundred milliseconds it costs were spent out
+// of the very delay being measured -- which showed up as this check failing in
+// a run that had only removed the panel, something that cannot affect timing.
+await corpse.keyboard.down(' ')
+await corpse.waitForTimeout(400)
+const tooSoon = await readDeath(corpse)
+const tooSoonAfter = (Date.now() - killedAt) / 1000
+await corpse.waitForTimeout(1500)
+const revived = await readDeath(corpse)
+await corpse.keyboard.up(' ')
+
+// Killed again, with nothing else going on, purely to be looked at.
+await corpse.evaluate(() => (window as unknown as { __probe?: { kill(): boolean } }).__probe?.kill())
+await corpse.waitForTimeout(300)
+await corpse.screenshot({ path: join(SHOTS, 'death.png') })
+
+check('running out of health ends it rather than being ignored', () => {
+  assert(killed, 'the probe door would not take the health away')
+  assert(died.dead, `health was ${died.health} and the game did not consider that dead`)
+  for (const line of ['YOU DIED', 'fire to try again']) {
+    assert(died.text.includes(line), `the death panel is missing "${line}"`)
+  }
+  assert(tooSoon.frames > died.frames, 'no frames were drawn while the panel was up')
+  assert(
+    tooSoon.x === died.x && tooSoon.y === died.y,
+    `the body drifted ${Math.hypot(tooSoon.x - died.x, tooSoon.y - died.y).toFixed(2)} after dying`,
+  )
+})
+
+check('a fresh press starts the level over, not the campaign', () => {
+  // The trigger goes down before the delay is up and is still down after it.
+  // Too soon is the half that matters: the shot that killed you would
+  // otherwise restart the level before the panel has been read.
+  // The premise first. A read that landed past the delay says nothing about
+  // holding a trigger, and calling that a broken game would be a lie told about
+  // a slow browser -- so it fails in those words instead.
+  assert(
+    tooSoonAfter < tooSoon.reviveDelay,
+    `looked ${tooSoonAfter.toFixed(2)}s after dying, past the ${tooSoon.reviveDelay}s delay: this measured nothing`,
+  )
+  assert(tooSoon.dead, 'the level restarted before the panel had been up a second')
+  assert(!revived.dead, 'the level never restarted, so death is a dead end')
+  assert(revived.health === 100, `came back with ${revived.health} health`)
+  assert(revived.levelIndex === 0, `came back on level ${revived.levelIndex} instead of the one that killed us`)
 })
 
 check('pushing the stick walks the player', () => {
