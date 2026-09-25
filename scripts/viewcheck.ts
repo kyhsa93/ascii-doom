@@ -715,7 +715,22 @@ const workerState = await app.evaluate(async () => {
     new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
   ])
   if (!registration) return 'never became ready'
-  return registration.active ? registration.active.state : 'ready with no active worker'
+
+  // Waited for rather than read once. `ready` resolves as soon as there is an
+  // active registration, and that worker can still be inside its own activate
+  // handler at the time -- `clients.claim()` has not finished. Sampling at that
+  // instant is a race, and it is one this check quietly won until the bundle
+  // grew enough for installing to take a moment longer, at which point it
+  // reported the game broken because the worker was one tick behind.
+  //
+  // Nothing is weakened by waiting: a worker that is genuinely stuck returns
+  // the state it settled on, and "activating" after eight seconds still fails.
+  const state = () => (registration.active ? registration.active.state : 'ready with no active worker')
+  const deadline = Date.now() + 8000
+  while (state() !== 'activated' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return state()
 })
 
 const manifestResponse = await app.request.get(new URL('manifest.webmanifest', base).href)
@@ -761,6 +776,65 @@ check('one visit is enough to play with the network off', () => {
   assert(offline !== null, `the page would not load offline: ${offlineFailure}`)
   assert(offline.cols > 20, `offline the grid came back ${offline.cols} columns wide`)
   assert(offline.frames > 0, 'the page loaded offline but never drew a frame')
+})
+
+// Ground that hurts, in the running game rather than in a fixture. The channel
+// is in the second level, so this finishes the first one to get there.
+const wading = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const waded = await wading.newPage()
+waded.on('pageerror', (error) => problems.push(`hazard: ${error.message}`))
+await waded.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await waded.waitForTimeout(900)
+
+function readGround(page: Page) {
+  return page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      health: (probe.health as number) ?? -1,
+      hurt: (probe.hurt as number) ?? -1,
+      levelIndex: (probe.levelIndex as number) ?? -1,
+    }
+  })
+}
+
+await waded.evaluate(() => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit())
+// Past the summary and its pause, which puts us in the cistern.
+await waded.waitForTimeout(4400)
+
+const steppedIn = await waded.evaluate(
+  () => (window as unknown as { __probe?: { toTag(tag: string): boolean } }).__probe?.toTag('channel') ?? false,
+)
+await waded.waitForTimeout(200)
+const enteredChannel = await readGround(waded)
+await waded.waitForTimeout(1500)
+const stoodInIt = await readGround(waded)
+
+// Out, to the room you arrive in: the hub has a creature in it and "the damage
+// stopped" is not a claim you can make while something is shooting at you.
+const steppedOut = await waded.evaluate(
+  () => (window as unknown as { __probe?: { toTag(tag: string): boolean } }).__probe?.toTag('entry') ?? false,
+)
+// Long enough for anything already in the air to land before the first reading.
+await waded.waitForTimeout(400)
+const onDryGround = await readGround(waded)
+await waded.waitForTimeout(1200)
+const stillDry = await readGround(waded)
+
+check('standing in the channel costs health, and leaving it stops', () => {
+  assert(enteredChannel.levelIndex === 1, `the probe never reached the cistern (level ${enteredChannel.levelIndex})`)
+  assert(steppedIn, 'the shipped level has no sector tagged "channel" to stand in')
+  assert(enteredChannel.hurt > 0, 'the channel reports no damage for standing in it')
+  assert(
+    stoodInIt.health < enteredChannel.health,
+    `a second and a half in it cost nothing (${enteredChannel.health} to ${stoodInIt.health})`,
+  )
+
+  assert(steppedOut, 'there is no sector tagged "entry" to step out onto')
+  assert(onDryGround.hurt === 0, 'the room you arrive in is dangerous ground')
+  assert(
+    stillDry.health === onDryGround.health,
+    `health kept falling on dry ground (${onDryGround.health} to ${stillDry.health})`,
+  )
 })
 
 check('pushing the stick walks the player', () => {

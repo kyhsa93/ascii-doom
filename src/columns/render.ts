@@ -130,6 +130,11 @@ export const MATERIALS: Record<string, Material> = {
   floor: { tint: tint(0.56, 0.52, 0.46), ramp: ' ,-=~' },
   // Sparse marks overhead.
   ceiling: { tint: tint(0.42, 0.46, 0.58), ramp: ' \'"^' },
+  // Ground that is not safe to stand on. Its own family of glyphs rather than a
+  // tint on the floor's, because glyph carries class here and light carries
+  // brightness -- a colour alone would say "this floor is lit oddly" where the
+  // point is "this is not the same kind of thing".
+  sludge: { tint: tint(0.55, 0.78, 0.40), ramp: ' `!$' },
 }
 
 /**

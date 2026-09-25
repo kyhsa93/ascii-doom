@@ -47,6 +47,7 @@ import {
   startLevel,
 } from '../src/game/campaign.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import { HURT_INTERVAL, bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
@@ -1431,6 +1432,125 @@ test('a seam between rooms of one height is not a line on the map', () => {
 
   assert(countGlyph(draw(flat), ':') === 0, 'a seam between two rooms at one height was drawn')
   assert(countGlyph(draw(rooms(1)), ':') > 0, 'a step between two rooms was left off the map')
+})
+
+console.log('\nfloors that hurt')
+
+/** Dry ground, and a channel of something that bites, sharing one edge. */
+const SLUDGE_ROOM: SectorDef[] = [
+  { polygon: [[0, 0], [4, 0], [4, 4], [0, 4]], floor: 0, ceiling: 3, light: 0.8 },
+  {
+    polygon: [[4, 0], [8, 0], [8, 4], [4, 4]],
+    floor: 0,
+    ceiling: 3,
+    light: 0.8,
+    hurt: 7,
+    floorMaterial: 'sludge',
+  },
+]
+
+test('a hurting floor is a property of the sector, carried through the build', () => {
+  // The definition is a template and the level is built from it, so a field
+  // that is not copied across is a hazard that exists only in the source.
+  const level = buildLevel(SLUDGE_ROOM)
+  const dry = sectorAt(level, 2, 2)
+  const wet = sectorAt(level, 6, 2)
+  assert(dry >= 0 && wet >= 0, 'the fixture rooms are not where this check thinks they are')
+  assert(hurtOf(level, dry) === 0, `ordinary ground reports ${hurtOf(level, dry)} damage`)
+  assert(hurtOf(level, wet) === 7, `the channel reports ${hurtOf(level, wet)} damage, not the 7 it was given`)
+})
+
+test('crossing the edge of a channel costs nothing', () => {
+  // The first bite lands a full interval after arriving, so a room that is
+  // merely stepped through is free. The alternative -- hurting on entry --
+  // makes a doorway a toll and the shape of the room stops telling you
+  // anything.
+  const level = buildLevel(SLUDGE_ROOM)
+  const wet = sectorAt(level, 6, 2)
+  const hazard = makeHazard()
+  assert(bite(level, wet, hazard, HURT_INTERVAL * 0.9) === 0, 'a step through the channel drew blood')
+})
+
+test('standing in it costs exactly one bite per interval', () => {
+  const level = buildLevel(SLUDGE_ROOM)
+  const wet = sectorAt(level, 6, 2)
+  const hazard = makeHazard()
+  assert(bite(level, wet, hazard, HURT_INTERVAL) === 7, 'a full interval did not cost a bite')
+  assert(bite(level, wet, hazard, HURT_INTERVAL) === 7, 'the second interval did not cost a bite')
+
+  // A long frame owes every bite it was away for rather than one. A tab left in
+  // the background is the ordinary way to find this out.
+  const slept = makeHazard()
+  assert(bite(level, wet, slept, HURT_INTERVAL * 3 + 0.01) === 21, 'a long frame lost the bites it owed')
+})
+
+test('leaving stops the clock rather than banking it', () => {
+  // Two hops across a channel must not add up to standing in it. Without the
+  // reset, a corridor crossed carefully hurts exactly as much as one stood in,
+  // which is the opposite of what the room is asking.
+  const level = buildLevel(SLUDGE_ROOM)
+  const dry = sectorAt(level, 2, 2)
+  const wet = sectorAt(level, 6, 2)
+  const hazard = makeHazard()
+
+  assert(bite(level, wet, hazard, HURT_INTERVAL * 0.8) === 0, 'the first hop cost something')
+  assert(bite(level, dry, hazard, 0.01) === 0, 'dry ground cost something')
+  assert(hazard.standing === 0, `the clock kept ${hazard.standing}s after leaving`)
+  assert(bite(level, wet, hazard, HURT_INTERVAL * 0.8) === 0, 'two hops added up to a bite')
+})
+
+test('ordinary ground never costs anything, however long you stand on it', () => {
+  const level = buildLevel(SLUDGE_ROOM)
+  const dry = sectorAt(level, 2, 2)
+  assert(bite(level, dry, makeHazard(), 600) === 0, 'standing on a floor hurt')
+})
+
+test('ground that hurts is ground you can see is different', () => {
+  // An invisible hazard is not a difficulty setting, it is a bug: the player
+  // has one channel for "this is a different kind of thing", and it is the
+  // glyphs. Asked of the shipped levels rather than of a fixture, because this
+  // is a rule about authoring and the only place it can be broken is content.
+  const wrong: string[] = []
+  for (const def of LEVELS) {
+    for (const sector of loadLevel(def).level.sectors) {
+      if (sector.hurt > 0 && sector.floorMaterial !== 'sludge') {
+        wrong.push(`${def.name} hurts you on a floor drawn as ${sector.floorMaterial}`)
+      }
+    }
+  }
+  assert(wrong.length === 0, wrong.join('; '))
+})
+
+test('somewhere in the campaign the ground is actually dangerous', () => {
+  // Without this the rules above are all satisfied by a game that has no
+  // hazards in it at all, and the feature could fall out of the levels while
+  // every other check stayed green.
+  const hazardous = LEVELS.flatMap((def) =>
+    loadLevel(def).level.sectors.filter((sector) => sector.hurt > 0),
+  )
+  assert(hazardous.length > 0, 'no shipped level has any ground that hurts')
+})
+
+test('the way out is never through something that hurts', () => {
+  // The design claim, stated where it can fail. Hazard is meant to be a cost
+  // you choose for something optional -- so the exit, and any door the level
+  // locks behind a key, stand on dry ground. If that stops being true this
+  // stops being a choice and becomes a toll.
+  const forced: string[] = []
+  for (const def of LEVELS) {
+    const state = loadLevel(def)
+    const sectors = state.level.sectors
+    const exit = sectors[state.goal.exitSector]
+    if (exit && exit.hurt > 0) forced.push(`${def.name} puts its exit in ${exit.hurt}-a-bite ground`)
+    for (const mover of state.movers) {
+      if (mover.kind.requiresKey === undefined) continue
+      const sector = sectors[mover.sector]
+      if (sector && sector.hurt > 0) {
+        forced.push(`${def.name} locks a door standing in ${sector.hurt}-a-bite ground`)
+      }
+    }
+  }
+  assert(forced.length === 0, forced.join('; '))
 })
 
 test('every shipped level is closed, with no holes to see through', () => {

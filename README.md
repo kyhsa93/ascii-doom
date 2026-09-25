@@ -27,6 +27,15 @@ boundaries between two sectors at the same height are left out — they are a
 seam in how the map was authored rather than anything you could see standing
 there, and drawing them turns the picture into a mesh.
 
+Some ground is not safe to stand on. It has its own family of glyphs rather
+than a tint on the floor's, so it reads as a different kind of thing rather
+than as a floor lit oddly, and it takes a bite out of you on a fixed clock
+rather than a trickle per second — crossing the edge of it costs nothing, and
+the clock starts again each time you step in. Creatures ignore it, as they do
+in the original: sludge you could herd things into would turn every hazard into
+a weapon. What sits in it is always optional, and the way to an exit never
+runs through it.
+
 Running out of health ends the run rather than leaving you walking around
 unarmed. Everything stops, the room you died in stays on screen behind the
 panel, and firing starts that level again with the kit you began it with — the

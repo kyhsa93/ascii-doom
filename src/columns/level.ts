@@ -29,6 +29,8 @@ export interface SectorDef {
   /** Surface identifiers, resolved to glyphs and colour by the renderer. */
   floorMaterial?: string
   ceilingMaterial?: string
+  /** Damage dealt to whoever stands in it, per bite. Zero is safe ground. */
+  hurt?: number
   /** A name for switches and triggers to refer to. */
   tag?: string
 }
@@ -40,6 +42,8 @@ export interface Sector {
   light: number
   readonly floorMaterial: string
   readonly ceilingMaterial: string
+  /** Damage per bite for standing here; zero for ordinary ground. */
+  readonly hurt: number
   readonly tag: string | null
   /** Axis-aligned bounds, so point tests can reject most sectors immediately. */
   readonly minX: number
@@ -126,6 +130,7 @@ export function buildLevel(defs: readonly SectorDef[]): Level {
       light: def.light,
       floorMaterial: def.floorMaterial ?? 'floor',
       ceilingMaterial: def.ceilingMaterial ?? 'ceiling',
+      hurt: def.hurt ?? 0,
       tag: def.tag ?? null,
       minX,
       minY,

@@ -13,6 +13,7 @@ import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { drawAutomap } from '../src/columns/automap.ts'
+import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { insideSector, type Line, type Sector } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
@@ -75,6 +76,8 @@ let advanceIn = 0
  */
 let deadFor = 0
 const REVIVE_DELAY = 1.2
+/** The clock on the ground underfoot, if the ground is the kind that hurts. */
+let hazard = makeHazard()
 
 function startLevel(index: number): void {
   // What carries and what does not is decided in `campaign.ts`, where a check
@@ -87,6 +90,7 @@ function startLevel(index: number): void {
   deadFor = 0
   seen = new Set<Line>()
   mapOpen = false
+  hazard = makeHazard()
   say(state.def.name)
 }
 
@@ -301,6 +305,7 @@ function step(): void {
       deadFor = 0
       seen = new Set<Line>()
       mapOpen = false
+      hazard = makeHazard()
       say(state.def.name)
     }
     return
@@ -334,6 +339,14 @@ function step(): void {
   const dy = fy * intent.forward + sy * intent.strafe
   // Already unit length at most: the intent does that, so both devices agree.
   if (dx !== 0 || dy !== 0) moveBody(level, player, dx * speed, dy * speed)
+
+  // The ground underfoot, after the move rather than before it: a step out of a
+  // channel is a step out of it, and the clock starts again on the way back in.
+  const burn = bite(level, player.sector, hazard, STEP)
+  if (burn > 0) {
+    carrier.health = Math.max(0, carrier.health - burn)
+    say('burning')
+  }
 
   // Walked over. Nothing is taken that would give nothing, so crossing a room
   // at full health leaves the kit there for when it is worth something.
@@ -591,6 +604,7 @@ function frame(now: number): void {
     inFlight: projectiles.length,
     complete: goal.reached,
     mapOpen,
+    hurt: hurtOf(level, player.sector),
     seen: seen.size,
     lines: level.lines.length,
     dead: isDead(carrier),
@@ -636,6 +650,19 @@ function somewhereInside(sector: Sector): { x: number; y: number } | null {
   return null
 }
 
+/** Puts the body inside a sector by index, and says whether it could. */
+function putIn(index: number): boolean {
+  const sector = state.level.sectors[index]
+  if (!sector) return false
+  const spot = somewhereInside(sector)
+  if (!spot) return false
+  state.player.x = spot.x
+  state.player.y = spot.y
+  state.player.sector = index
+  state.player.floor = sector.floor
+  return true
+}
+
 /**
  * A door for the browser checks, opened only by `?probe`.
  *
@@ -659,15 +686,11 @@ if (new URLSearchParams(location.search).has('probe')) {
       return true
     },
     toExit(): boolean {
-      const sector = state.level.sectors[state.goal.exitSector]
-      if (!sector) return false
-      const spot = somewhereInside(sector)
-      if (!spot) return false
-      state.player.x = spot.x
-      state.player.y = spot.y
-      state.player.sector = state.goal.exitSector
-      state.player.floor = sector.floor
-      return true
+      return putIn(state.goal.exitSector)
+    },
+    /** Stand in the sector carrying this tag, for checks about the ground. */
+    toTag(tag: string): boolean {
+      return putIn(state.level.sectors.findIndex((sector) => sector.tag === tag))
     },
   }
 }

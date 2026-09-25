@@ -91,17 +91,48 @@ const SECTORS: SectorDef[] = [
     // Sunk half a step below the hub: far enough to feel like a drop, near
     // enough to climb back out of. Anything deeper needs a lift.
     polygon: [
-      [8, -6],
       [11, -6],
       [13, -6],
       [16, -6],
       [16, 0],
       [8, 0],
+      // The two vertices the channel is cut against. The west end of this room
+      // is a separate sector now, and a shared wall only pairs when both sides
+      // name the same endpoints.
+      [8, -4],
+      [11, -4],
     ],
     floor: -0.6,
     ceiling: 3,
     light: 0.42,
     tag: 'pit',
+  },
+  {
+    // A channel of something that eats through boots, in the pit's west end.
+    //
+    // The slugs sit in it, and slugs are for the launcher, which nothing here
+    // requires — so this is a cost you choose to pay rather than a toll on the
+    // way to the vault, which stays dry. Both of the things living down here
+    // stand outside it: sludge that creatures ignore is tense, and sludge they
+    // are standing in is unfair.
+    //
+    // A step below the pit rather than level with it, so it reads as a channel
+    // from the lip, is inside what a body can climb back out of, and shows up
+    // on the automap — which leaves out boundaries between floors of one
+    // height, and that is exactly what this would be if it were flush.
+    polygon: [
+      [8, -6],
+      [11, -6],
+      [11, -4],
+      [8, -4],
+    ],
+    floor: -0.9,
+    ceiling: 3,
+    light: 0.46,
+    floorMaterial: 'sludge',
+    // Five a bite, which is what the original takes for its own worst ground.
+    hurt: 5,
+    tag: 'channel',
   },
   {
     // The locked one. Its floor matches the room beyond rather than the pit,
@@ -187,11 +218,11 @@ export const LEVEL_2_DEF: LevelDef = {
       taken: false,
     },
     {
-      // Slugs in the pit, which is where they are wanted.
+      // Slugs in the channel: the one thing down here worth wading for.
       x: 9.5,
       y: -5,
-      z: -0.6,
-      light: 0.42,
+      z: -0.9,
+      light: 0.46,
       sprite: SLUG_CRATE,
       grant: { kind: 'ammo', weapon: 2, amount: 8 },
       radius: 0.4,
