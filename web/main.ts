@@ -22,7 +22,7 @@ import {
   provoke,
   updateActors,
 } from '../src/game/ai.ts'
-import { LEVELS } from '../src/game/campaign.ts'
+import { LEVELS, nextLevel, startLevel as beginLevel } from '../src/game/campaign.ts'
 import { reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
@@ -60,11 +60,13 @@ let projectiles: Projectile[] = []
 let advanceIn = 0
 
 function startLevel(index: number): void {
+  // What carries and what does not is decided in `campaign.ts`, where a check
+  // can ask about it. What is left here is what only the page owns: the things
+  // in flight and the pause before the next map.
   levelIndex = index
-  state = loadLevel(LEVELS[index]!)
+  state = beginLevel(index, carrier)
   projectiles = []
   advanceIn = 0
-  carrier.keys.clear()
   say(state.def.name)
 }
 
@@ -121,9 +123,10 @@ function step(): void {
     // The level is over: nothing walks, nothing fires, nothing closes in behind
     // the summary. After a pause the next one starts, or the last one simply
     // stays on screen.
-    if (levelIndex + 1 < LEVELS.length) {
+    const next = nextLevel(levelIndex)
+    if (next !== null) {
       advanceIn -= STEP
-      if (advanceIn <= 0) startLevel(levelIndex + 1)
+      if (advanceIn <= 0) startLevel(next)
     }
     return
   }

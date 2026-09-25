@@ -27,7 +27,7 @@ import {
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
-import { LEVELS } from '../src/game/campaign.ts'
+import { LEVELS, nextLevel, startLevel } from '../src/game/campaign.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { loadLevel } from '../src/game/levels.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
@@ -1134,6 +1134,39 @@ test('every shipped level loads, and loads clean each time', () => {
     assert(second.pickups[0]!.taken === false, `${def.name}: a second load remembered a collected supply`)
     assert(second.level.sectors[0]!.ceiling !== 99, `${def.name}: a second load inherited a moved ceiling`)
   }
+})
+
+test('starting a level keeps what you earned and takes back the keys', () => {
+  // The newest rule in the project and, until this check, the least examined:
+  // it was one line inside the frame loop, where nothing in Node can reach it.
+  //
+  // Keys are the whole of what does not carry. A key brought into the next
+  // level would open a door it was never meant to, and would also quietly
+  // falsify the check above — which asks whether each level supplies the keys
+  // its own locks need, on the assumption that you arrive with none.
+  const carrier: Carrier = {
+    health: 42,
+    maxHealth: 100,
+    ammo: [17, 3, 1],
+    ammoMax: [120, 48, 24],
+    keys: new Set(['amber', 'cobalt']),
+  }
+
+  const state = startLevel(1, carrier)
+
+  assert(carrier.keys.size === 0, `arrived holding ${[...carrier.keys].join(', ')}`)
+  assert(carrier.health === 42, `health was reset to ${carrier.health}`)
+  assert(carrier.ammo.join(',') === '17,3,1', `ammunition became ${carrier.ammo.join(',')}`)
+  assert(state.def === LEVELS[1], 'started the wrong level')
+  assert(
+    state.pickups.every((pickup) => !pickup.taken),
+    'the new level began with supplies already collected',
+  )
+})
+
+test('the campaign ends rather than wrapping round', () => {
+  assert(nextLevel(0) === 1, 'the first level does not lead to the second')
+  assert(nextLevel(LEVELS.length - 1) === null, 'the last level leads somewhere')
 })
 
 test('every shipped level is closed, with no holes to see through', () => {
