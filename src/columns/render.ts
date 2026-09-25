@@ -178,6 +178,44 @@ function firstRow(top: number): number {
   return Math.ceil(top - 0.5)
 }
 
+/** Everything about the projection that depends on the grid rather than the world. */
+export interface Projection {
+  /** Screen rows per world unit of height, at one unit of distance. */
+  readonly projScale: number
+  /** Half the width of the camera plane at one unit of distance, in world units. */
+  readonly planeHalf: number
+  /** The row a surface at eye height projects to. */
+  readonly horizon: number
+}
+
+/**
+ * The projection constants for a grid.
+ *
+ * A character cell is about twice as tall as it is wide, so the horizontal
+ * field of view is much wider than the vertical one for the same grid. Getting
+ * that correction wrong makes every corridor the wrong shape rather than
+ * slightly off.
+ *
+ * Shared by everything that puts world geometry on this screen — walls here,
+ * sprites elsewhere — because two things drawn with two copies of this
+ * arithmetic will disagree in exactly the way a creature standing beside a
+ * wall makes obvious.
+ */
+export function projectionOf(
+  cols: number,
+  rows: number,
+  cellAspect: number,
+  fovY: number,
+  horizonShift = 0,
+): Projection {
+  const tanHalfV = Math.tan(fovY / 2)
+  return {
+    projScale: rows / 2 / tanHalfV,
+    planeHalf: tanHalfV * ((cols * cellAspect) / rows),
+    horizon: rows / 2 + horizonShift,
+  }
+}
+
 export function renderView(
   fb: Framebuffer,
   level: Level,
@@ -190,16 +228,13 @@ export function renderView(
   const cols = fb.width
   const rows = fb.height
   const maxDistance = options.maxDistance ?? DEFAULT_MAX_DISTANCE
-  const horizon = rows / 2 + (options.horizonShift ?? 0)
-
-  // A character cell is about twice as tall as it is wide, so the horizontal
-  // field of view is much wider than the vertical one for the same grid. This
-  // is the same correction the engine makes for its own projection; getting it
-  // wrong makes every corridor the wrong shape rather than slightly off.
-  const aspect = (cols * cellAspect) / rows
-  const tanHalfV = Math.tan(view.fovY / 2)
-  const projScale = rows / 2 / tanHalfV
-  const planeHalf = tanHalfV * aspect
+  const { projScale, planeHalf, horizon } = projectionOf(
+    cols,
+    rows,
+    cellAspect,
+    view.fovY,
+    options.horizonShift ?? 0,
+  )
 
   const fx = Math.cos(view.angle)
   const fy = Math.sin(view.angle)

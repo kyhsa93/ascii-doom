@@ -14,7 +14,9 @@ import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
+import { drawBillboards } from '../src/columns/sprite.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
+import { LEVEL_1_THINGS } from '../src/game/things.ts'
 import { eyeHeight, movePlayer, spawnPlayer } from '../src/game/player.ts'
 
 const screen = document.getElementById('screen')!
@@ -126,6 +128,10 @@ function frame(now: number): void {
     fovY: FOV_Y,
   }
   renderView(fb, LEVEL_1, view, surface.cellAspect, { horizonShift })
+  // After the world, so the depth it wrote decides what is hidden; before
+  // `resolve`, though it makes no difference to sprites — they write their own
+  // glyphs and `resolve` only fills cells still on auto.
+  drawBillboards(fb, view, surface.cellAspect, LEVEL_1_THINGS, { horizonShift })
 
   fb.resolve(RAMPS.short)
 

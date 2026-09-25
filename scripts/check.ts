@@ -16,6 +16,7 @@ import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { acrossFrom, buildLevel, castRay, sectorAt, type SectorDef } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, MATERIALS, lightAt, renderView, rowOfHeight, type View } from '../src/columns/render.ts'
+import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
 
 let failed = 0
@@ -281,6 +282,100 @@ test('a nearer surface is brighter than the same surface further away', () => {
     luminance(near) > luminance(far),
     `the near floor (${luminance(near).toFixed(3)}) is not brighter than the far floor (${luminance(far).toFixed(3)})`,
   )
+})
+
+console.log('\nsprites')
+
+/**
+ * A test sprite made of one character no material uses.
+ *
+ * Counting cells is then unambiguous: an X on screen came from the billboard
+ * and nothing else. Reusing a wall glyph would make "was it drawn" depend on
+ * what the room behind it happens to look like.
+ */
+const MARKER: Sprite = {
+  rows: ['XXXX', 'XXXX', 'XXXX', 'XXXX'],
+  tint: [1, 1, 1],
+  width: 1,
+  height: 1,
+}
+
+/** The cells a billboard actually painted, as a bounding box. */
+function markerBox(fb: Framebuffer): { count: number; minX: number; maxX: number; minY: number; maxY: number } {
+  let count = 0
+  let minX = Infinity
+  let maxX = -1
+  let minY = Infinity
+  let maxY = -1
+  for (let row = 0; row < fb.height; row++) {
+    for (let col = 0; col < fb.width; col++) {
+      if (fb.chars[row * fb.width + col] !== 88) continue
+      count++
+      minX = Math.min(minX, col)
+      maxX = Math.max(maxX, col)
+      minY = Math.min(minY, row)
+      maxY = Math.max(maxY, row)
+    }
+  }
+  return { count, minX, maxX, minY, maxY }
+}
+
+/** Renders the level from the spawn and puts one marker where asked. */
+function shootWithMarker(things: Billboard[], x = 2, y = 3, angle = 0): Framebuffer {
+  const fb = new Framebuffer(163, 50)
+  fb.clear(0, 0, 0, 0)
+  const view: View = { x, y, z: 1.6, angle, sector: sectorAt(LEVEL_1, x, y), fovY: DEFAULT_FOV_Y }
+  renderView(fb, LEVEL_1, view, 0.574, {})
+  drawBillboards(fb, view, 0.574, things, {})
+  return fb
+}
+
+test('a thing straight ahead is drawn straight ahead', () => {
+  // The invariant that ties billboards to the same projection as the walls. If
+  // the two disagreed at all, a creature would sit beside the doorway it is
+  // standing in, and no assertion about its size would notice.
+  const fb = shootWithMarker([{ x: 12, y: 3, z: 0, light: 1, sprite: MARKER }])
+  const box = markerBox(fb)
+  assert(box.count > 0, 'nothing was drawn for a thing in plain view')
+  const centre = (box.minX + box.maxX) / 2
+  close(centre, (fb.width - 1) / 2, 1, 'the centre column of a thing dead ahead')
+})
+
+test('a thing twice as far is half as large, in both directions', () => {
+  // Perspective again, and the check that catches a sprite scaled by distance
+  // on one axis only — which looks almost right and is the usual bug.
+  const near = markerBox(shootWithMarker([{ x: 7, y: 3, z: 0, light: 1, sprite: MARKER }]))
+  const far = markerBox(shootWithMarker([{ x: 12, y: 3, z: 0, light: 1, sprite: MARKER }]))
+  const nearWide = near.maxX - near.minX + 1
+  const farWide = far.maxX - far.minX + 1
+  const nearTall = near.maxY - near.minY + 1
+  const farTall = far.maxY - far.minY + 1
+  // Five units away against ten: half the size, within a cell of rounding.
+  close(farWide, nearWide / 2, 1.5, 'width at twice the distance')
+  close(farTall, nearTall / 2, 1.5, 'height at twice the distance')
+})
+
+test('a thing whose top is at eye level has its top on the horizon', () => {
+  // The same independent invariant the wall projection is held to, applied to
+  // the other drawing path. It pins the vertical placement without restating
+  // the formula: at any distance, a surface at eye height is on the horizon.
+  const tall: Sprite = { ...MARKER, height: 1.6 }
+  for (const x of [7, 12, 20]) {
+    const box = markerBox(shootWithMarker([{ x, y: 3, z: 0, light: 1, sprite: tall }]))
+    assert(box.count > 0, `nothing drawn at ${x} units`)
+    close(box.minY, 25, 1, `top row of a thing whose head is at eye height, ${x} units away`)
+  }
+})
+
+test('a thing behind a wall is not drawn, and the same thing in front of it is', () => {
+  // Occlusion comes from the depth the wall renderer already wrote, so this is
+  // really a check that the two paths agree about distance. The hall's east
+  // wall is at x=26.
+  const behind = markerBox(shootWithMarker([{ x: 27.5, y: 3, z: 0, light: 1, sprite: MARKER }]))
+  assert(behind.count === 0, `${behind.count} cells of a thing beyond the far wall were drawn`)
+
+  const front = markerBox(shootWithMarker([{ x: 24, y: 3, z: 0, light: 1, sprite: MARKER }]))
+  assert(front.count > 0, 'a thing in the open hall was not drawn at all')
 })
 
 console.log('\nreadability')
