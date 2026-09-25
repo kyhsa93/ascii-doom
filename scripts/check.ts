@@ -1300,6 +1300,51 @@ function explorer(def: (typeof LEVELS)[number]) {
   }
 }
 
+test('finishing one level hands you to the next, already playable', () => {
+  // The last structurally untested thing in the project. `startLevel` has a
+  // check for what it carries, and both maps have checks that they can be
+  // finished, but the join between them had never run anywhere: the Node
+  // playthroughs stop at the exit, and the browser never reaches one.
+  //
+  // Everything here except the pause on the summary is outside the page, so
+  // everything except the pause can be asked about.
+  const first = explorer(LEVELS[0]!)
+  first.walkTo(12, 3)
+  first.walkTo(16, 4)
+  first.walkTo(16, 8)
+  first.walkTo(24, 8.5, 0.5)
+  first.walkTo(19, 9, 0.4)
+  first.open(Math.PI / 2)
+  first.waitFor(2)
+  first.walkTo(19, 14)
+  first.walkTo(20, 18.5)
+  first.waitFor(3)
+  first.walkTo(20, 21.5)
+  first.walkTo(20, 24.5)
+  assert(first.state.goal.reached, 'the first level was not finished')
+
+  // Carrying wear and tear forward, and the key it took to get here.
+  first.carried.health = 55
+  first.carried.ammo[0] = 12
+
+  const next = nextLevel(0)
+  assert(next === 1, `the first level leads to ${next}`)
+  const second = startLevel(next!, first.carried)
+
+  assert(second.def === LEVELS[1], 'the hand-off landed on the wrong map')
+  assert(!second.goal.reached, 'the new level began already finished')
+  close(second.player.x, LEVELS[1]!.spawn.x, 1e-9, 'the player starts at the second spawn')
+  close(second.player.y, LEVELS[1]!.spawn.y, 1e-9, 'the player starts at the second spawn')
+  assert(first.carried.health === 55, `health became ${first.carried.health} across the join`)
+  assert(first.carried.keys.size === 0, `arrived still holding ${[...first.carried.keys].join(', ')}`)
+
+  // And it is a level, not a still image: the body moves and stays in the map.
+  const startedAt = second.player.x
+  for (let i = 0; i < 60; i++) moveBody(second.level, second.player, 0.05, 0)
+  assert(second.player.x > startedAt, 'the player could not move in the level just handed to them')
+  assert(second.player.sector >= 0, 'the player left the map immediately')
+})
+
 test('the second level can be finished too', () => {
   // Written because the level-one playthrough does not generalise and the
   // second map had only the weak claims standing behind it: closed, and with a
