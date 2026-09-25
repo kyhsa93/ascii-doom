@@ -28,6 +28,15 @@ export interface Intent {
   readonly use: boolean
   /** Weapon asked for, or -1 for no change. */
   readonly weapon: number
+  /**
+   * Whether the automap is being asked for right now.
+   *
+   * Held rather than a pulse, because a device cannot know what a press means:
+   * selecting weapon two twice is selecting weapon two, but toggling a map
+   * twice is not toggling it. The edge belongs to whoever holds the map's
+   * state, which is the page.
+   */
+  readonly map: boolean
 }
 
 export const IDLE: Intent = {
@@ -39,6 +48,7 @@ export const IDLE: Intent = {
   fire: false,
   use: false,
   weapon: -1,
+  map: false,
 }
 
 /**
@@ -86,6 +96,7 @@ export function keyboardIntent(held: ReadonlySet<string>): Intent {
     fire: down(' '),
     use: down('e'),
     weapon,
+    map: down('Tab'),
   }
 }
 
@@ -104,6 +115,8 @@ export interface TouchState {
   readonly use: boolean
   /** Weapon asked for by a button, or -1. */
   readonly weapon: number
+  /** Whether the map button is under a thumb. */
+  readonly map: boolean
 }
 
 export function touchIntent(touch: TouchState): Intent {
@@ -130,6 +143,7 @@ export function touchIntent(touch: TouchState): Intent {
     fire: touch.fire,
     use: touch.use,
     weapon: touch.weapon,
+    map: touch.map,
   }
 }
 
@@ -151,6 +165,7 @@ export function mergeIntents(a: Intent, b: Intent): Intent {
     fire: a.fire || b.fire,
     use: a.use || b.use,
     weapon: a.weapon >= 0 ? a.weapon : b.weapon,
+    map: a.map || b.map,
   }
 }
 

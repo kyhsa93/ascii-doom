@@ -18,6 +18,15 @@ one that throws, doors and lifts, supplies you walk over, keys and the doors
 that ask for them, and an exit that ends a level, tallies what you did and
 hands you to the next one.
 
+There is an automap, drawn from what you have actually been able to see rather
+than from the level file: the renderer marks a wall the moment a column of the
+view reaches it, which costs nothing because those rays were cast to draw the
+frame anyway, and means a room behind a shut door stays blank until you open
+it. Walls you cannot pass and thresholds you can are drawn differently, and
+boundaries between two sectors at the same height are left out — they are a
+seam in how the map was authored rather than anything you could see standing
+there, and drawing them turns the picture into a mesh.
+
 Running out of health ends the run rather than leaving you walking around
 unarmed. Everything stops, the room you died in stays on screen behind the
 panel, and firing starts that level again with the kit you began it with — the
@@ -58,6 +67,7 @@ meant to.
 | `Space` | fire |
 | `1` `2` `3` | sidearm, scattergun, launcher |
 | `E` | open what you are facing |
+| `Tab` | the automap |
 
 On a touch screen the same controls appear as a stick and three buttons, and
 the keyboard ones keep working if there is one attached.
@@ -69,6 +79,7 @@ the keyboard ones keep working if there is one attached.
 | fire | shoot |
 | use | open what you are facing |
 | weapon | cycle to the next one |
+| map | the automap |
 
 There is deliberately no run button. Pushing the stick all the way is the run,
 which is one gesture rather than two and leaves the other thumb for aiming.

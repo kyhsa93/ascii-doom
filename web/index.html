@@ -166,6 +166,18 @@
         width: 98px;
         height: 52px;
       }
+      /*
+        Beside the weapon button rather than above it. A fourth row of controls
+        would raise the top edge of the band, and the grid is sized to stop
+        above that edge -- so a button placed the obvious way costs rows of
+        picture, and this one costs none.
+      */
+      #map {
+        right: calc(max(16px, env(safe-area-inset-right)) + 112px);
+        bottom: calc(max(18px, env(safe-area-inset-bottom)) + 110px);
+        width: 72px;
+        height: 52px;
+      }
 
       /*
         Landscape is where a band at the foot of the screen falls apart. The
@@ -196,6 +208,12 @@
         #swap {
           bottom: calc(max(18px, env(safe-area-inset-bottom)) + 174px);
         }
+        /* Fourth on the stack; the strip is tall enough for it lying down. */
+        #map {
+          right: max(16px, env(safe-area-inset-right));
+          bottom: calc(max(18px, env(safe-area-inset-bottom)) + 236px);
+          width: 98px;
+        }
       }
     </style>
   </head>
@@ -212,6 +230,7 @@
     <div id="pad" aria-hidden="true">
       <div id="look"></div>
       <div id="stick"><div id="knob"></div></div>
+      <button id="map" class="btn" type="button">map</button>
       <button id="swap" class="btn" type="button">weapon</button>
       <button id="use" class="btn" type="button">use</button>
       <button id="fire" class="btn" type="button">fire</button>

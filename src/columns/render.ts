@@ -19,7 +19,7 @@
 
 import type { Framebuffer } from '../../vendor/ascii-engine/src/core/framebuffer.ts'
 import { luminance, rampChar } from '../../vendor/ascii-engine/src/core/ramp.ts'
-import { acrossFrom, castRay, type Level, type RayHit } from './level.ts'
+import { acrossFrom, castRay, type Level, type Line, type RayHit } from './level.ts'
 
 /** Where the eye is and which way it looks. */
 export interface View {
@@ -47,6 +47,17 @@ export interface RenderOptions {
    * geometry, which is the same bargain the original struck.
    */
   horizonShift?: number
+  /**
+   * Collects the lines this frame actually reached, for the automap.
+   *
+   * Filled here because the rays have already been cast: knowing what you have
+   * seen costs nothing on top of drawing it, where asking the question
+   * separately would mean casting the same rays twice. A line goes in when the
+   * column walk arrives at it, not when a ray crosses it — the walk stops at a
+   * solid wall, so nothing behind one is ever marked and the map cannot show
+   * you a room you have not been able to see into.
+   */
+  seen?: Set<Line>
 }
 
 /** What a surface is made of, as far as a character grid is concerned. */
@@ -259,7 +270,7 @@ export function renderView(
     const cosA = dx * fx + dy * fy
     castRay(level, view.x, view.y, dx, dy, maxDistance / cosA, hits)
 
-    drawColumn(fb, level, view, col, hits, cosA, projScale, horizon, maxDistance)
+    drawColumn(fb, level, view, col, hits, cosA, projScale, horizon, maxDistance, options.seen)
   }
 }
 
@@ -273,6 +284,7 @@ function drawColumn(
   projScale: number,
   horizon: number,
   maxDistance: number,
+  seen: Set<Line> | undefined,
 ): void {
   const rows = fb.height
   let current = view.sector
@@ -287,6 +299,11 @@ function drawColumn(
     if (top > bottom) return
     const sector = level.sectors[current]
     if (!sector) return
+
+    // Reached, not merely crossed. Both guards above are returns, so a column
+    // that has met a wall or closed up never gets here for anything further
+    // along the ray.
+    seen?.add(hit.line)
 
     const distance = hit.t * cosA
     const ceilingRow = rowOfHeight(sector.ceiling, distance, view.z, projScale, horizon)

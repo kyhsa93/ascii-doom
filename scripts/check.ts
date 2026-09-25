@@ -14,7 +14,16 @@
 
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
-import { acrossFrom, buildLevel, castRay, lineOfSight, sectorAt, type SectorDef } from '../src/columns/level.ts'
+import { drawAutomap, mapToCell, markerFor, plotLine, type Cell } from '../src/columns/automap.ts'
+import {
+  acrossFrom,
+  buildLevel,
+  castRay,
+  lineOfSight,
+  sectorAt,
+  type Line,
+  type SectorDef,
+} from '../src/columns/level.ts'
 import {
   DEFAULT_FOV_Y,
   MATERIALS,
@@ -1244,6 +1253,186 @@ test('dying hands back the starting kit; finishing a level does not', () => {
   assert(moved.ammo.join(',') === '2,0,0', `walking into the next level restocked to ${moved.ammo.join(',')}`)
 })
 
+console.log('\nthe automap')
+
+test('the map centres where it is told, north up', () => {
+  // A cell half as wide as it is tall, so the aspect term is something other
+  // than one and a dropped factor has somewhere to show.
+  const cell = 0.5
+  const view = { cx: 10, cy: 4, scale: 0.5 }
+  const middle = mapToCell(view, cell, 80, 40, 10, 4)
+  assert(middle.col === 40 && middle.row === 20, `the centre landed at ${middle.col},${middle.row}`)
+
+  // North is up, which makes a point further north a *smaller* row. Backwards
+  // here mirrors the map, and a mirrored map still looks like a map.
+  const north = mapToCell(view, cell, 80, 40, 10, 4 + view.scale * 5)
+  assert(north.row === 15, `five rows north landed on row ${north.row}`)
+
+  const east = mapToCell(view, cell, 80, 40, 10 + view.scale * cell * 5, 4)
+  assert(east.col === 45, `five columns east landed on column ${east.col}`)
+})
+
+test('a square room comes out square', () => {
+  // What the cell aspect is for. Ten map units across and ten up have to cover
+  // the same distance *on screen*, which is not the same number of cells: a
+  // cell is 0.574 as wide as it is tall, so across takes more of them, in that
+  // proportion exactly. Without the term the map is stretched sideways by
+  // nearly two to one and every room reads as a corridor.
+  const aspect = 0.574
+  const view = { cx: 0, cy: 0, scale: 0.4 }
+  const at = (x: number, y: number) => mapToCell(view, aspect, 200, 200, x, y)
+  const across = at(10, 0).col - at(0, 0).col
+  const up = at(0, 0).row - at(0, 10).row
+  close(across * aspect, up, 0.5, 'ten map units across against ten up')
+})
+
+test('a plotted line starts, ends and never jumps', () => {
+  const a: Cell = { col: 3, row: 7 }
+  const b: Cell = { col: 19, row: 2 }
+  const cells = plotLine(a, b)
+
+  const first = cells[0]
+  const last = cells[cells.length - 1]
+  assert(first !== undefined && last !== undefined, 'the line came out empty')
+  assert(first.col === a.col && first.row === a.row, `started at ${first.col},${first.row}`)
+  assert(last.col === b.col && last.row === b.row, `ended at ${last.col},${last.row}`)
+
+  // Connected, which is the whole claim a line makes. A gap would draw a map
+  // of dots that still reads as a map from across the room.
+  for (let i = 1; i < cells.length; i++) {
+    const step = Math.max(Math.abs(cells[i]!.col - cells[i - 1]!.col), Math.abs(cells[i]!.row - cells[i - 1]!.row))
+    assert(step === 1, `the line jumped ${step} cells at step ${i}`)
+  }
+
+  const flat = plotLine({ col: 2, row: 5 }, { col: 8, row: 5 })
+  assert(flat.length === 7, `two to eight inclusive is seven cells, not ${flat.length}`)
+})
+
+test('the marker points where the player is facing', () => {
+  // Angle zero is +x, which the renderer takes as forward, and +x is east,
+  // which is right on a north-up map.
+  assert(markerFor(0) === '>', `east drew ${markerFor(0)}`)
+  assert(markerFor(Math.PI / 2) === '^', `north drew ${markerFor(Math.PI / 2)}`)
+  assert(markerFor(Math.PI) === '<', `west drew ${markerFor(Math.PI)}`)
+  assert(markerFor(-Math.PI / 2) === 'v', `south drew ${markerFor(-Math.PI / 2)}`)
+  // Turning does not wrap the angle, so after a few minutes it is a long way
+  // from zero and the marker still has to be right.
+  assert(markerFor(Math.PI * 4) === '>', 'an angle wound round several turns lost its bearing')
+})
+
+/**
+ * Two closed boxes with no way between them.
+ *
+ * Nothing is shared, so every line is a one-sided wall and the second room is
+ * unreachable and unseeable from the first. That is the point: a ray cast east
+ * from inside the first room crosses the second room's lines quite happily —
+ * `castRay` reports every crossing along its length — so a renderer that marked
+ * what it *crossed* would put them on the map, and one that marks what the
+ * column walk *reached* cannot.
+ */
+const SEALED_ROOMS: SectorDef[] = [
+  { polygon: [[0, 0], [6, 0], [6, 4], [0, 4]], floor: 0, ceiling: 3, light: 0.85 },
+  { polygon: [[10, 0], [16, 0], [16, 4], [10, 4]], floor: 0, ceiling: 3, light: 0.85 },
+]
+
+test('the map learns what was on screen, not what the rays passed through', () => {
+  const level = buildLevel(SEALED_ROOMS)
+  const fb = new Framebuffer(80, 40)
+  const seen = new Set<Line>()
+  // Standing in the first room looking straight at the second one.
+  renderView(
+    fb,
+    level,
+    { x: 3, y: 2, z: 1.6, angle: 0, sector: sectorAt(level, 3, 2), fovY: DEFAULT_FOV_Y },
+    0.574,
+    { seen },
+  )
+
+  assert(seen.size > 0, 'a room was drawn and nothing was learned from it')
+  assert(seen.size < level.lines.length, `every line in the map was marked from one spot (${seen.size})`)
+  for (const line of seen) {
+    assert(
+      line.ax < 10 || line.bx < 10,
+      `a wall of the far room at x=${line.ax} was marked from a room with no way into it`,
+    )
+  }
+})
+
+/** How many cells hold a given character. */
+function countGlyph(fb: Framebuffer, glyph: string): number {
+  const code = glyph.charCodeAt(0)
+  let count = 0
+  for (let i = 0; i < fb.width * fb.height; i++) {
+    if (fb.chars[i] === code) count++
+  }
+  return count
+}
+
+test('the map draws the lines it knows and no others', () => {
+  const level = buildLevel(SEALED_ROOMS)
+  const west = level.lines.find((line) => line.ax === 0 && line.bx === 0)
+  assert(west !== undefined, 'the fixture has no west wall to teach the map')
+
+  const view = { cx: 3, cy: 2, scale: 0.2 }
+  const player = { x: 3, y: 2, angle: 0 }
+  const aspect = 0.574
+
+  const blank = new Framebuffer(80, 40)
+  blank.clear(0, 0, 0, 0)
+  drawAutomap(blank, level, new Set<Line>(), view, player, aspect)
+  assert(countGlyph(blank, '#') === 0, 'a map that has learned nothing still drew walls')
+  assert(countGlyph(blank, markerFor(0)) === 1, 'the player is missing from their own map')
+
+  const known = new Framebuffer(80, 40)
+  known.clear(0, 0, 0, 0)
+  drawAutomap(known, level, new Set<Line>([west]), view, player, aspect)
+
+  // Tied to the plotter rather than to a number I counted once: whatever
+  // Bresenham says that wall covers, clipped to the grid, is what has to be on
+  // screen. A number written here would stop being a check the moment the
+  // scale changed.
+  const a = mapToCell(view, aspect, 80, 40, west.ax, west.ay)
+  const b = mapToCell(view, aspect, 80, 40, west.bx, west.by)
+  const expected = plotLine(a, b).filter(
+    (cell) => cell.col >= 0 && cell.col < 80 && cell.row >= 0 && cell.row < 40,
+  ).length
+
+  assert(expected > 1, `the fixture put the wall off the grid, so this measured nothing (${expected} cells)`)
+  assert(
+    countGlyph(known, '#') === expected,
+    `drew ${countGlyph(known, '#')} cells for a wall the plotter makes ${expected}`,
+  )
+})
+
+test('a seam between rooms of one height is not a line on the map', () => {
+  // Floors get cut into several sectors for lighting and for lifts, and every
+  // cut is a two-sided line. Drawing them all turns the map into a mesh of the
+  // authoring rather than a picture of the place -- which is what it looked
+  // like, in the first screenshot of it. A step or a lower ceiling is a real
+  // feature and stays.
+  const rooms = (secondFloor: number) =>
+    buildLevel([
+      { polygon: [[0, 0], [4, 0], [4, 4], [0, 4]], floor: 0, ceiling: 3, light: 1 },
+      { polygon: [[4, 0], [8, 0], [8, 4], [4, 4]], floor: secondFloor, ceiling: 3, light: 1 },
+    ])
+
+  const view = { cx: 4, cy: 2, scale: 0.2 }
+  const player = { x: 1, y: 1, angle: 0 }
+  const draw = (level: ReturnType<typeof buildLevel>) => {
+    const fb = new Framebuffer(80, 40)
+    fb.clear(0, 0, 0, 0)
+    drawAutomap(fb, level, new Set<Line>(level.lines), view, player, 0.574)
+    return fb
+  }
+
+  const flat = rooms(0)
+  const seam = flat.lines.find((line) => line.back !== null)
+  assert(seam !== undefined, 'the fixture rooms did not pair into a shared edge, so this measured nothing')
+
+  assert(countGlyph(draw(flat), ':') === 0, 'a seam between two rooms at one height was drawn')
+  assert(countGlyph(draw(rooms(1)), ':') > 0, 'a step between two rooms was left off the map')
+})
+
 test('every shipped level is closed, with no holes to see through', () => {
   // The check that catches an unmatched edge, run against every map rather than
   // the first one. Two sectors share a wall only when they share an edge
@@ -1676,6 +1865,7 @@ test('a thumb resting on the stick is not a movement', () => {
     fire: false,
     use: false,
     weapon: -1,
+    map: false,
   })
   assert(resting.forward === 0 && resting.strafe === 0, 'a resting thumb moved the player')
 
@@ -1686,6 +1876,7 @@ test('a thumb resting on the stick is not a movement', () => {
     fire: false,
     use: false,
     weapon: -1,
+    map: false,
   })
   close(pushed.forward, 1, 1e-9, 'pushing the stick straight up')
   assert(pushed.run, 'pushing the stick to its edge is the run')
@@ -1697,10 +1888,10 @@ test('the stick agrees with the keyboard about which way is forward', () => {
   // walks forwards — and it would look like a physics bug rather than an input
   // one.
   const key = keyboardIntent(new Set(['w']))
-  const thumb = touchIntent({ stick: { x: 0, y: -1 }, turn: 0, look: 0, fire: false, use: false, weapon: -1 })
+  const thumb = touchIntent({ stick: { x: 0, y: -1 }, turn: 0, look: 0, fire: false, use: false, weapon: -1, map: false })
   assert(Math.sign(key.forward) === Math.sign(thumb.forward), 'up on the stick is not forward')
 
-  const right = touchIntent({ stick: { x: 1, y: 0 }, turn: 0, look: 0, fire: false, use: false, weapon: -1 })
+  const right = touchIntent({ stick: { x: 1, y: 0 }, turn: 0, look: 0, fire: false, use: false, weapon: -1, map: false })
   assert(Math.sign(right.strafe) === Math.sign(keyboardIntent(new Set(['d'])).strafe), 'right on the stick is not right')
 })
 
@@ -1709,7 +1900,7 @@ test('two devices at once do not add up to double speed', () => {
   // same way should still be one unit of walking.
   const both = mergeIntents(
     keyboardIntent(new Set(['w'])),
-    touchIntent({ stick: { x: 0, y: -1 }, turn: 0, look: 0, fire: true, use: false, weapon: -1 }),
+    touchIntent({ stick: { x: 0, y: -1 }, turn: 0, look: 0, fire: true, use: false, weapon: -1, map: false }),
   )
   close(Math.hypot(both.forward, both.strafe), 1, 1e-9, 'walking on both at once')
   assert(both.fire, 'a button on one device was lost when merged with the other')

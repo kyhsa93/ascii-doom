@@ -625,6 +625,82 @@ check('a fresh press starts the level over, not the campaign', () => {
   assert(revived.levelIndex === 0, `came back on level ${revived.levelIndex} instead of the one that killed us`)
 })
 
+// The automap, whose whole claim is visual and whose data comes from the frame
+// that was drawn rather than from a second pass over the level.
+const cartography = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const mapper = await cartography.newPage()
+mapper.on('pageerror', (error) => problems.push(`automap: ${error.message}`))
+await mapper.goto(base, { waitUntil: 'domcontentloaded' })
+await mapper.waitForTimeout(900)
+
+function readMap(page: Page) {
+  return page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      text: document.getElementById('screen')?.textContent ?? '',
+      mapOpen: probe.mapOpen === true,
+      seen: (probe.seen as number) ?? 0,
+      lines: (probe.lines as number) ?? 0,
+    }
+  })
+}
+
+const atSpawn = await readMap(mapper)
+await mapper.keyboard.down('w')
+await mapper.waitForTimeout(1400)
+await mapper.keyboard.up('w')
+await mapper.waitForTimeout(200)
+const walked = await readMap(mapper)
+
+await mapper.keyboard.press('Tab')
+await mapper.waitForTimeout(300)
+const opened = await readMap(mapper)
+await mapper.screenshot({ path: join(SHOTS, 'map.png') })
+
+// Sampled through the hold rather than once at the end: a single reading cannot
+// tell a map that flipped once from one flipping sixty times a second that
+// happened to be caught on an even frame.
+await mapper.keyboard.down('Tab')
+const whileHeld: boolean[] = []
+for (let i = 0; i < 6; i++) {
+  await mapper.waitForTimeout(120)
+  whileHeld.push((await readMap(mapper)).mapOpen)
+}
+await mapper.keyboard.up('Tab')
+await mapper.waitForTimeout(200)
+const afterHold = await readMap(mapper)
+
+check('the map knows what has been looked at, and only that', () => {
+  assert(atSpawn.lines > 0, 'the level reports no lines at all')
+  assert(atSpawn.seen > 0, 'standing in a lit room taught the map nothing')
+  assert(
+    atSpawn.seen < atSpawn.lines,
+    `the whole level was known from the spawn (${atSpawn.seen}/${atSpawn.lines}), so nothing is hidden`,
+  )
+  assert(walked.seen > atSpawn.seen, `walking taught the map nothing new (${walked.seen}/${walked.lines})`)
+})
+
+check('the map opens on a press and holds still while the key is held', () => {
+  assert(opened.mapOpen, 'Tab did not open the map')
+
+  // The view is not drawn while the map is up, so the player marker is the only
+  // thing on screen that can be one of these. In the game they are ordinary
+  // scenery -- the ceiling ramp ends in a caret -- which is why this is asked
+  // here and not of a frame with a world in it.
+  const markers = [...opened.text].filter((glyph) => '><^v'.includes(glyph)).length
+  assert(markers === 1, `${markers} player markers on an open map`)
+  assert(opened.text !== walked.text, 'opening the map changed nothing on screen')
+
+  const first = whileHeld[0]
+  assert(first !== undefined, 'the hold was never sampled')
+  assert(
+    whileHeld.every((value) => value === first),
+    `the map flickered while held: ${whileHeld.map((value) => (value ? '1' : '0')).join('')}`,
+  )
+  assert(first !== opened.mapOpen, 'pressing the key a second time did not register as a press')
+  assert(afterHold.mapOpen === first, 'letting go of the key changed the map')
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

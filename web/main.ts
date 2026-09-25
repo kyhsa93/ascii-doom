@@ -12,7 +12,8 @@ import { drawText } from '../vendor/ascii-engine/src/core/overlay.ts'
 import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
-import { insideSector, type Sector } from '../src/columns/level.ts'
+import { drawAutomap } from '../src/columns/automap.ts'
+import { insideSector, type Line, type Sector } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, provoke, updateActors } from '../src/game/ai.ts'
@@ -51,6 +52,19 @@ let levelIndex = 0
 let state: LevelState = loadLevel(LEVELS[0]!)
 /** Everything in flight, emptied whenever a level is. */
 let projectiles: Projectile[] = []
+/**
+ * The lines the view has reached, which is what the automap may draw.
+ *
+ * Per level, and emptied with it: the set holds the level's own line objects,
+ * and a reloaded level builds new ones, so a kept set would be a set of lines
+ * belonging to a map that no longer exists.
+ */
+let seen = new Set<Line>()
+let mapOpen = false
+/** The map key as it was last frame, so holding it does not strobe the map. */
+let mapAsked = false
+/** Map units to a grid row. Close enough in to read a room, wide enough to place it. */
+const MAP_SCALE = 0.55
 /** Seconds left on the summary before the next level starts. */
 let advanceIn = 0
 /**
@@ -71,6 +85,8 @@ function startLevel(index: number): void {
   projectiles = []
   advanceIn = 0
   deadFor = 0
+  seen = new Set<Line>()
+  mapOpen = false
   say(state.def.name)
 }
 
@@ -104,7 +120,8 @@ const held = new Set<string>()
 const down = (event: KeyboardEvent) => {
   // Arrows and space scroll the page otherwise, which fights the game for the
   // same keys.
-  if (event.key.startsWith('Arrow') || event.key === ' ') event.preventDefault()
+  // Tab would otherwise walk the focus ring out of the game.
+  if (event.key.startsWith('Arrow') || event.key === ' ' || event.key === 'Tab') event.preventDefault()
   held.add(event.key.length === 1 ? event.key.toLowerCase() : event.key)
 }
 const up = (event: KeyboardEvent) => {
@@ -140,7 +157,8 @@ const touch: {
   fire: boolean
   use: boolean
   weapon: number
-} = { stick: null, turn: 0, look: 0, fire: false, use: false, weapon: -1 }
+  map: boolean
+} = { stick: null, turn: 0, look: 0, fire: false, use: false, weapon: -1, map: false }
 
 let stickPointer: number | null = null
 let lookPointer: number | null = null
@@ -242,6 +260,15 @@ button(
   },
   () => {},
 )
+button(
+  'map',
+  () => {
+    touch.map = true
+  },
+  () => {
+    touch.map = false
+  },
+)
 
 /** One simulation step. Fixed, so movement does not depend on frame rate. */
 const STEP = 1 / 60
@@ -272,6 +299,8 @@ function step(): void {
       state = restartLevel(levelIndex, carrier)
       projectiles = []
       deadFor = 0
+      seen = new Set<Line>()
+      mapOpen = false
       say(state.def.name)
     }
     return
@@ -282,6 +311,12 @@ function step(): void {
   // not keep re-selecting, and cleared whether or not it changed anything.
   if (intent.weapon >= 0 && intent.weapon < WEAPONS.length) weaponIndex = intent.weapon
   touch.weapon = -1
+
+  // The rising edge, not the state: a device says the map is being asked for,
+  // and what a press means is this side's business. Holding the key would
+  // otherwise flip the map sixty times a second.
+  if (intent.map && !mapAsked) mapOpen = !mapOpen
+  mapAsked = intent.map
 
   const speed = (intent.run ? RUN_SPEED : WALK_SPEED) * STEP
 
@@ -418,7 +453,10 @@ function frame(now: number): void {
     sector: player.sector,
     fovY: FOV_Y,
   }
-  renderView(fb, level, view, surface.cellAspect, { horizonShift })
+  // The map replaces the view rather than floating over it, which is what the
+  // original does and what this resolution can afford. Nothing new is seen
+  // while it is up, because seeing is a side effect of drawing the world.
+  if (!mapOpen) renderView(fb, level, view, surface.cellAspect, { horizonShift, seen })
 
   visible.length = 0
   for (const pickup of pickups) {
@@ -442,18 +480,26 @@ function frame(now: number): void {
     })
   }
   // After the world, so the depth it wrote decides what is hidden.
-  drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
+  if (!mapOpen) drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
 
   fb.resolve(RAMPS.short)
+
+  // After `resolve` for the same reason the text below is: the map writes
+  // glyphs directly, and resolve fills only the cells nothing has claimed.
+  if (mapOpen) {
+    drawAutomap(fb, level, seen, { cx: player.x, cy: player.y, scale: MAP_SCALE }, player, surface.cellAspect)
+  }
 
   // After `resolve`, because text writes glyphs directly and anything that
   // fills glyphs afterwards would overwrite them.
   const weapon = WEAPONS[weaponIndex]!
   const centre = Math.floor(fb.width / 2)
   const middle = Math.floor(fb.height / 2) + Math.round(horizonShift)
-  drawText(fb, centre, middle, flash > 0 ? '*' : '+', {
-    color: flash > 0 ? vec3(1, 0.95, 0.6) : vec3(0.55, 0.55, 0.6),
-  })
+  if (!mapOpen) {
+    drawText(fb, centre, middle, flash > 0 ? '*' : '+', {
+      color: flash > 0 ? vec3(1, 0.95, 0.6) : vec3(0.55, 0.55, 0.6),
+    })
+  }
 
   if (noticeTime > 0 && notice !== '') {
     drawText(fb, centre, 1, notice, { color: vec3(0.95, 0.9, 0.7), align: 'center' })
@@ -544,6 +590,9 @@ function frame(now: number): void {
     pickupsLeft: pickups.filter((pickup) => !pickup.taken).length,
     inFlight: projectiles.length,
     complete: goal.reached,
+    mapOpen,
+    seen: seen.size,
+    lines: level.lines.length,
     dead: isDead(carrier),
     deadFor,
     // Reported rather than written down twice: a check that hardcodes the delay
