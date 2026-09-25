@@ -501,6 +501,37 @@ test('a bolt that hits nothing gives up rather than flying forever', () => {
   assert(!bolt.alive, 'the bolt is still in flight after its life ran out')
 })
 
+test('a bolt that misses you can still hit whoever it was fired past', () => {
+  // The claim the last commit made and nothing checked: a projectile hits
+  // anything that is not its owner, so a creature's shot going wide lands on
+  // another creature. Worth its own check because it is the one piece of
+  // behaviour that exists only as an absence — there is no code anywhere saying
+  // creatures may hurt each other, and an innocent-looking tightening of the
+  // predicate would remove it silently.
+  //
+  // Named for what it actually does. The struck creature takes the damage; it
+  // does not turn on its attacker, because nothing retargets yet and calling
+  // this infighting would be describing a thing that is not here.
+  const hallSector = sectorAt(LEVEL_1, 16, 0)
+  assert(hallSector >= 0, 'the test spot is outside the map')
+
+  const shooter = spawnActor(DUMMY, 16, 0, hallSector, LEVEL_1.sectors[hallSector]!.floor)
+  const bystander = spawnActor(DUMMY, 20, 0, sectorAt(LEVEL_1, 20, 0), LEVEL_1.sectors[hallSector]!.floor)
+  const crowd = [shooter, bystander]
+
+  const bolt = spawnProjectile(BOLT, shooter.x, shooter.y, 1.6, 0, hallSector, 0)
+  const impacts = fly([bolt], crowd, 3)
+
+  assert(impacts.length === 1, `expected one impact, got ${impacts.length}`)
+  assert(impacts[0]!.body === 1, `the bolt hit body ${impacts[0]!.body} rather than the one in its way`)
+
+  // And the damage is the caller's to apply, which is what the page does.
+  const before = bystander.health
+  damageActor(bystander, bolt.kind.damage, () => 0.99)
+  assert(bystander.health === before - BOLT.damage, `health went ${before} to ${bystander.health}`)
+  assert(bystander.awake, 'being shot did not wake it')
+})
+
 test('spent bolts are swept, and only when asked', () => {
   // They are left in the array while flying so that drawing them can iterate
   // the same list without entries vanishing underneath it.

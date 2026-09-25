@@ -13,9 +13,13 @@ against a character grid.
 What is in it now: a sector-based level, a column renderer for walls with
 horizontal spans for floors and ceilings, light that falls off with distance,
 billboard creatures that wake when they see you and swing when they reach you,
-hitscan weapons with spread, doors and lifts, supplies you walk over, a key and
-a door that asks for it, and an exit that ends the level and tallies what you
-did.
+one that throws bolts instead of closing the distance, hitscan weapons with
+spread, doors and lifts, supplies you walk over, a key and a door that asks for
+it, and an exit that ends the level and tallies what you did.
+
+A bolt hits anything that is not the thing that fired it, so a shot that goes
+wide lands on whatever was behind you. Creatures do not yet turn on each other
+when that happens — the damage crosses over, the grudge does not.
 
 The map is one loop: the key lies in the hall, the key opens the north door,
 the door leads to a chamber, the lift is the only way onto the ledge, and the
