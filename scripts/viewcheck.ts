@@ -333,6 +333,59 @@ check('a phone-width viewport neither overflows nor collapses', () => {
 
 await phone.screenshot({ path: join(SHOTS, 'phone.png') })
 
+// A phone with no keyboard, which is the only way to find out whether the
+// touch controls are reachable at all. The context needs `hasTouch` for the
+// `pointer: coarse` query to match — without it the controls stay hidden and a
+// check against them would pass by never looking at anything.
+const handheld = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  hasTouch: true,
+  isMobile: true,
+})
+const mobile = await handheld.newPage()
+mobile.on('pageerror', (error) => problems.push(`mobile: ${error.message}`))
+await mobile.goto(base, { waitUntil: 'domcontentloaded' })
+await mobile.waitForTimeout(900)
+
+const padShown = await mobile.evaluate(() => {
+  const pad = document.getElementById('pad')
+  return pad !== null && getComputedStyle(pad).display !== 'none'
+})
+
+const beforeThumb = await readPlayer(mobile)
+// Push the stick straight up: down at its centre, then drag to its top edge.
+const stickBox = await mobile.locator('#stick').boundingBox()
+if (stickBox) {
+  const cx = stickBox.x + stickBox.width / 2
+  const cy = stickBox.y + stickBox.height / 2
+  await mobile.dispatchEvent('#stick', 'pointerdown', { pointerId: 1, clientX: cx, clientY: cy, isPrimary: true })
+  await mobile.dispatchEvent('#stick', 'pointermove', {
+    pointerId: 1,
+    clientX: cx,
+    clientY: stickBox.y + 4,
+    isPrimary: true,
+  })
+  await mobile.waitForTimeout(1200)
+  await mobile.dispatchEvent('#stick', 'pointerup', { pointerId: 1, clientX: cx, clientY: stickBox.y + 4, isPrimary: true })
+}
+await mobile.waitForTimeout(150)
+const afterThumb = await readPlayer(mobile)
+
+check('a phone gets controls it can actually reach', () => {
+  assert(padShown, 'the touch controls are hidden on a touch device')
+  assert(stickBox !== null, 'there is no movement stick to put a thumb on')
+})
+
+check('pushing the stick walks the player', () => {
+  // The whole point of the touch work: without this the controls could be
+  // drawn, styled and wired to nothing, and every other check would still pass
+  // because none of them has hands.
+  const moved = Math.hypot(afterThumb.x - beforeThumb.x, afterThumb.y - beforeThumb.y)
+  assert(moved > 0.5, `a thumb held on the stick for a second moved the player ${moved.toFixed(2)} units`)
+})
+
+await mobile.screenshot({ path: join(SHOTS, 'touch.png') })
+
 // Pictures rather than assertions, and deliberately after everything that is
 // one. Five sprites have shipped whose only evidence of legibility is an
 // arithmetic rule about how many characters they are drawn from, and none of

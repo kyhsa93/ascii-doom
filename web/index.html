@@ -2,7 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      `user-scalable=no` is widely ignored on modern iOS, so it is not what
+      stops a pinch or a double-tap zoom here; `touch-action` on the surfaces
+      below is. It is kept because the browsers that do honour it are the ones
+      where a stray zoom is hardest to undo mid-game.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <title>ascii-doom</title>
     <style>
       :root {
@@ -19,6 +28,12 @@
         background: #05050a;
         color: #cfc8bc;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        /* A game is not a document: nothing here should scroll, select or
+           magnify under a finger. */
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
       body {
         display: flex;
@@ -42,11 +57,118 @@
         color: #6a6460;
         border-top: 1px solid #191922;
       }
+
+      /*
+        The controls sit over the view rather than beside it. Vertical cells are
+        the scarcest thing on a phone — the grid is about fifty rows there — and
+        a control strip that pushed the picture up would cost more of the game
+        than it gave back.
+      */
+      #pad {
+        position: fixed;
+        inset: 0;
+        display: none;
+        touch-action: none;
+      }
+      /* Shown for fingers, not for mice. A desktop keeps its keyboard. */
+      @media (pointer: coarse) {
+        #pad {
+          display: block;
+        }
+        #hint {
+          display: none;
+        }
+      }
+
+      #look {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 55%;
+        height: 78%;
+        touch-action: none;
+      }
+
+      #stick {
+        position: absolute;
+        left: max(16px, env(safe-area-inset-left));
+        bottom: max(18px, env(safe-area-inset-bottom));
+        width: 132px;
+        height: 132px;
+        border: 1px solid #2c2c38;
+        border-radius: 50%;
+        background: rgba(20, 20, 28, 0.42);
+        touch-action: none;
+      }
+      #knob {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 52px;
+        height: 52px;
+        margin: -26px 0 0 -26px;
+        border: 1px solid #454556;
+        border-radius: 50%;
+        background: rgba(78, 78, 96, 0.55);
+        pointer-events: none;
+      }
+
+      .btn {
+        position: absolute;
+        border: 1px solid #2c2c38;
+        border-radius: 12px;
+        background: rgba(20, 20, 28, 0.42);
+        color: #b9b2a6;
+        font: inherit;
+        font-size: 13px;
+        display: grid;
+        place-items: center;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .btn:active {
+        background: rgba(60, 60, 78, 0.6);
+      }
+      #fire {
+        right: max(16px, env(safe-area-inset-right));
+        bottom: max(18px, env(safe-area-inset-bottom));
+        width: 98px;
+        height: 98px;
+        border-radius: 50%;
+        font-size: 15px;
+      }
+      #use {
+        right: calc(max(16px, env(safe-area-inset-right)) + 112px);
+        bottom: max(18px, env(safe-area-inset-bottom));
+        width: 72px;
+        height: 60px;
+      }
+      #swap {
+        right: max(16px, env(safe-area-inset-right));
+        bottom: calc(max(18px, env(safe-area-inset-bottom)) + 110px);
+        width: 98px;
+        height: 52px;
+      }
     </style>
   </head>
   <body>
     <pre id="screen"></pre>
     <div id="hint">booting…</div>
+
+    <!--
+      Touch controls. Left thumb walks, the right side of the screen turns and
+      looks by dragging, and the buttons do the rest. Deliberately no run
+      button: pushing the stick to its edge is the run, which is one gesture
+      instead of two and leaves a thumb free.
+    -->
+    <div id="pad" aria-hidden="true">
+      <div id="look"></div>
+      <div id="stick"><div id="knob"></div></div>
+      <button id="swap" class="btn" type="button">weapon</button>
+      <button id="use" class="btn" type="button">use</button>
+      <button id="fire" class="btn" type="button">fire</button>
+    </div>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

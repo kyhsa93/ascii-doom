@@ -1,11 +1,10 @@
 /**
  * The page: input, a fixed-step simulation, and a frame.
  *
- * The browser is the target rather than the terminal for one concrete reason.
- * A terminal delivers key presses and never key releases, so "hold W to walk"
- * cannot be expressed there — only auto-repeat, which arrives a third of a
- * second late and stutters. Everything the renderer does works in either
- * place; the controls do not.
+ * Two devices, one simulation. A keyboard and a thumb both produce an intent
+ * and the step consumes one, rather than the step reading keys and touch being
+ * bolted on beside it — which is what kept the parts with right answers, like
+ * a diagonal not being faster than a straight line, somewhere Node can check.
  */
 
 import type { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
@@ -15,16 +14,11 @@ import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
-import {
-  billboardOf,
-  damageActor,
-  isAlive,
-  provoke,
-  updateActors,
-} from '../src/game/ai.ts'
+import { billboardOf, damageActor, isAlive, provoke, updateActors } from '../src/game/ai.ts'
 import { LEVELS, nextLevel, startLevel as beginLevel } from '../src/game/campaign.ts'
 import { reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
+import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { activate, moverInFront, updateMovers } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
@@ -41,8 +35,7 @@ const surface = new PreSurface(screen)
  *
  * Health and ammunition carry; keys do not. Each level locks its own doors and
  * hides its own key, so a key brought forward would open a door it was never
- * meant to — and the check that every lock has a key in the same level is
- * written on the assumption that it does not.
+ * meant to.
  */
 const carrier: Carrier = {
   health: 100,
@@ -111,7 +104,133 @@ window.addEventListener('keyup', up)
 // A window that loses focus mid-stride would otherwise keep walking forever.
 window.addEventListener('blur', () => held.clear())
 
-const pressed = (...keys: string[]): boolean => keys.some((key) => held.has(key))
+// --- touch -----------------------------------------------------------------
+
+const stickEl = document.getElementById('stick')
+const knobEl = document.getElementById('knob')
+const lookEl = document.getElementById('look')
+
+/**
+ * The right-hand area is a second stick rather than a drag.
+ *
+ * A drag has to be turned into a rate by dividing an accumulated delta by the
+ * frame time, which stutters whenever a frame is long. Measuring how far the
+ * thumb has moved from where it first touched gives a rate directly, matches
+ * what `Intent.turn` already means, and keeps turning while the thumb is held
+ * out — which is what you want when spinning to face something behind you.
+ */
+const LOOK_RADIUS = 90
+const STICK_RADIUS = 60
+
+const touch: {
+  stick: { x: number; y: number } | null
+  turn: number
+  look: number
+  fire: boolean
+  use: boolean
+  weapon: number
+} = { stick: null, turn: 0, look: 0, fire: false, use: false, weapon: -1 }
+
+let stickPointer: number | null = null
+let lookPointer: number | null = null
+let lookOrigin = { x: 0, y: 0 }
+
+function moveKnob(x: number, y: number): void {
+  if (knobEl) knobEl.style.transform = `translate(${x * STICK_RADIUS}px, ${y * STICK_RADIUS}px)`
+}
+
+if (stickEl) {
+  const place = (event: PointerEvent) => {
+    const box = stickEl.getBoundingClientRect()
+    const dx = (event.clientX - (box.left + box.width / 2)) / (box.width / 2)
+    const dy = (event.clientY - (box.top + box.height / 2)) / (box.height / 2)
+    const magnitude = Math.hypot(dx, dy)
+    const scale = magnitude > 1 ? 1 / magnitude : 1
+    touch.stick = { x: dx * scale, y: dy * scale }
+    moveKnob(dx * scale, dy * scale)
+  }
+  stickEl.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    stickPointer = event.pointerId
+    stickEl.setPointerCapture(event.pointerId)
+    place(event)
+  })
+  stickEl.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== stickPointer) return
+    place(event)
+  })
+  const release = (event: PointerEvent) => {
+    if (event.pointerId !== stickPointer) return
+    stickPointer = null
+    touch.stick = null
+    moveKnob(0, 0)
+  }
+  stickEl.addEventListener('pointerup', release)
+  stickEl.addEventListener('pointercancel', release)
+}
+
+if (lookEl) {
+  lookEl.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    lookPointer = event.pointerId
+    lookOrigin = { x: event.clientX, y: event.clientY }
+    lookEl.setPointerCapture(event.pointerId)
+  })
+  lookEl.addEventListener('pointermove', (event) => {
+    if (event.pointerId !== lookPointer) return
+    // Dragging right turns right, and `turn` is positive to the left.
+    touch.turn = -(event.clientX - lookOrigin.x) / LOOK_RADIUS
+    touch.look = -(event.clientY - lookOrigin.y) / LOOK_RADIUS
+  })
+  const release = (event: PointerEvent) => {
+    if (event.pointerId !== lookPointer) return
+    lookPointer = null
+    touch.turn = 0
+    touch.look = 0
+  }
+  lookEl.addEventListener('pointerup', release)
+  lookEl.addEventListener('pointercancel', release)
+}
+
+function button(id: string, press: () => void, release: () => void): void {
+  const element = document.getElementById(id)
+  if (!element) return
+  element.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    press()
+  })
+  for (const name of ['pointerup', 'pointercancel', 'pointerleave']) {
+    element.addEventListener(name, () => release())
+  }
+}
+
+button(
+  'fire',
+  () => {
+    touch.fire = true
+  },
+  () => {
+    touch.fire = false
+  },
+)
+button(
+  'use',
+  () => {
+    touch.use = true
+  },
+  () => {
+    touch.use = false
+  },
+)
+// One button cycling forward, because three weapon buttons would cost more of
+// a small screen than they are worth.
+button(
+  'swap',
+  () => {
+    touch.weapon = (weaponIndex + 1) % WEAPONS.length
+  },
+  () => {},
+)
 
 /** One simulation step. Fixed, so movement does not depend on frame rate. */
 const STEP = 1 / 60
@@ -121,8 +240,7 @@ function step(): void {
 
   if (goal.reached) {
     // The level is over: nothing walks, nothing fires, nothing closes in behind
-    // the summary. After a pause the next one starts, or the last one simply
-    // stays on screen.
+    // the summary. After a pause the next one starts, or the last one stays.
     const next = nextLevel(levelIndex)
     if (next !== null) {
       advanceIn -= STEP
@@ -131,17 +249,16 @@ function step(): void {
     return
   }
 
-  const running = pressed('Shift')
-  const speed = (running ? RUN_SPEED : WALK_SPEED) * STEP
+  const intent = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+  // A weapon request is a one-shot: consumed here so holding the button does
+  // not keep re-selecting, and cleared whether or not it changed anything.
+  if (intent.weapon >= 0 && intent.weapon < WEAPONS.length) weaponIndex = intent.weapon
+  touch.weapon = -1
 
-  if (pressed('ArrowLeft')) player.angle += TURN_SPEED * STEP
-  if (pressed('ArrowRight')) player.angle -= TURN_SPEED * STEP
-  if (pressed('ArrowUp')) horizonShift = Math.min(LOOK_LIMIT, horizonShift + LOOK_SPEED * STEP)
-  if (pressed('ArrowDown')) horizonShift = Math.max(-LOOK_LIMIT, horizonShift - LOOK_SPEED * STEP)
+  const speed = (intent.run ? RUN_SPEED : WALK_SPEED) * STEP
 
-  if (pressed('1')) weaponIndex = 0
-  if (pressed('2')) weaponIndex = 1
-  if (pressed('3')) weaponIndex = 2
+  player.angle += intent.turn * TURN_SPEED * STEP
+  horizonShift = Math.max(-LOOK_LIMIT, Math.min(LOOK_LIMIT, horizonShift + intent.look * LOOK_SPEED * STEP))
 
   const fx = Math.cos(player.angle)
   const fy = Math.sin(player.angle)
@@ -150,27 +267,10 @@ function step(): void {
   const sx = fy
   const sy = -fx
 
-  let dx = 0
-  let dy = 0
-  if (pressed('w')) {
-    dx += fx
-    dy += fy
-  }
-  if (pressed('s')) {
-    dx -= fx
-    dy -= fy
-  }
-  if (pressed('d')) {
-    dx += sx
-    dy += sy
-  }
-  if (pressed('a')) {
-    dx -= sx
-    dy -= sy
-  }
-
-  const length = Math.hypot(dx, dy)
-  if (length > 0) moveBody(level, player, (dx / length) * speed, (dy / length) * speed)
+  const dx = fx * intent.forward + sx * intent.strafe
+  const dy = fy * intent.forward + sy * intent.strafe
+  // Already unit length at most: the intent does that, so both devices agree.
+  if (dx !== 0 || dy !== 0) moveBody(level, player, dx * speed, dy * speed)
 
   // Walked over. Nothing is taken that would give nothing, so crossing a room
   // at full health leaves the kit there for when it is worth something.
@@ -185,7 +285,7 @@ function step(): void {
   flash = Math.max(0, flash - STEP)
   noticeTime = Math.max(0, noticeTime - STEP)
   const weapon = WEAPONS[weaponIndex]!
-  if (pressed(' ') && cooldown <= 0 && carrier.ammo[weaponIndex]! >= weapon.cost && carrier.health > 0) {
+  if (intent.fire && cooldown <= 0 && carrier.ammo[weaponIndex]! >= weapon.cost && carrier.health > 0) {
     carrier.ammo[weaponIndex] = carrier.ammo[weaponIndex]! - weapon.cost
     cooldown = weapon.interval
     flash = 0.06
@@ -201,7 +301,7 @@ function step(): void {
 
   // Use: opens whatever you are facing, if you are carrying what it asks for.
   // The lock is on the door rather than here, so this cannot forget to check.
-  if (pressed('e')) {
+  if (intent.use) {
     const target = moverInFront(level, movers, player.sector, player.x, player.y, player.angle)
     if (target && !activate(target, carrier.keys)) {
       say(`locked — needs the ${target.kind.requiresKey} key`)
@@ -247,7 +347,7 @@ function step(): void {
   // Last, so that walking into the exit on this step counts on this step.
   if (reachExit(goal, player.sector, STEP)) {
     advanceIn = 3.5
-    say(levelIndex + 1 < LEVELS.length ? 'level complete' : 'that was the last of them')
+    say(nextLevel(levelIndex) !== null ? 'level complete' : 'that was the last of them')
   }
 }
 
@@ -407,7 +507,8 @@ function frame(now: number): void {
     complete: goal.reached,
     elapsed: goal.elapsed,
     doorState: state.movers[0]?.state ?? null,
-    liftHeight: state.liftSectors[0] === undefined ? null : level.sectors[state.liftSectors[0]]?.floor ?? null,
+    liftHeight:
+      state.liftSectors[0] === undefined ? null : (level.sectors[state.liftSectors[0]]?.floor ?? null),
   }
 
   requestAnimationFrame(frame)

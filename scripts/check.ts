@@ -29,6 +29,7 @@ import { drawBillboards, type Billboard, type Sprite } from '../src/columns/spri
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
 import { LEVELS, nextLevel, startLevel } from '../src/game/campaign.ts'
 import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
@@ -1569,6 +1570,78 @@ test('a key is taken once and then stops existing', () => {
 
   // Walking back over it does nothing, whether or not it was marked taken.
   assert(collect([key], 2, 2, 0.35, holder).length === 0, 'the key was picked up twice')
+})
+
+console.log('\ncontrols')
+
+test('opposing keys cancel instead of one winning', () => {
+  // What a player pressing both expects, and what stops a key that never sent
+  // its release from pinning you against a wall.
+  const both = keyboardIntent(new Set(['w', 's']))
+  assert(both.forward === 0, `forward came out ${both.forward}`)
+  const sideways = keyboardIntent(new Set(['a', 'd']))
+  assert(sideways.strafe === 0, `strafe came out ${sideways.strafe}`)
+})
+
+test('a diagonal is not faster than a straight line', () => {
+  // The oldest bug in first-person movement. Held separately these are one
+  // unit each; held together they must still be one.
+  const straight = keyboardIntent(new Set(['w']))
+  const diagonal = keyboardIntent(new Set(['w', 'd']))
+  close(Math.hypot(straight.forward, straight.strafe), 1, 1e-9, 'walking forward')
+  close(Math.hypot(diagonal.forward, diagonal.strafe), 1, 1e-9, 'walking forward and right')
+})
+
+test('a thumb resting on the stick is not a movement', () => {
+  // Nobody holding a phone has their thumb exactly at the centre, so without a
+  // deadzone the view creeps whenever the game is simply being held.
+  const resting = touchIntent({
+    stick: { x: DEADZONE * 0.5, y: DEADZONE * 0.5 },
+    turn: 0,
+    look: 0,
+    fire: false,
+    use: false,
+    weapon: -1,
+  })
+  assert(resting.forward === 0 && resting.strafe === 0, 'a resting thumb moved the player')
+
+  const pushed = touchIntent({
+    stick: { x: 0, y: -1 },
+    turn: 0,
+    look: 0,
+    fire: false,
+    use: false,
+    weapon: -1,
+  })
+  close(pushed.forward, 1, 1e-9, 'pushing the stick straight up')
+  assert(pushed.run, 'pushing the stick to its edge is the run')
+})
+
+test('the stick agrees with the keyboard about which way is forward', () => {
+  // Screen coordinates grow downward and the world does not, so this is the
+  // one place a sign error would make a phone walk backwards while a keyboard
+  // walks forwards — and it would look like a physics bug rather than an input
+  // one.
+  const key = keyboardIntent(new Set(['w']))
+  const thumb = touchIntent({ stick: { x: 0, y: -1 }, turn: 0, look: 0, fire: false, use: false, weapon: -1 })
+  assert(Math.sign(key.forward) === Math.sign(thumb.forward), 'up on the stick is not forward')
+
+  const right = touchIntent({ stick: { x: 1, y: 0 }, turn: 0, look: 0, fire: false, use: false, weapon: -1 })
+  assert(Math.sign(right.strafe) === Math.sign(keyboardIntent(new Set(['d'])).strafe), 'right on the stick is not right')
+})
+
+test('two devices at once do not add up to double speed', () => {
+  // A tablet with a keyboard should obey both, and a thumb plus a key held the
+  // same way should still be one unit of walking.
+  const both = mergeIntents(
+    keyboardIntent(new Set(['w'])),
+    touchIntent({ stick: { x: 0, y: -1 }, turn: 0, look: 0, fire: true, use: false, weapon: -1 }),
+  )
+  close(Math.hypot(both.forward, both.strafe), 1, 1e-9, 'walking on both at once')
+  assert(both.fire, 'a button on one device was lost when merged with the other')
+
+  const neither = mergeIntents(IDLE, IDLE)
+  assert(neither.forward === 0 && neither.turn === 0 && !neither.fire, 'idle plus idle is not idle')
 })
 
 console.log('\nstatus line')
