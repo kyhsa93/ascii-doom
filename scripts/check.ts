@@ -1536,6 +1536,46 @@ test('within one class, distance shows as a change of glyph', () => {
   assert(thin.length === 0, thin.join('; '))
 })
 
+test('every level of every ramp is reachable by some light at some distance', () => {
+  // This exists because a measurement sent me the wrong way and the correction
+  // is worth keeping in code rather than in prose.
+  //
+  // Counting glyphs in rendered frames showed the wall's brightest character at
+  // 0% and the next at 1%, which reads as two of six being decoration — the
+  // same shape as the lighting bug this project started with, where levels of
+  // the ramp were unreachable in principle. They are not. A wall two-tenths of
+  // a unit away in the brightest sector produces the top of its ramp, and every
+  // other index is producible too. What the frames actually showed is a fact
+  // about this map: the bright sectors keep their walls far away, and the
+  // sector you can stand nose-to-wall in is the dim corridor. Brightness and
+  // proximity never coincide here, which is level design rather than a defect.
+  //
+  // So nothing was changed. What is checked is the thing that would have made
+  // the first reading correct, and which a later edit could still cause:
+  // lengthening a ramp past what the lights can drive, flattening the falloff,
+  // or dimming every sector would each leave characters that cannot be
+  // produced at any distance in any room.
+  const lights = [...new Set(LEVEL_1.sectors.map((sector) => sector.light))]
+  const near = 0.2
+  const far = 64
+  const dead: string[] = []
+
+  for (const [name, material] of Object.entries(MATERIALS)) {
+    const reachable = new Set<number>()
+    for (const light of lights) {
+      for (let distance = near; distance <= far; distance += 0.05) {
+        const glyph = String.fromCharCode(rampChar(material.ramp, lightAt(light, distance)))
+        reachable.add(material.ramp.indexOf(glyph))
+      }
+    }
+    for (let index = 0; index < material.ramp.length; index++) {
+      if (!reachable.has(index)) dead.push(`${name} ${JSON.stringify(material.ramp[index])} (level ${index})`)
+    }
+  }
+
+  assert(dead.length === 0, `no light in the level can produce ${dead.join(', ')}`)
+})
+
 test('no single glyph is allowed to swallow the frame', () => {
   // The check this project most needed, arrived at on the third attempt.
   //
