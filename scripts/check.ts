@@ -15,9 +15,18 @@
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { acrossFrom, buildLevel, castRay, sectorAt, type SectorDef } from '../src/columns/level.ts'
-import { DEFAULT_FOV_Y, MATERIALS, lightAt, renderView, rowOfHeight, type View } from '../src/columns/render.ts'
+import {
+  DEFAULT_FOV_Y,
+  MATERIALS,
+  lightAt,
+  projectionOf,
+  renderView,
+  rowOfHeight,
+  type View,
+} from '../src/columns/render.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LEVEL_1, SPAWN } from '../src/game/level1.ts'
+import { ALL_SPRITES } from '../src/game/things.ts'
 
 let failed = 0
 
@@ -329,6 +338,41 @@ function shootWithMarker(things: Billboard[], x = 2, y = 3, angle = 0): Framebuf
   drawBillboards(fb, view, 0.574, things, {})
   return fb
 }
+
+test('sprite art is rectangular', () => {
+  // The sampler clamps rather than crashing on a short row, so a typo in the
+  // art shows up as a column of the wrong character rather than as an error.
+  const ragged: string[] = []
+  for (const [name, sprite] of Object.entries(ALL_SPRITES)) {
+    const widths = new Set(sprite.rows.map((row) => row.length))
+    if (widths.size !== 1) ragged.push(`${name} has rows of ${[...widths].sort((a, b) => a - b).join(', ')} characters`)
+  }
+  assert(ragged.length === 0, ragged.join('; '))
+})
+
+test('sprite art is dense enough for the distance it is met at', () => {
+  // Magnifying a grid of characters does not blur it, it repeats it: a row
+  // stretched to three times its width comes out as LLLL and vvvvvv. The first
+  // set of art here was drawn at four rows tall and only reached one character
+  // per cell at ten to twelve units, so it was magnified three to twelve times
+  // for the whole of every encounter.
+  //
+  // Five units is the bar: a creature that close is being fought, and the art
+  // has to be at least as detailed as the space it fills. Past that it shrinks,
+  // and shrinking drops detail rather than smearing it.
+  const { planeHalf, projScale } = projectionOf(163, 50, 0.574, DEFAULT_FOV_Y)
+  const distance = 5
+  const thin: string[] = []
+  for (const [name, sprite] of Object.entries(ALL_SPRITES)) {
+    const screenWide = (sprite.width / (distance * planeHalf)) * (163 / 2)
+    const screenTall = (sprite.height * projScale) / distance
+    const artWide = sprite.rows[0]!.length
+    const artTall = sprite.rows.length
+    if (screenWide > artWide) thin.push(`${name} is ${screenWide.toFixed(0)} cells wide from ${artWide} characters`)
+    if (screenTall > artTall) thin.push(`${name} is ${screenTall.toFixed(0)} cells tall from ${artTall} rows`)
+  }
+  assert(thin.length === 0, `art is magnified at ${distance} units — ${thin.join('; ')}`)
+})
 
 test('a thing straight ahead is drawn straight ahead', () => {
   // The invariant that ties billboards to the same projection as the walls. If

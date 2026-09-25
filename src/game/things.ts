@@ -6,28 +6,42 @@
  * you judge by looking at it and the renderer beneath it is a thing you check
  * with arithmetic. Same split as everywhere else in this repository.
  *
- * A note on drawing at this size. A creature four cells tall has sixteen or so
- * cells to work with, which is closer to a logogram than to a picture: what
- * survives is the silhouette and one or two features. So each of these is
- * built around a single recognisable idea — a stooped four-limbed thing, a
- * hovering lamp, an upright post with a head — and the detail is spent on the
- * outline rather than the interior.
+ * On the size of these. The first set was drawn at four rows tall, on the
+ * theory that a character grid wants tiny art. Measured, that art only reached
+ * one character per cell at ten to twelve units away, and a creature is
+ * usually met between one and eight — so almost every time one was on screen
+ * it was being magnified three to twelve times, and a magnified character grid
+ * does not blur, it repeats. Rows came out as LLLL and vvvvvv.
+ *
+ * So these are drawn about three times larger, sized to land at roughly one
+ * art cell per screen cell at four units, which is where a creature is when it
+ * matters. Past that they shrink, and shrinking a grid of characters drops
+ * detail gracefully rather than smearing it. The check in `scripts/check.ts`
+ * holds them to it.
  */
 
 import type { Billboard, Sprite } from '../columns/sprite.ts'
 
 /**
- * A crawler: low, wide, weight forward on two long arms.
+ * A crawler: low and wide, weight forward on two heavy forelimbs.
  *
- * Reads as a hunched quadruped. The widest row is the shoulders, which is what
- * separates it at a glance from the upright sentry below.
+ * The widest row is the shoulders, which is what separates it at a glance from
+ * the upright sentry even when both are a dozen cells across.
  */
 export const CRAWLER: Sprite = {
   rows: [
-    '  /oo\\  ',
-    ' /~~~~\\ ',
-    '/  vv  \\',
-    'L______J',
+    '        .-~~~~-.        ',
+    "      .'  o  o  '.      ",
+    '     /   \\____/   \\     ',
+    "    |  .-'    '-.  |    ",
+    '    \\_/  ______  \\_/    ',
+    '     |  /      \\  |     ',
+    '    /| |        | |\\    ',
+    '   / | |        | | \\   ',
+    '  /  |_|        |_|  \\  ',
+    ' /__/  \\        /  \\__\\ ',
+    '|__|    \\______/    |__|',
+    " ``       ''''       `` ",
   ],
   tint: [1.25, 0.72, 0.55],
   width: 1.5,
@@ -35,48 +49,71 @@ export const CRAWLER: Sprite = {
 }
 
 /**
- * A drifting lamp: a floating body with a bright core and trailing filaments.
+ * A sentry: upright and narrow, with a heavy head and a braced middle.
  *
- * Narrow and tall-ish, so it cannot be mistaken for the crawler even when both
- * are a few cells across.
- */
-export const DRIFTER: Sprite = {
-  rows: [
-    ' .--. ',
-    '(  @ )',
-    " '-|-'",
-    '  | | ',
-    '  . . ',
-  ],
-  tint: [0.75, 0.95, 1.35],
-  width: 1.0,
-  height: 1.6,
-}
-
-/**
- * A sentry: upright, thin, with a heavy head. The tallest silhouette in the
- * level so far, which is the point of it.
+ * The tallest silhouette in the level, which is the point of it — at distance
+ * the only thing left of any of these is the outline.
  */
 export const SENTRY: Sprite = {
   rows: [
-    ' [==] ',
-    ' |••| ',
-    '/|__|\\',
-    ' |  | ',
-    ' |  | ',
-    ' /  \\ ',
+    '     .------.     ',
+    '    /  ____  \\    ',
+    '   |  /    \\  |   ',
+    '   | | (oo) | |   ',
+    '   |  \\____/  |   ',
+    '    \\________/    ',
+    '     |      |     ',
+    '  .--+------+--.  ',
+    ' /   |      |   \\ ',
+    '|    |      |    |',
+    '|    |      |    |',
+    ' \\   |      |   / ',
+    "  '--+------+--'  ",
+    '     |      |     ',
+    '     |      |     ',
+    '     |      |     ',
+    '    _|      |_    ',
+    '   / |      | \\   ',
+    '  /__|      |__\\  ',
+    " '''          ''' ",
   ],
   tint: [0.95, 0.9, 0.8],
   width: 0.9,
   height: 2.1,
 }
 
-/** A canister of charge. Small, bright, unmistakably not a creature. */
+/** A drifting lamp: a hovering shell around a bright core, trailing filaments. */
+export const DRIFTER: Sprite = {
+  rows: [
+    '      .----.      ',
+    "    .'      '.    ",
+    '   /   .--.   \\   ',
+    '  |   / @@ \\   |  ',
+    '  |  |  @@  |  |  ',
+    '  |   \\ __ /   |  ',
+    "   \\   '--'   /   ",
+    "    '.      .'    ",
+    "      '-..-'      ",
+    '     /  ||  \\     ',
+    '    |   ||   |    ',
+    '    :   ||   :    ',
+    "     .  ''  .     ",
+    '     :      :     ',
+    '      .    .      ',
+  ],
+  tint: [0.75, 0.95, 1.35],
+  width: 1.0,
+  height: 1.6,
+}
+
+/** A canister of charge. Small and bright, unmistakably not a creature. */
 export const CANISTER: Sprite = {
   rows: [
-    ' ,-. ',
-    '|:::|',
-    "'---'",
+    ' .----. ',
+    '| :::: |',
+    '| :::: |',
+    '| ---- |',
+    " '----' ",
   ],
   tint: [1.1, 1.25, 0.6],
   width: 0.5,
@@ -86,9 +123,11 @@ export const CANISTER: Sprite = {
 /** A field kit. A plain box with a bar across it. */
 export const KIT: Sprite = {
   rows: [
-    '.-----.',
-    '|  =  |',
-    "'-----'",
+    '.--------.',
+    '|        |',
+    '|  ====  |',
+    '|        |',
+    "'--------'",
   ],
   tint: [0.7, 1.3, 0.85],
   width: 0.7,
@@ -118,3 +157,6 @@ export const LEVEL_1_THINGS: Billboard[] = [
   // On the platform, so something is visibly standing above you.
   { x: 20, y: 4, z: 0.6, light: 1, sprite: SENTRY },
 ]
+
+/** Every sprite the game ships, for checks that want to hold them all to a rule. */
+export const ALL_SPRITES: Record<string, Sprite> = { CRAWLER, SENTRY, DRIFTER, CANISTER, KIT }
