@@ -87,6 +87,7 @@ import { HURT_INTERVAL, bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
 import { fits, restore, snapshot } from '../src/game/save.ts'
+import { cheatWords, effectOf, fresh, typeLetter } from '../src/game/cheats.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -3729,6 +3730,84 @@ test('the summary reads as a clock and a pair of counts', () => {
   const hidden = summaryLines({ seconds: 30, kills: 1, creatures: 2, collected: 1, supplies: 2, secrets: 3, found: 1 })
   assert(hidden.length === 5, `a map with secrets in it produced ${hidden.length} lines`)
   assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
+})
+
+console.log('\ncheats')
+
+test('a cheat is only recognised when its whole word is typed', () => {
+  /*
+   * The original's cheats are typed rather than bound: no key does anything on
+   * its own, and the word is recognised the moment its last letter lands. That
+   * makes the whole thing a function from a stream of letters to an effect,
+   * which is why none of it needs a browser to check.
+   */
+  let typed = fresh()
+  for (const letter of 'iddq') typed = typeLetter(typed, letter)
+  assert(effectOf(typed) === null, 'half a word was taken for the whole of one')
+
+  typed = typeLetter(typed, 'd')
+  assert(effectOf(typed) === 'god', `"iddqd" gave ${String(effectOf(typed))}`)
+
+  // And the buffer does not keep answering yes on the next letter.
+  typed = typeLetter(typed, 'x')
+  assert(effectOf(typed) === null, 'the cheat kept firing after the word was over')
+})
+
+test('a mistyped run still finds a cheat that finishes in it', () => {
+  /*
+   * Somebody typing badly gets there in the end. A rolling buffer means the
+   * letters before the word simply fall off the front, which is how the
+   * original behaves and is far kinder than demanding a clean start.
+   */
+  let typed = fresh()
+  for (const letter of 'xxiddqxiddqd') typed = typeLetter(typed, letter)
+  assert(effectOf(typed) === 'god', 'a cheat typed after a false start was missed')
+
+  /*
+   * And the case that actually distinguishes a rolling buffer from one that
+   * clears itself on a wrong letter, which the line above does not.
+   *
+   * "iddqiddqd": the run goes wrong *inside* the word and restarts on the same
+   * letter. A buffer that cleared itself would throw away the "i" that begins
+   * the second attempt and could never recover; a rolling one keeps the last
+   * few letters whatever they are and finds the word at the end.
+   *
+   * Found by breaking the implementation on purpose and watching nothing fail
+   * -- the first version of this check passed against both, which means it was
+   * not checking the thing it was written for.
+   */
+  let again = fresh()
+  for (const letter of 'iddqiddqd') again = typeLetter(again, letter)
+  assert(effectOf(again) === 'god', 'a word restarted inside itself was missed')
+})
+
+test('every cheat this game has is a word of its own', () => {
+  // Written out rather than read from the table being checked, for the reason
+  // the tagged-special list is: a table that supplies its own expectations
+  // cannot notice a deletion.
+  const EXPECTED: readonly [string, string][] = [
+    ['iddqd', 'god'],
+    ['idkfa', 'kit'],
+    ['idclip', 'ghost'],
+    ['iddt', 'chart'],
+  ]
+  for (const [word, effect] of EXPECTED) {
+    let typed = fresh()
+    for (const letter of word) typed = typeLetter(typed, letter)
+    assert(effectOf(typed) === effect, `"${word}" gave ${String(effectOf(typed))} rather than ${effect}`)
+  }
+  assert(
+    cheatWords().length === EXPECTED.length,
+    `the table holds ${cheatWords().length} cheats against the ${EXPECTED.length} written down here`,
+  )
+  // No word may be the tail of another, or the shorter one could never be
+  // reached: "iddt" inside "iddqd" would be a cheat nobody could type.
+  for (const [word] of EXPECTED) {
+    for (const [other] of EXPECTED) {
+      if (word === other) continue
+      assert(!other.endsWith(word), `"${word}" is the tail of "${other}" and can never be typed`)
+    }
+  }
 })
 
 console.log('\nsaving')

@@ -14,7 +14,7 @@ import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { drawAutomap } from '../src/columns/automap.ts'
 import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
-import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
+import { insideSector, lineInFront, sectorAt, type Line, type Sector } from '../src/columns/level.ts'
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
 import { crossings } from '../src/columns/crossing.ts'
 import { SILENCE, speakerFor, type Noise, type Speaker } from '../src/game/sound.ts'
@@ -51,6 +51,7 @@ import {
 import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
+import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
@@ -518,6 +519,17 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && !titleUp) keepRun()
 })
 
+/*
+ * What has been typed lately, and what the words have switched on.
+ *
+ * Both survive a level, the way the original's do: a cheat is a decision about
+ * this run rather than about this room. Neither is saved -- a save is what the
+ * level is, and being invulnerable is not something the level knows.
+ */
+let typed = noLetters()
+let godly = false
+let ghostly = false
+
 const held = new Set<string>()
 const down = (event: KeyboardEvent) => {
   // Arrows and space scroll the page otherwise, which fights the game for the
@@ -525,6 +537,14 @@ const down = (event: KeyboardEvent) => {
   // Tab would otherwise walk the focus ring out of the game.
   if (event.key.startsWith('Arrow') || event.key === ' ' || event.key === 'Tab') event.preventDefault()
   held.add(event.key.length === 1 ? event.key.toLowerCase() : event.key)
+  // Typed rather than bound: the letters go into the buffer whatever else they
+  // are doing, and a word takes effect on its last one. Not while the title is
+  // up, where the same letters are walking a cursor.
+  if (!titleUp) {
+    typed = typeLetter(typed, event.key)
+    const asked = effectOf(typed)
+    if (asked !== null) applyCheat(asked)
+  }
 }
 const up = (event: KeyboardEvent) => {
   held.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key)
@@ -709,8 +729,42 @@ function isCreature(actor: Actor): boolean {
  * noise cannot be forgotten at one of them -- the same argument the armour made
  * for putting the subtraction in one place, applied one layer out.
  */
+/**
+ * What a finished word does, which is the only place the page decides anything.
+ *
+ * Each is a switch rather than a gift where it can be: the original's god and
+ * noclip are toggles, and a player who typed one by accident wants the way
+ * back. The two that hand things over -- the kit and the chart -- cannot be
+ * toggled, because there is no taking a key back off somebody.
+ */
+function applyCheat(asked: Cheat): void {
+  typed = noLetters()
+  if (asked === 'god') {
+    godly = !godly
+    say(`nothing can hurt you: ${godly ? 'on' : 'off'}`)
+  } else if (asked === 'ghost') {
+    ghostly = !ghostly
+    say(`walls do not stop you: ${ghostly ? 'on' : 'off'}`)
+  } else if (asked === 'kit') {
+    carrier.health = carrier.maxHealth
+    carrier.armour = 200
+    carrier.armourShare = 1 / 2
+    for (let i = 0; i < carrier.ammo.length; i++) carrier.ammo[i] = carrier.ammoMax[i] ?? 0
+    for (let i = 0; i < WEAPONS.length; i++) carrier.weapons.add(i)
+    for (const colour of ['cobalt', 'crimson', 'amber']) carrier.keys.add(colour)
+    say('every key and a full kit')
+  } else {
+    // The whole map at once, which is the set the renderer fills in as you go.
+    for (const line of state.level.lines) seen.add(line)
+    say('the whole map')
+  }
+  noise('switch')
+}
+
 function hurtPlayer(amount: number): void {
   if (amount <= 0) return
+  // Nothing can hurt you, and nothing needs to know that but this.
+  if (godly) return
   const before = carrier.health
   takeDamage(carrier, amount)
   if (carrier.health <= 0 && before > 0) noise('die')
@@ -919,7 +973,28 @@ function step(): void {
   // Already unit length at most: the intent does that, so both devices agree.
   const wasX = player.x
   const wasY = player.y
-  if (dx !== 0 || dy !== 0) moveBody(level, player, dx * speed, dy * speed)
+  if (dx !== 0 || dy !== 0) {
+    if (ghostly) {
+      /*
+       * Straight there, and then ask which room that is.
+       *
+       * `moveBody` is the only thing that keeps a body inside the map, so
+       * going round it means doing its last job by hand: the floor underfoot
+       * comes from wherever you ended up. A step that lands outside the map
+       * entirely is refused, because there is no floor out there to stand on
+       * and the renderer would have nothing to draw.
+       */
+      const toX = player.x + dx * speed
+      const toY = player.y + dy * speed
+      const landed = sectorAt(level, toX, toY)
+      if (landed >= 0) {
+        player.x = toX
+        player.y = toY
+        player.sector = landed
+        player.floor = level.sectors[landed]!.floor + (player.hover ?? 0)
+      }
+    } else moveBody(level, player, dx * speed, dy * speed)
+  }
 
   /*
    * Lines crossed by that step, which is how most of the original's map works.

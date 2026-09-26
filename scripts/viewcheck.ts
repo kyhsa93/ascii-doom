@@ -1206,6 +1206,8 @@ function readOpened(page: Page) {
       levelIndex: (probe.levelIndex as number) ?? -99,
       lines: (probe.lines as number) ?? -1,
       seen: (probe.seen as number) ?? -1,
+      /** The colours being carried, which is how a check sees a key arrive. */
+      keys: (probe.keys as string[]) ?? [],
       cols: (probe.cols as number) ?? 0,
       frames: (probe.frames as number) ?? 0,
       health: (probe.health as number) ?? -1,
@@ -1770,6 +1772,58 @@ check('continuing puts the run back rather than starting it over', () => {
   assert(
     savedAfterContinuing !== 100,
     'continuing wrote a full-health run over the save it was restoring',
+  )
+})
+
+/*
+ * The typed words, in the page rather than in the module that recognises them.
+ *
+ * The recognising is checked in Node and needs nothing here; what this asks is
+ * the other half -- that the page is listening at all, and that what it does
+ * with an effect reaches the game. The first room's floor is nukage, so the
+ * damage that stops is the evidence.
+ */
+const cheatPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+cheatPage.on('pageerror', (error) => problems.push(`cheats: ${error.message}`))
+await cheatPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await cheatPage.waitForTimeout(900)
+await begin(cheatPage)
+// Stand in it long enough to be hurt, which is what makes the stop visible.
+await cheatPage.keyboard.down('w')
+await cheatPage.waitForTimeout(1100)
+await cheatPage.keyboard.up('w')
+await cheatPage.waitForTimeout(900)
+const hurtBeforeCheating = await readOpened(cheatPage)
+for (const letter of 'iddqd') await cheatPage.keyboard.press(letter)
+await cheatPage.waitForTimeout(1600)
+const hurtAfterCheating = await readOpened(cheatPage)
+const keysBeforeKit = hurtAfterCheating.keys.length
+for (const letter of 'idkfa') await cheatPage.keyboard.press(letter)
+await cheatPage.waitForTimeout(400)
+const afterTheKit = await readOpened(cheatPage)
+const seenBeforeChart = afterTheKit.seen
+for (const letter of 'iddt') await cheatPage.keyboard.press(letter)
+await cheatPage.waitForTimeout(400)
+const afterTheChart = await readOpened(cheatPage)
+await cheatPage.close()
+
+check('a typed word reaches the game', () => {
+  assert(
+    hurtBeforeCheating.health < 100,
+    'the floor did not hurt, so there is nothing for the cheat to stop',
+  )
+  // Nothing can hurt you: the health that was falling stops where it was.
+  assert(
+    hurtAfterCheating.health === hurtBeforeCheating.health,
+    `the floor kept hurting after iddqd: ${hurtBeforeCheating.health} to ${hurtAfterCheating.health}`,
+  )
+  assert(
+    afterTheKit.keys.length > keysBeforeKit,
+    `idkfa handed over ${afterTheKit.keys.length - keysBeforeKit} keys`,
+  )
+  assert(
+    afterTheChart.seen > seenBeforeChart,
+    `iddt added ${afterTheChart.seen - seenBeforeChart} lines to the map`,
   )
 })
 

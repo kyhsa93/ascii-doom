@@ -602,6 +602,29 @@ exactly as they do to a switch: shooting a lock is not a way past it. Thirteen
 maps get twenty-two doors out of it, which is the same twenty-two the file
 promised before any of this was wired.
 
+The words work. Typing iddqd, idkfa, idclip or iddt does what it has always
+done -- nothing can hurt you, you are handed the keys and a full kit, walls
+stop mattering, the map fills in -- and none of them is a bound key: no letter
+does anything on its own and a word lands on its last letter.
+
+That shape is the whole reason they are cheap here. A cheat is a function from
+a stream of letters to an effect, so the recognising is a pure module with no
+page in it, and what the page contributes is one line in the key handler. The
+buffer rolls rather than resetting on a wrong letter, which is the original's
+behaviour and much kinder: a false start falls off the front and the word still
+lands when you finish it.
+
+The words are the original's rather than invented ones, which is a deliberate
+exception to how the rest of this was built. Everything else here takes the
+technique and leaves the files alone -- but a cheat whose whole point is that
+you already know it is not a cheat if it is renamed. What they are called
+inside is this game's own: god, kit, ghost, chart.
+
+One rule the table has to keep, and a check enforces it: no word may end inside
+another. Matching on the end of a rolling buffer means a word that finishes
+inside a longer one would fire first every time somebody tried to type the
+longer one, and the longer one could never be reached at all.
+
 A run survives the tab being closed now, which it did not before: everything
 you had done vanished the moment the page went away, on a game made of
 sixty-eight maps' worth of levels. The save goes in the browser's own storage
