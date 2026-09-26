@@ -2503,7 +2503,10 @@ test('every tagged special arrives, under the table that matches how it works', 
    * thirty maps -- changed nothing and the falsifier sat silent. A check that
    * derives its expectations from the thing under test is not a check.
    */
-  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 2, 109, 38, 37, 19, 36]
+  // 133 and 137 are the two that want a key: built from DOORBLU and DOORYEL,
+  // which is the only reason their colours are known. The other four locked
+  // switches carry plain switch plates and are deliberately out.
+  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 133, 137, 2, 109, 38, 37, 19, 36]
   const table = taggedSpecials()
   for (const special of EXPECTED) {
     assert(table.includes(special), `special ${special} has gone out of the tagged table`)
@@ -4673,6 +4676,54 @@ test('the renderer paints a wall with the material the line carries', () => {
     !wallGlyphs.some((glyph) => drawn.has(glyph)),
     'a room walled in stone drew the plain wall material as well',
   )
+})
+
+test('a locked door asks for the key its own texture is named after', () => {
+  /*
+   * The check that would have caught a colour recalled wrongly.
+   *
+   * The table had 27 and 28 the wrong way round for as long as locked doors
+   * have been imported, and nothing noticed, because both halves looked
+   * plausible on their own: a door asked for yellow, a yellow key existed
+   * somewhere in the file, and only a map that happened to place red where
+   * yellow was wanted could tell. Six of the sixty-eight could -- they had no
+   * openable route to their exit.
+   *
+   * The file settles it without recollection. A door special is built from a
+   * texture whose name carries the colour: DOORBLU, DOORRED, DOORYEL. The
+   * numbers below are what those textures say, and the open-once specials are
+   * the twins of the same three in the same order.
+   */
+  const asks = (special: number): string | null => {
+    const level = plainLevel([0, 0], [[0, 1]])
+    level.sectors[1]!.ceiling = 0
+    const made = doorsFrom(level, [spec(special, 1, 0)])
+    return made[0]?.kind.requiresKey ?? null
+  }
+
+  // DOORBLU, DOORRED, DOORYEL: the texture names settle these three.
+  assert(asks(32) === 'cobalt', `32 is built from DOORBLU and asks for ${asks(32)}`)
+  assert(asks(33) === 'crimson', `33 is built from DOORRED and asks for ${asks(33)}`)
+  assert(asks(34) === 'amber', `34 is built from DOORYEL and asks for ${asks(34)}`)
+
+  /*
+   * 26, 27 and 28 are built from BIGDOOR textures, whose names say nothing, so
+   * no amount of reading the file settles them directly. They were settled by
+   * counting: every assignment of the three colours tried against all
+   * sixty-eight maps, scored by how many end up with a locked door that no key
+   * on their floor can open. This order leaves six, the others eleven to
+   * sixteen -- and "they are the twins of 33 and 34, in order" leaves eleven,
+   * which is what I changed them to before measuring.
+   */
+  assert(asks(26) === 'cobalt', `26 asks for ${asks(26)} rather than cobalt`)
+  assert(asks(27) === 'amber', `27 asks for ${asks(27)} rather than amber`)
+  assert(asks(28) === 'crimson', `28 asks for ${asks(28)} rather than crimson`)
+
+  // And the keys themselves, which the sprite names settle the same way: BKEY,
+  // RKEY, YKEY and the three skulls.
+  assert(keyColourOf(5) === 'cobalt' && keyColourOf(40) === 'cobalt', 'the blue key is not cobalt')
+  assert(keyColourOf(13) === 'crimson' && keyColourOf(39) === 'crimson', 'the red key is not crimson')
+  assert(keyColourOf(6) === 'amber' && keyColourOf(38) === 'amber', 'the yellow key is not amber')
 })
 
 test('a hidden room arrives marked, and an ordinary one does not', () => {

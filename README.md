@@ -420,6 +420,30 @@ price there was no reason to drop the firing frames or shave the height. The
 chaingun, plasma rifle and BFG are in the file and are not baked -- there is
 nothing here to fire them with, and a picture of a gun you cannot use is weight.
 
+Two locked switches arrive as well -- 133 and 137, on twenty-one maps between
+them. They are the same machine as a locked door: a mover that declines to start
+until you are carrying the right colour, which is what `activate` already does.
+Their colours come from the textures they are built from, DOORBLU and DOORYEL,
+the way 32, 33 and 34 were settled. Four more locked switches exist and are
+deliberately left out: their lines carry plain switch plates that say nothing
+about a colour, so the only thing that could decide them is recollection, and
+recollection had already been wrong once in the same file that day.
+
+That day's mistake is worth writing down. Looking for maps that cannot be
+finished turned up six whose locked doors wanted a colour no key on their floor
+provided, and the obvious culprit was the key table -- so I swapped two numbers
+in it on the strength of "26, 27 and 28 must be the open-once twins of 32, 33
+and 34, in that order". It sounded like evidence and was memory wearing its
+clothes: it took the six blocked maps to eleven. Trying all six assignments
+against all sixty-eight maps put the original order back, and the counting is in
+a check now rather than in my head.
+
+Seven maps still want a key they do not place, six of them yellow. That is no
+longer a colour problem -- the door textures settle the colours and the key
+sprites settle the keys -- so it is something those maps do that this importer
+still does not read, and guessing at it is how the last three hours went wrong.
+It is written here rather than fixed.
+
 The hidden rooms are counted. Three hundred and twenty-five sectors across the
 two files are marked secret -- on sixty-six of the sixty-eight maps -- and the
 importer had been reading that very word to find damaging floors and then

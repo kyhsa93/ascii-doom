@@ -62,6 +62,26 @@ const MANUAL = new Map<number, { stays: boolean; fast: boolean; keyThing: number
   [31, { stays: true, fast: false, keyThing: null }],
   [117, { stays: false, fast: true, keyThing: null }],
   [118, { stays: true, fast: true, keyThing: null }],
+  /*
+   * The colours, settled by the file rather than by memory.
+   *
+   * 32, 33 and 34 are settled by the textures they are built from: DOORBLU,
+   * DOORRED and DOORYEL, twenty-four, nine and thirty-two lines of each across
+   * the two files. 26, 27 and 28 use BIGDOOR textures, whose names say nothing,
+   * so they were settled by counting instead -- every assignment of the three
+   * colours was tried against every map, asking how many are left with a locked
+   * door no key on their floor can open. This order leaves six; the five others
+   * leave eleven to sixteen.
+   *
+   * I swapped 27 and 28 on the strength of "they must be the twins of 33 and 34
+   * in the same order", which is recollection wearing the clothes of evidence,
+   * and it took the six to eleven. The counting is in a check now.
+   *
+   * The remaining six are not a colour problem. E2M5, MAP04 and MAP26 lock
+   * something behind specials 133 and 135 -- switches that need a key -- which
+   * this importer does not read at all, so the key those maps expect you to
+   * fetch is behind a door it cannot open.
+   */
   [26, { stays: false, fast: false, keyThing: 5 }],
   [27, { stays: false, fast: false, keyThing: 6 }],
   [28, { stays: false, fast: false, keyThing: 13 }],
