@@ -37,6 +37,7 @@ import { liftsFrom } from './wadlifts.ts'
 import { supplyFor, supplyPictureFor } from './waditems.ts'
 import { creatureFor, creaturePictureFor } from './wadthings.ts'
 import { teleportsFrom } from './wadteleport.ts'
+import { taggedFrom } from './wadswitch.ts'
 
 /**
  * A sector index no map can have.
@@ -183,7 +184,28 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
   const doors = doorsFrom(map.level, map.specials).map((door) => makeMover(door.sector, door.kind))
   const lifts = liftsFrom(map.level, map.specials, map.tagged)
   const platforms = lifts.platforms.map((lift) => makeMover(lift.sector, lift.kind))
+  /*
+   * The machines a line names rather than stands beside.
+   *
+   * After the lifts, and handed what they already own: exactly one room in the
+   * two files this was built against is named by a floor special *and* owned by
+   * a platform, and two machines on one floor would drag it in turn.
+   */
+  const machines = taggedFrom(
+    map.level,
+    map.specials,
+    map.tagged,
+    new Set(platforms.map((platform) => platform.sector)),
+  )
+
   const liftLines = new Map<Line, readonly Mover[]>()
+  const crossedLines = new Map<Line, readonly Mover[]>(machines.crossed)
+  for (const [line, called] of lifts.crossed) {
+    crossedLines.set(line, [
+      ...(crossedLines.get(line) ?? []),
+      ...called.map((index) => platforms[index]!),
+    ])
+  }
   for (const [line, called] of lifts.calls) {
     liftLines.set(
       line,
@@ -204,7 +226,7 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
      * heights and a lift is a floor with two heights, and `updateMovers` has
      * never needed to know which it is looking at.
      */
-    movers: [...doors, ...platforms],
+    movers: [...doors, ...platforms, ...machines.movers],
     /**
      * Where the map ends, if it ends anywhere this game can notice.
      *
@@ -235,6 +257,10 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
      * a room is not a place to stand.
      */
     teleportLines: teleportsFrom(map.specials, map.things, map.tagged),
+    /** Lines that work something out of sight, which is most of what a map does. */
+    crossedLines,
+    /** And the walls that do, beyond the ones that call a platform. */
+    switchLines: machines.pressed,
     /**
      * Still empty, and now for a reason rather than for want of an importer.
      * A lift here is a floor that carries you when you stand on it; a lift in a

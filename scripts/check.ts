@@ -50,7 +50,8 @@ import {
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
-import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
+import { liftsFrom, switchLiftSpecials, walkLiftSpecials } from '../src/game/wadlifts.ts'
+import { taggedFrom, taggedSpecials } from '../src/game/wadswitch.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
 import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
@@ -2309,23 +2310,74 @@ test('two walls calling the same room share one platform', () => {
   assert(lifts.calls.get(second.line)?.[0] === 0, 'the second wall calls a platform of its own')
 })
 
-test('only the lifts you press come across', () => {
+test('a lift arrives under the table that matches how it is worked', () => {
   const level = plainLevel([0, 3], [[0, 1]])
   const tagged = new Map([[5, [1]]])
 
+  // Pressed ones land in `calls` and crossed ones in `crossed`, and neither
+  // appears in the other. The page asks two different questions of these --
+  // what am I facing, and what did my step pass through -- so a lift filed
+  // under the wrong one is a lift nobody can work.
   for (const special of switchLiftSpecials()) {
     const made = liftsFrom(level, [spec(special, null, 5)], tagged)
     assert(made.platforms.length === 1, `special ${special} is in the table and makes no lift`)
+    assert(made.calls.size === 1, `pressed special ${special} did not arrive as a wall you press`)
+    assert(made.crossed.size === 0, `pressed special ${special} also arrived as a line you cross`)
   }
-  // The ones triggered by crossing a line, which this importer does not make
-  // yet -- the engine can notice a crossing now, and 88 and 120 are waiting on
-  // this table rather than on the geometry: they are on thirty-eight and
-  // fifteen of these maps. And, at the end, the two I expected to carry most of
-  // these maps before counting them. Those appear zero times in either file.
-  for (const special of [88, 120, 121, 10, 21]) {
+  for (const special of walkLiftSpecials()) {
+    const made = liftsFrom(level, [spec(special, null, 5)], tagged)
+    assert(made.platforms.length === 1, `special ${special} is in the table and makes no lift`)
+    assert(made.crossed.size === 1, `crossed special ${special} did not arrive as a line you cross`)
+    assert(made.calls.size === 0, `crossed special ${special} also arrived as a wall you press`)
+  }
+
+  // The two I expected to carry most of these maps before counting them. They
+  // appear zero times in either file, and 121 with them.
+  for (const special of [121, 10, 21]) {
     const made = liftsFrom(level, [spec(special, null, 5)], tagged)
     assert(made.platforms.length === 0, `special ${special} came across as a lift`)
   }
+})
+
+test('a switch opens the door its tag names', () => {
+  // The room a 103 names is shut the way a door is shut -- ceiling on the
+  // floor -- and opens to under the lowest ceiling around it. Two hundred and
+  // forty-six of the two hundred and seventy-nine rooms these switches name in
+  // the real files are built exactly that way.
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[1]!.ceiling = 0
+  const line = spec(103, null, 5)
+  const made = taggedFrom(level, [line], new Map([[5, [1]]]))
+
+  assert(made.movers.length === 1, `${made.movers.length} machines came off one switch`)
+  const mover = made.movers[0]!
+  assert(mover.kind.surface === 'ceiling', 'the switch moves the floor rather than the ceiling')
+  assert(mover.kind.open > mover.kind.shut, 'the door would open downwards')
+  assert(made.pressed.get(line.line)?.length === 1, 'the wall works nothing when pressed')
+  assert(made.crossed.size === 0, 'a switch arrived as something you walk across')
+})
+
+test('a room already where it would move to is refused', () => {
+  // Thirty-three of the rooms a 103 names stand open already, and twenty-three
+  // of the rooms a floor special names are at the height they would move to.
+  // `updateMovers` travels toward whatever height it is handed without asking
+  // which way that is, so one of these left in would move the wrong way.
+  const open = plainLevel([0, 0], [[0, 1]])
+  assert(taggedFrom(open, [spec(103, null, 5)], new Map([[5, [1]]])).movers.length === 0,
+    'a door standing open was imported as a door')
+
+  const flat = plainLevel([0, 0], [[0, 1]])
+  assert(taggedFrom(flat, [spec(23, null, 5)], new Map([[5, [1]]])).movers.length === 0,
+    'a floor already at its target was imported as a machine')
+})
+
+test('a floor a lift owns is left to the lift', () => {
+  // Exactly one room in the two files is named by a floor special and owned by
+  // a platform. Two machines on one floor would drag it in turn.
+  const level = plainLevel([0, 3], [[0, 1]])
+  const made = taggedFrom(level, [spec(23, null, 5)], new Map([[5, [1]]]), new Set([1]))
+  assert(made.movers.length === 0, 'a floor a lift already owns got a second machine')
+  assert(taggedSpecials().includes(23), 'the table no longer holds the special this check is about')
 })
 
 test('the parser leaves untagged rooms out of the tag table', () => {

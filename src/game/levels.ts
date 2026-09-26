@@ -88,6 +88,24 @@ export interface LevelState {
    * and a teleport you cannot take is a set of rooms you can see and never reach.
    */
   readonly teleportLines: ReadonlyMap<Line, Teleport>
+  /**
+   * Lines that work a machine somewhere else when you cross them.
+   *
+   * The walk-over half of the original's level design, which this engine could
+   * not see until a step became a segment. Doors a switch opens, floors that
+   * drop when you walk in, platforms called by crossing rather than pressing:
+   * all the same movers, reached the other way. Empty for every level written
+   * here, which has no machinery out of sight of what works it.
+   */
+  readonly crossedLines: ReadonlyMap<Line, readonly Mover[]>
+  /**
+   * And walls that work one when pressed, beyond the lifts.
+   *
+   * Kept apart from `liftLines` because a tagged door and a platform are the
+   * same machine to `updateMovers` and different things to say: forty-eight of
+   * the sixty-eight maps open a door by pressing a switch somewhere else.
+   */
+  readonly switchLines: ReadonlyMap<Line, readonly Mover[]>
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
   /**
@@ -155,6 +173,8 @@ export function loadLevel(def: LevelDef): LevelState {
     exitLines: new Set<Line>(),
     liftLines: new Map<Line, readonly Mover[]>(),
     teleportLines: new Map<Line, Teleport>(),
+    crossedLines: new Map<Line, readonly Mover[]>(),
+    switchLines: new Map<Line, readonly Mover[]>(),
     fromFile: 0,
   }
 }

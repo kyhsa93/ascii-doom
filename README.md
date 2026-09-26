@@ -229,8 +229,11 @@ than one room. So a lift is a line that calls a list of platforms, and pressing
 the wall the map marked is what calls them. Five hundred and sixty-five of
 those lines are a switch, and five hundred and eight of those arrive as
 something you can press — across sixty-two of the sixty-eight maps. The
-hundred and ninety-six you trigger by walking over are the next thing to
-arrive, now that crossing a line is something this engine can notice.
+hundred and ninety-six you trigger by walking over arrive too, now that
+crossing a line is something this engine can notice. They add fewer platforms
+than that sounds: the rooms they name are mostly rooms a switch already named,
+so a hundred and two of the hundred and fifteen are the same floor reached the
+other way, and thirteen are new.
 
 Crossing a line is a thing that happens now, and most of what the original's
 maps do hangs off it. A step is a segment — the body was here at the start of
@@ -255,6 +258,27 @@ The walk-over exit stays as it was — the room across the line rather than the
 line itself. It could be moved onto this now, and there is no reason to: an
 exit fires once and arriving in the room beyond is what crossing it means, so
 the two agree, and a rewrite would be motion rather than progress.
+
+Beyond those there is a third family, and it is the one the original's level
+designers lean on hardest: a line that names a room and says what should happen
+to it. A switch here opens a door over there; a line you walk across drops a
+floor you cannot see. Forty-eight of the sixty-eight maps carry the switch that
+opens a tagged door and forty-six the one that lowers a tagged floor, which puts
+them behind only plain doors and teleports. Sixty-four of the sixty-eight gain
+something from this: eight hundred and seventy-two machines, worked by four
+hundred and ten walls and three hundred and seventy-nine crossed lines.
+
+None of it is new machinery. A door is a ceiling with two heights and a floor
+special is a floor with two, and the loop that steps them has never asked which
+it was looking at, so the work is arithmetic on the map: where a named room's
+surface should end up, measured from the rooms around it the way the doors and
+lifts already measure theirs. Three rules came out of counting rather than
+taste. A room already standing where it would move to is refused -- thirty-three
+of the doors and twenty-three of the floors -- because the mover travels toward
+whatever height it is handed without asking which way that is. A door that would
+open downwards is refused for the same reason. And exactly one room in the two
+files is named by a floor special *and* owned by a platform; the lift keeps it,
+because two machines on one floor would drag it in turn.
 
 A platform starts raised, drops to the floor of the lowest room touching it,
 rests three seconds and climbs back. None of that needed building: a door is a

@@ -578,6 +578,23 @@ function step(): void {
     break
   }
 
+  /*
+   * And the machines a crossed line works, which is the other half of it.
+   *
+   * Every crossing rather than the first, because unlike a teleport these leave
+   * you where you are: a step through a doorway that opens the room beyond and
+   * drops the floor behind should do both. From either side, too -- the side
+   * rule is the teleport's, not a rule about crossings, and a door you can only
+   * open walking one way is a door you get locked behind.
+   *
+   * `activate` is the same call a press makes, locks and all.
+   */
+  for (const crossed of crossings(level.lines, wasX, wasY, player.x, player.y)) {
+    for (const machine of state.crossedLines.get(crossed.line) ?? []) {
+      activate(machine, carrier.keys)
+    }
+  }
+
   // The ground underfoot, after the move rather than before it: a step out of a
   // channel is a step out of it, and the clock starts again on the way back in.
   const burn = bite(level, player.sector, hazard, STEP)
@@ -635,6 +652,9 @@ function step(): void {
         // A wall may call more than one platform: eighty-three of the lift
         // lines in the files this was built against name several rooms.
         for (const platform of state.liftLines.get(facing) ?? []) activate(platform, carrier.keys)
+        // And a switch may open a door in another room entirely, which is how
+        // forty-eight of the sixty-eight maps are built.
+        for (const machine of state.switchLines.get(facing) ?? []) activate(machine, carrier.keys)
       }
     }
   }

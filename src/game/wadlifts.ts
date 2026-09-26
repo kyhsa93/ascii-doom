@@ -70,6 +70,24 @@ const WAIT = 3
  * original rather than less, which cannot strand anybody, and it is one line
  * out of five hundred and sixty-five.
  */
+/**
+ * The ones you walk across, now that a crossing is something this engine sees.
+ *
+ * 88 repeats and 120 is the fast form; between them they are on thirty-eight
+ * and fifteen of these maps. Two hundred and five of the two hundred and eight
+ * rooms they name are raised with somewhere to drop to, and the three that are
+ * already at the bottom are refused by the same rule the switched ones use.
+ */
+const WALKED = new Map<number, { fast: boolean }>([
+  [88, { fast: false }],
+  [120, { fast: true }],
+])
+
+/** Every special this importer takes when it is crossed, for checks to count. */
+export function walkLiftSpecials(): number[] {
+  return [...WALKED.keys()]
+}
+
 const SWITCHED = new Map<number, { fast: boolean }>([
   [62, { fast: false }],
   [122, { fast: true }],
@@ -94,6 +112,16 @@ export interface WadLifts {
    * nothing".
    */
   readonly calls: ReadonlyMap<Line, readonly number[]>
+  /**
+   * And which platforms each *crossed* line calls, the same way.
+   *
+   * Separate from `calls` rather than flagged inside it, because the page asks
+   * two different questions: a wall is what you are facing when you press use,
+   * and a crossed line is one your last step passed through. A single table
+   * would have to be filtered at both call sites, and one of them would
+   * eventually forget.
+   */
+  readonly crossed: ReadonlyMap<Line, readonly number[]>
 }
 
 /**
@@ -138,10 +166,12 @@ export function liftsFrom(
   const platforms: WadLift[] = []
   const madeFor = new Map<number, number>()
   const calls = new Map<Line, readonly number[]>()
+  const crossed = new Map<Line, readonly number[]>()
 
   for (const entry of specials) {
-    const switched = SWITCHED.get(entry.special)
+    const switched = SWITCHED.get(entry.special) ?? WALKED.get(entry.special)
     if (!switched || entry.tag === 0) continue
+    const byCrossing = WALKED.has(entry.special)
 
     const called: number[] = []
     for (const sector of tagged.get(entry.tag) ?? []) {
@@ -179,10 +209,12 @@ export function liftsFrom(
       called.push(index)
     }
 
-    if (called.length > 0) calls.set(entry.line, called)
+    if (called.length === 0) continue
+    const into = byCrossing ? crossed : calls
+    into.set(entry.line, [...(into.get(entry.line) ?? []), ...called])
   }
 
-  return { platforms, calls }
+  return { platforms, calls, crossed }
 }
 
 /** Every special this importer treats as a lift, for checks to count against. */
