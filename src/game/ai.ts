@@ -345,8 +345,14 @@ export function isAlive(actor: Actor): boolean {
   return actor.state !== 'dead' && actor.state !== 'dying'
 }
 
-/** Folds an angle into -pi..pi, so "how far off" never reads as almost a full turn. */
-function normalizeAngle(angle: number): number {
+/**
+ * Folds an angle into -pi..pi, so "how far off" never reads as almost a full turn.
+ *
+ * Exported because the aiming help asks the same question a creature asks when
+ * it decides whether you are in front of it, and two copies of a wrap are two
+ * chances for one of them to be written with the wrong sign.
+ */
+export function normalizeAngle(angle: number): number {
   let a = angle
   while (a > Math.PI) a -= Math.PI * 2
   while (a < -Math.PI) a += Math.PI * 2

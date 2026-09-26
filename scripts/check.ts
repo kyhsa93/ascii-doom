@@ -29,9 +29,10 @@ import {
   type SectorDef,
 } from '../src/columns/level.ts'
 import {
+  columnOfCamX,
   DEFAULT_FOV_Y,
-  MATERIALS,
   lightAt,
+  MATERIALS,
   projectionOf,
   renderView,
   rowOfHeight,
@@ -42,6 +43,7 @@ import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
 import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
+import { aimAt } from '../src/game/autoaim.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
@@ -74,12 +76,14 @@ import {
 import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import {
   damageActor,
+  isAlive,
+  normalizeAngle,
+  provoke,
   spawnActor,
-  updateActors,
   type Actor,
   type ActorKind,
-  provoke,
   type ActorState,
+  updateActors,
 } from '../src/game/ai.ts'
 import { collect, isUseful, type Carrier, type Pickup } from '../src/game/pickups.ts'
 import {
@@ -89,8 +93,19 @@ import {
   type Projectile,
   type ProjectileKind,
 } from '../src/game/projectiles.ts'
-import { PLAYER_HEIGHT, PLAYER_RADIUS, moveBody, type Body } from '../src/game/player.ts'
-import { ALL_SPRITES, LEVEL_1_PICKUPS } from '../src/game/things.ts'
+import {
+  EYE_HEIGHT,
+  moveBody,
+  PLAYER_HEIGHT,
+  PLAYER_RADIUS,
+  spawnPlayer,
+  type Body,
+} from '../src/game/player.ts'
+import {
+  ALL_SPRITES,
+  CRAWLER_KIND,
+  LEVEL_1_PICKUPS,
+} from '../src/game/things.ts'
 
 let failed = 0
 
@@ -1576,6 +1591,123 @@ test('only a line with somewhere beyond it can be the way out', () => {
       `special ${special} is in the table and finishes nothing`,
     )
   }
+})
+
+console.log('\naiming for a thumb')
+
+/**
+ * Two rooms with nothing between them but a solid wall.
+ *
+ * Not adjacent on purpose: sharing an edge would make an opening, and the point
+ * of the far room is to be somewhere sight cannot reach. Ten metres of floor in
+ * the near one is enough to put two creatures at different distances along it.
+ */
+function aimingRange(): Level {
+  return buildLevel([
+    {
+      polygon: [
+        [0, 0],
+        [10, 0],
+        [10, 10],
+        [0, 10],
+      ],
+      floor: 0,
+      ceiling: 3,
+      light: 1,
+      tag: 'near',
+    },
+    {
+      polygon: [
+        [12, 0],
+        [20, 0],
+        [20, 10],
+        [12, 10],
+      ],
+      floor: 0,
+      ceiling: 3,
+      light: 1,
+      tag: 'far',
+    },
+  ])
+}
+
+/** A creature standing on the floor of whichever room it is in. */
+function crawlerAt(level: Level, x: number, y: number): Actor {
+  const sector = sectorAt(level, x, y)
+  if (sector < 0) throw new Error(`(${x}, ${y}) is outside the range`)
+  return spawnActor(CRAWLER_KIND, x, y, sector, level.sectors[sector]!.floor)
+}
+
+/** Wide enough to see the whole of the near room from one end of it. */
+const WIDE = 0.7
+
+test('the nearest creature you can see is the one the shot is given', () => {
+  const level = aimingRange()
+  const player = spawnPlayer(level, 1, 5, 0)
+  const far = crawlerAt(level, 8, 5)
+  const near = crawlerAt(level, 5, 5)
+
+  // Handed in far-first, so picking the nearest cannot be picking the first.
+  const target = aimAt(level, player, EYE_HEIGHT, [far, near], WIDE)
+  assert(target !== null, 'nothing was aimed at with two creatures straight ahead')
+  assert(target.index === 1, `the shot was given the one ${target.distance.toFixed(2)} m away`)
+  close(target.distance, 4, 1e-9, 'how far the chosen creature is')
+  close(target.angle, 0, 1e-9, 'the direction to something straight ahead')
+})
+
+test('a creature behind you is not aimed at', () => {
+  const level = aimingRange()
+  const player = spawnPlayer(level, 5, 5, 0)
+  const behind = crawlerAt(level, 2, 5)
+  assert(aimAt(level, player, EYE_HEIGHT, [behind], WIDE) === null, 'the help turned right round')
+})
+
+test('a creature off the side of the picture is not aimed at', () => {
+  const level = aimingRange()
+  const player = spawnPlayer(level, 1, 5, 0)
+  // Forty-five degrees off, against a window of forty.
+  const aside = crawlerAt(level, 4, 8)
+  assert(aimAt(level, player, EYE_HEIGHT, [aside], WIDE) === null, 'the help aimed off the screen')
+  // And the same creature is taken once the window is wide enough to see it,
+  // so the refusal above is about the window rather than about the creature.
+  assert(aimAt(level, player, EYE_HEIGHT, [aside], 1.2) !== null, 'a wider window still missed it')
+})
+
+test('a dead creature is not aimed at', () => {
+  const level = aimingRange()
+  const player = spawnPlayer(level, 1, 5, 0)
+  const near = crawlerAt(level, 5, 5)
+  const far = crawlerAt(level, 8, 5)
+
+  assert(aimAt(level, player, EYE_HEIGHT, [near, far], WIDE)?.index === 0, 'the near one was not chosen first')
+  damageActor(near, 999, () => 0)
+  assert(!isAlive(near), 'the fixture failed to kill anything')
+  assert(aimAt(level, player, EYE_HEIGHT, [near, far], WIDE)?.index === 1, 'the help aimed at a corpse')
+})
+
+test('a creature through a wall is not aimed at', () => {
+  const level = aimingRange()
+  const player = spawnPlayer(level, 1, 5, 0)
+  const through = crawlerAt(level, 16, 5)
+
+  // Straight ahead and nearer than nothing, so only the wall can refuse it.
+  close(normalizeAngle(Math.atan2(5 - 5, 16 - 1)), 0, 1e-9, 'the bearing to the far room')
+  assert(aimAt(level, player, EYE_HEIGHT, [through], WIDE) === null, 'the help aimed through a wall')
+
+  // And it is taken the moment the wall is not in the way, which is what says
+  // the refusal above was the wall rather than the distance or the window.
+  const inTheOpen = crawlerAt(level, 9, 5)
+  assert(aimAt(level, player, EYE_HEIGHT, [through, inTheOpen], WIDE)?.index === 1, 'nothing was visible at all')
+})
+
+test('a bearing becomes the column a sprite would be drawn in', () => {
+  const { planeHalf } = projectionOf(80, 40, 0.5, DEFAULT_FOV_Y)
+  // Pinned to what the arithmetic says, not to a second copy of it: the middle
+  // of eighty columns is between 39 and 40, and the plane's edges are the
+  // outer halves of the first and last.
+  close(columnOfCamX(0, planeHalf, 80), 39.5, 1e-9, 'straight ahead')
+  close(columnOfCamX(planeHalf, planeHalf, 80), 79.5, 1e-9, 'the right-hand edge')
+  close(columnOfCamX(-planeHalf, planeHalf, 80), -0.5, 1e-9, 'the left-hand edge')
 })
 
 console.log('\nlifts from a file')

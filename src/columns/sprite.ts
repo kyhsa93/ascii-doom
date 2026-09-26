@@ -20,7 +20,7 @@
  */
 
 import type { Framebuffer } from '../../vendor/ascii-engine/src/core/framebuffer.ts'
-import { lightAt, projectionOf, rowOfHeight, type View } from './render.ts'
+import { columnOfCamX, lightAt, projectionOf, rowOfHeight, type View } from './render.ts'
 
 /** Art for one thing, as rows of characters. */
 export interface Sprite {
@@ -101,11 +101,9 @@ export function drawBillboards(
     const art = sprite.rows
     if (art.length === 0) continue
 
-    // Where the centre of the thing lands. The wall renderer builds a ray for
-    // column `col` as forward + right * camX, so a point sits on that ray when
-    // side/depth equals camX; inverting that gives the column.
+    // Where the centre of the thing lands.
     const camX = side / depth
-    const centre = (cols / 2) * (camX / planeHalf + 1) - 0.5
+    const centre = columnOfCamX(camX, planeHalf, cols)
     const halfCols = (sprite.width / 2 / (depth * planeHalf)) * (cols / 2)
 
     const topRow = rowOfHeight(thing.z + sprite.height, depth, view.z, projScale, horizon)

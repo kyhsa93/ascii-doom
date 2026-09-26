@@ -121,6 +121,17 @@ export function fire(
   height: number,
   owner: number,
   random: () => number = Math.random,
+  /**
+   * The direction the shot actually goes, when something has aimed it.
+   *
+   * Left out, a shot goes wherever the body is pointing, which is what a
+   * keyboard means by aiming. A phone cannot point a body that precisely --
+   * turning there is a rate rather than a position -- so the touch controls
+   * hand the direction of what you are looking at instead. The spread opens
+   * around this rather than around the body, or a scattergun would be aimed
+   * and thrown in two different directions at once.
+   */
+  aim?: number,
 ): FireResult {
   const bodies: ShotBody[] = actors
   let hits = 0
@@ -129,7 +140,7 @@ export function fire(
   const shots: Projectile[] = []
 
   for (let pellet = 0; pellet < weapon.pellets; pellet++) {
-    const angle = shooter.angle + (random() * 2 - 1) * weapon.spread
+    const angle = (aim ?? shooter.angle) + (random() * 2 - 1) * weapon.spread
 
     if (weapon.projectile) {
       // Nothing is resolved here. It leaves the muzzle and the flight decides,

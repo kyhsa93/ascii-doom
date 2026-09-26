@@ -15,9 +15,9 @@ import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { drawAutomap } from '../src/columns/automap.ts'
 import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
-import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
+import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
-import { billboardOf, damageActor, isAlive, provoke, updateActors } from '../src/game/ai.ts'
+import { billboardOf, damageActor, isAlive, normalizeAngle, provoke, updateActors } from '../src/game/ai.ts'
 import {
   LEVELS,
   freshCarrier,
@@ -33,6 +33,7 @@ import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../s
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
+import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
 import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
@@ -100,6 +101,8 @@ let hazard = makeHazard()
  */
 function enterLevel(next: LevelState): void {
   state = next
+  // An index into the creatures of a level that is over.
+  locked = null
   // Split once here rather than filtered every time somebody presses use.
   doors = next.movers.filter((mover) => mover.kind.surface === 'ceiling')
   projectiles = []
@@ -180,6 +183,25 @@ const LOOK_LIMIT = 14
 const FOV_Y = DEFAULT_FOV_Y
 
 let horizonShift = 0
+
+/**
+ * Whether this is a device that gets help aiming.
+ *
+ * A coarse pointer, which is the same question the stylesheet asks to decide
+ * whether to show the controls at all. A keyboard can put the body exactly
+ * where it wants; a thumb holding a rate cannot, and the help exists for that
+ * difference rather than for the screen size.
+ */
+const COARSE = window.matchMedia('(pointer: coarse)')
+
+/**
+ * What the aiming help has picked, or null.
+ *
+ * Worked out once a frame and read twice -- by the mark drawn on screen and by
+ * the shot the next step fires -- so that what you are shown and what you hit
+ * are one decision rather than two that nearly agree.
+ */
+let locked: AimTarget | null = null
 
 function say(text: string): void {
   notice = text
@@ -444,7 +466,7 @@ function step(): void {
     // The player's index in the body list the flight is resolved against, which
     // is `[...actors, player]` — so a slug cannot detonate on the person who
     // fired it, by the same rule that keeps a creature from shooting itself.
-    const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length)
+    const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length, Math.random, locked?.angle)
     pelletsLanded += result.hits
     kills += result.kills
     for (const shot of result.shots) projectiles.push(shot)
@@ -556,6 +578,15 @@ function frame(now: number): void {
     sector: player.sector,
     fovY: FOV_Y,
   }
+
+  // Only as wide as the picture: being aimed at something off the screen is
+  // indistinguishable from the gun firing somewhere at random.
+  const { planeHalf } = projectionOf(fb.width, fb.height, surface.cellAspect, FOV_Y, horizonShift)
+  locked =
+    COARSE.matches && !mapOpen && !isDead(carrier) && !goal.reached
+      ? aimAt(level, player, EYE_HEIGHT, actors, Math.atan(planeHalf))
+      : null
+
   // The map replaces the view rather than floating over it, which is what the
   // original does and what this resolution can afford. Nothing new is seen
   // while it is up, because seeing is a side effect of drawing the world.
@@ -599,8 +630,20 @@ function frame(now: number): void {
   const centre = Math.floor(fb.width / 2)
   const middle = Math.floor(fb.height / 2) + Math.round(horizonShift)
   if (!mapOpen) {
-    drawText(fb, centre, middle, flash > 0 ? '*' : '+', {
-      color: flash > 0 ? vec3(1, 0.95, 0.6) : vec3(0.55, 0.55, 0.6),
+    // On the thing that will be hit, when something has been picked, and in the
+    // middle otherwise. Put in the middle regardless, the mark would be telling
+    // a phone player the one thing that is not true of their next shot.
+    const bearing = locked === null ? centre : columnOfCamX(Math.tan(normalizeAngle(locked.angle - player.angle)), planeHalf, fb.width)
+    const column = Math.max(0, Math.min(fb.width - 1, Math.round(bearing)))
+    drawText(fb, column, middle, flash > 0 ? '*' : '+', {
+      color:
+        flash > 0
+          ? vec3(1, 0.95, 0.6)
+          : locked === null
+            ? vec3(0.55, 0.55, 0.6)
+            : // Brighter when it has hold of something, because a mark that
+              // moves without saying why reads as a fault.
+              vec3(1.15, 0.7, 0.4),
     })
   }
 
@@ -704,6 +747,9 @@ function frame(now: number): void {
     reviveDelay: REVIVE_DELAY,
     elapsed: goal.elapsed,
     doorState: state.movers[0]?.state ?? null,
+    /** Which creature the aiming help has hold of, or -1 for none and for a keyboard. */
+    aimed: locked?.index ?? -1,
+    aimDistance: locked?.distance ?? null,
     liftHeight:
       state.liftSectors[0] === undefined ? null : (level.sectors[state.liftSectors[0]]?.floor ?? null),
     // The first platform a marked wall can call, for a map from a file. Not the

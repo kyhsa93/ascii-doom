@@ -31,6 +31,17 @@
     <style>
       :root {
         color-scheme: dark;
+        /*
+          The band of controls at the foot of a touch screen, as one number.
+
+          Both the picture and the looking area are defined against it, because
+          they have to agree: the grid stops above the band, and the half of the
+          screen you drag to turn has to end where the grid does. They used to
+          be written separately -- 190px here and 78% there -- and matched only
+          because 654 of 844 happens to be 77.5%. Lying the phone down broke the
+          coincidence and left the bottom 86px of the picture dead to the thumb.
+        */
+        --band: 190px;
       }
       * {
         box-sizing: border-box;
@@ -140,16 +151,20 @@
           button, not the stick, and it is what the 190px is sized against.
         */
         #screen {
-          margin-bottom: 190px;
+          margin-bottom: var(--band);
         }
       }
 
+      /*
+        The right of the picture, all of it. `bottom` rather than a height, so
+        this ends exactly where the grid does however tall the band is.
+      */
       #look {
         position: absolute;
         right: 0;
         top: 0;
+        bottom: var(--band);
         width: 55%;
-        height: 78%;
         touch-action: none;
       }
 
@@ -242,8 +257,11 @@
         rules above and wins on order, not on weight.
       */
       @media (pointer: coarse) and (orientation: landscape) {
+        /* No band lying down: the controls take columns instead of rows. */
+        :root {
+          --band: 0px;
+        }
         #screen {
-          margin-bottom: 0;
           margin-left: 150px;
           margin-right: 122px;
         }

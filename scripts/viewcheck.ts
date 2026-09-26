@@ -1287,6 +1287,174 @@ console.log(
       : `, touch ${upright.cols}x${upright.rows} upright and ${lying.cols}x${lying.rows} sideways`),
 )
 
+
+// --- aiming with a thumb ----------------------------------------------------
+//
+// Two claims a browser is the only place to make. The half of the screen you
+// drag has to be exactly as tall as the picture, which is a question about a
+// stylesheet; and the shot has to be aimed on a touch device and not on a
+// keyboard, which is a question about a media query reaching the simulation.
+
+function crosshairAt(page: Page): Promise<{ col: number; centre: number }> {
+  return page.evaluate(() => {
+    const text = document.getElementById('screen')?.textContent ?? ''
+    const rows = text.split('\n')
+    const cols = rows[0]?.length ?? 0
+    const drawn = rows.filter((row) => row.length > 0).length
+    // Only the horizon row, which is where the mark lives. Scanning the whole
+    // grid would find whatever a ramp happens to put somewhere else.
+    const row = rows[Math.floor(drawn / 2)] ?? ''
+    return { col: row.indexOf('+'), centre: Math.floor(cols / 2) }
+  })
+}
+
+function readAim(page: Page) {
+  return page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      aimed: (probe.aimed as number) ?? -99,
+      alive: (probe.alive as number) ?? -1,
+      shots: (probe.shotsFired as number) ?? -1,
+      landed: (probe.pelletsLanded as number) ?? -1,
+      level: (probe.level as string) ?? '',
+    }
+  })
+}
+
+// Seventeen degrees off the way the body points, and two and a half metres out.
+// Both numbers are chosen against the geometry rather than by eye: the picture
+// reaches about twenty-two degrees either side, so this is inside it with room
+// to spare, and the creature sits seven tenths of a metre off the line of a
+// straight shot against a body half a metre wide -- so a gun pointed where the
+// player is pointing misses it, and one that has been aimed does not.
+//
+// Facing east, and the creature facing east too: a sleeping creature notices
+// nothing behind it, and one that woke up and charged would move between the
+// two readings.
+const AIMED_AT = [...tinyWad('E1M1', true, '', [[123, 82, 0, 3004]], 0, false, 0)]
+const NOBODY = [...tinyWad('E1M1', true, '', [], 0, false, 0)]
+
+const handing = async (page: Page, bytes: number[]) =>
+  page.evaluate(
+    ([data, name]) =>
+      (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+        data as number[],
+        name as string,
+      ) ?? false,
+    [bytes, 'E1M1'] as [number[], string],
+  )
+
+const thumbs = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  hasTouch: true,
+  isMobile: true,
+})
+const thumbed = await thumbs.newPage()
+thumbed.on('pageerror', (error) => problems.push(`aiming: ${error.message}`))
+await thumbed.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await thumbed.waitForTimeout(900)
+
+const zones: { name: string; page: Page; screen: DOMRect | null; look: DOMRect | null }[] = []
+const zoneOf = async (name: string, page: Page) => {
+  const measured = await page.evaluate(() => {
+    const box = (id: string) => {
+      const element = document.getElementById(id)
+      if (!element) return null
+      const rect = element.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, bottom: rect.bottom } as unknown as DOMRect
+    }
+    return { screen: box('screen'), look: box('look') }
+  })
+  zones.push({ name, page, ...measured })
+}
+await zoneOf('upright', thumbed)
+
+const tookEmpty = await handing(thumbed, NOBODY)
+await thumbed.waitForTimeout(500)
+const withNobody = await readAim(thumbed)
+const markAlone = await crosshairAt(thumbed)
+
+const tookAimed = await handing(thumbed, AIMED_AT)
+await thumbed.waitForTimeout(500)
+const withSomebody = await readAim(thumbed)
+const markOnIt = await crosshairAt(thumbed)
+await thumbed.screenshot({ path: join(SHOTS, 'aimed.png') })
+
+await thumbed.locator('#fire').dispatchEvent('pointerdown', { pointerId: 11, isPrimary: true })
+await thumbed.waitForTimeout(700)
+await thumbed.locator('#fire').dispatchEvent('pointerup', { pointerId: 11, isPrimary: true })
+await thumbed.waitForTimeout(300)
+const thumbFired = await readAim(thumbed)
+
+// The same map, the same standing place, and a keyboard.
+const desks = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const desked = await desks.newPage()
+desked.on('pageerror', (error) => problems.push(`aiming desktop: ${error.message}`))
+await desked.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await desked.waitForTimeout(900)
+const tookOnDesk = await handing(desked, AIMED_AT)
+await desked.waitForTimeout(500)
+const deskBefore = await readAim(desked)
+await desked.keyboard.down(' ')
+await desked.waitForTimeout(700)
+await desked.keyboard.up(' ')
+await desked.waitForTimeout(300)
+const deskFired = await readAim(desked)
+
+const lyingDown = await browser.newContext({
+  viewport: { width: 844, height: 390 },
+  hasTouch: true,
+  isMobile: true,
+})
+const laid = await lyingDown.newPage()
+laid.on('pageerror', (error) => problems.push(`aiming sideways: ${error.message}`))
+await laid.goto(base, { waitUntil: 'domcontentloaded' })
+await laid.waitForTimeout(900)
+await zoneOf('sideways', laid)
+
+check('the half you drag is exactly as tall as the picture', () => {
+  for (const zone of zones) {
+    assert(zone.screen !== null, `${zone.name}: there is no picture`)
+    assert(zone.look !== null, `${zone.name}: there is nothing to drag on`)
+    const shortBy = zone.screen!.bottom - zone.look!.bottom
+    assert(
+      Math.abs(shortBy) <= 1,
+      `${zone.name}: the dragging area ends ${shortBy.toFixed(0)}px from the bottom of the picture ` +
+        `(picture ends at ${zone.screen!.bottom.toFixed(0)}, drag area at ${zone.look!.bottom.toFixed(0)})`,
+    )
+  }
+})
+
+check('a thumb is told what the gun has hold of', () => {
+  assert(tookEmpty && tookAimed, 'the page would not take the aiming maps')
+  assert(withNobody.aimed === -1, `something was aimed at in an empty room: ${withNobody.aimed}`)
+  assert(
+    markAlone.col === markAlone.centre,
+    `with nothing to aim at the mark sat at column ${markAlone.col} rather than the middle (${markAlone.centre})`,
+  )
+
+  assert(withSomebody.alive === 1, `the aiming map arrived with ${withSomebody.alive} creatures`)
+  assert(withSomebody.aimed === 0, `nothing was aimed at with a creature in sight: ${withSomebody.aimed}`)
+  assert(
+    markOnIt.col !== markOnIt.centre && markOnIt.col >= 0,
+    `the mark stayed at column ${markOnIt.col} instead of moving onto the creature`,
+  )
+})
+
+check('a shot from a thumb lands where a shot from a key would not', () => {
+  assert(thumbFired.shots > 0, 'the fire button fired nothing, so landing nothing proves nothing')
+  assert(thumbFired.landed > 0, `${thumbFired.shots} shots from a thumb and none of them landed`)
+
+  assert(tookOnDesk, 'the desktop page would not take the aiming map')
+  assert(deskBefore.aimed === -1, 'a keyboard was given aiming help it did not ask for')
+  assert(deskFired.shots > 0, 'the space bar fired nothing, so landing nothing proves nothing')
+  assert(
+    deskFired.landed === 0,
+    `${deskFired.shots} unaimed shots landed ${deskFired.landed} times at a creature ` +
+      'seven tenths of a metre off the line -- the fixture is not testing what it says',
+  )
+})
+
 await browser.close()
 server.close()
 

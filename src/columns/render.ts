@@ -232,6 +232,22 @@ export function projectionOf(
   }
 }
 
+/**
+ * The column a point lands in, given how far it sits across the camera plane.
+ *
+ * `camX` is the sideways offset divided by the depth, which is exactly what the
+ * wall renderer builds each column's ray from: a point is on column `col`'s ray
+ * when `side / depth` equals that column's `camX`, and this inverts it.
+ *
+ * Here rather than at each of the three places that want it, for the reason
+ * `projectionOf` is shared: a creature drawn by one copy of this and a crosshair
+ * placed by another will disagree, and the disagreement shows up as a sight
+ * that is not on the thing it claims to be on.
+ */
+export function columnOfCamX(camX: number, planeHalf: number, cols: number): number {
+  return (cols / 2) * (camX / planeHalf + 1) - 0.5
+}
+
 export function renderView(
   fb: Framebuffer,
   level: Level,

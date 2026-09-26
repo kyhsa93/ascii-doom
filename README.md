@@ -93,6 +93,20 @@ the keyboard ones keep working if there is one attached.
 There is deliberately no run button. Pushing the stick all the way is the run,
 which is one gesture rather than two and leaves the other thumb for aiming.
 
+On a touch screen the shot is aimed for you, and the mark moves onto whatever
+it has hold of: the nearest creature you can actually see — not through a wall,
+and inside the picture rather than off the side of it. That is not a
+concession to the small screen. Turning with a thumb is a *rate* and not a
+position — you hold the thumb away from where it landed and the view keeps
+swinging — which is the right control for looking around a room and a hopeless
+one for putting a mark three cells wide onto a creature three cells wide. A
+keyboard gets no help because it does not need any, and the original aimed its
+players' shots too, vertically, for exactly this reason.
+
+The half of the screen you drag is as tall as the picture rather than a share
+of the phone, so the two cannot drift apart when the controls take a different
+shape lying down.
+
 **All content is original.** The levels, the creatures, the weapons, the
 textures and the names are written for this project. Nothing is extracted from
 a commercial game, and no commercial data file is needed to play. If you want
