@@ -602,6 +602,40 @@ exactly as they do to a switch: shooting a lock is not a way past it. Thirteen
 maps get twenty-two doors out of it, which is the same twenty-two the file
 promised before any of this was wired.
 
+A run survives the tab being closed now, which it did not before: everything
+you had done vanished the moment the page went away, on a game made of
+sixty-eight maps' worth of levels. The save goes in the browser's own storage
+and the title offers to continue.
+
+What it writes is a level's worth of difference rather than a level. Loading
+builds the room again from its definition and lays the save over the top, so
+nothing written down is allowed to be a thing the old level owned -- every
+creature, door, pickup and remembered wall is named by where it sits in the
+list the definition produced. A save that had kept the objects themselves would
+come back holding a map of a place that no longer exists, which is the sort of
+fault that looks fine until somebody opens the automap.
+
+Naming things by position makes the position an assumption, so it is checked
+rather than trusted: a save is refused outright if the level it is handed has a
+different number of creatures, doors or pickups than the one it was taken from.
+Half-applying it would hand one creature another's health and leave no sign.
+
+When it writes is its own small decision. The original saved when a person
+asked it to, on a screen this game does not have room for, so this one saves by
+itself: entering a level, leaving the title, every few seconds of play, and the
+moment the page is hidden. The last of those is the one that matters on a
+phone, where a tab is closed without warning and `beforeunload` often never
+arrives. Writing costs one short string, so writing often is cheaper than
+deciding when it would be safe not to.
+
+Two things are deliberately not saved. Anything in flight is dropped -- a bolt
+halfway across a room is a frame of animation rather than progress, and
+restoring one means restoring who fired it, which is an index into a list of
+creatures that may have died since. And a map opened from a file cannot be
+saved at all: putting one back means holding its file, and the files these were
+built against run to twenty-eight megabytes, which is not what browser storage
+is for. The campaign saves; a file you opened is a session.
+
 The things that fly do. Seven hundred and forty-three of the bodies a normal run
 of the two files puts in front of you float in the original -- the big one that
 throws, the skull that charges, the one that spawns them -- and every one of

@@ -90,7 +90,14 @@ export function applyHeight(level: Level, mover: Mover, height: number): void {
   else sector.floor = height
 }
 
-function heightOf(level: Level, mover: Mover): number {
+/**
+ * Where a mover's surface is standing right now.
+ *
+ * Exported because a save has to write it down: the state says which way a
+ * door is going and the height says how far it got, and the two are kept in
+ * different places -- the state on the mover, the height on the sector.
+ */
+export function heightOf(level: Level, mover: Mover): number {
   const sector = level.sectors[mover.sector]
   if (!sector) return mover.kind.shut
   return mover.kind.surface === 'ceiling' ? sector.ceiling : sector.floor

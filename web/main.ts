@@ -50,6 +50,7 @@ import {
 } from '../src/game/freedoomart.ts'
 import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
+import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
@@ -149,20 +150,101 @@ let noisesPlayed = 0
 let audible = true
 
 /**
+ * Where a run is kept between visits.
+ *
+ * One key holding one save. Slots would need a screen to choose between them
+ * and this game's only screen is its title; a game of two levels that saves
+ * whenever you enter or finish one does not need them either.
+ *
+ * Every read and write is wrapped, because storage is not always there --
+ * private windows refuse it, and a browser out of quota throws on write rather
+ * than returning false. A save that cannot be written is a run that behaves
+ * exactly as it did before saving existed, which is a fine way to fail.
+ */
+const SAVE_KEY = 'ascii-doom/save'
+
+function readSave(): Save | null {
+  try {
+    const text = window.localStorage.getItem(SAVE_KEY)
+    if (text === null) return null
+    const parsed = JSON.parse(text) as Save
+    return parsed.version === SAVE_VERSION ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeSave(save: Save): void {
+  try {
+    window.localStorage.setItem(SAVE_KEY, JSON.stringify(save))
+  } catch {
+    // Nothing to be done and nothing worth saying: the game carries on.
+  }
+}
+
+function forgetSave(): void {
+  try {
+    window.localStorage.removeItem(SAVE_KEY)
+  } catch {
+    // As above.
+  }
+}
+
+/**
+ * Writes the run down, unless there is no run to write.
+ *
+ * A map opened from a file is skipped rather than saved badly. Putting one
+ * back means holding its file, and these run to twenty-eight megabytes.
+ */
+function keepRun(): void {
+  if (wadSource !== null || levelIndex < 0) return
+  writeSave(snapshot(levelIndex, state, carrier, { seen, secrets: foundSecrets, kills, shotsFired }))
+}
+
+/**
+ * Seconds of play between saves, and how long it has been.
+ *
+ * Five is short enough that nobody loses a fight's worth of progress and long
+ * enough that the string is written a dozen times a minute rather than sixty
+ * times a second.
+ */
+const SAVE_EVERY = 5
+let sinceSaved = 0
+
+/** The save on offer at the title, read once rather than on every frame. */
+let offered: Save | null = readSave()
+
+/**
  * The title's own menu, rebuilt when the difficulty changes.
  *
  * Rebuilt rather than mutated because the label carries the setting -- there is
  * no room on this screen for a row of three -- and a label is part of the item.
  */
-function titleMenu(cursor = 0): Menu {
+function titleMenu(cursor?: number): Menu {
   const built = openMenu([
+    // First, and disabled rather than hidden when there is nothing to continue:
+    // a menu that changes length under the cursor is one you cannot learn.
+    { label: 'continue', action: { kind: 'continue' }, enabled: offered !== null },
     { label: 'begin', action: { kind: 'begin' } },
     { label: 'the outpost', action: { kind: 'level', index: 0 } },
     { label: 'the cistern', action: { kind: 'level', index: 1 } },
     { label: `difficulty: ${skill}`, action: { kind: 'skill' } },
     { label: `sound: ${audible ? 'on' : 'off'}`, action: { kind: 'sound' } },
   ])
-  return { ...built, cursor }
+  /*
+   * The cursor is kept only when somebody asks for it.
+   *
+   * `openMenu` puts it on the first item that can be chosen, and spreading a
+   * default of zero over that put it straight back on the first item whether
+   * or not it was choosable. That was harmless for as long as the first line
+   * was always "begin"; the moment a disabled "continue" went above it, a
+   * fresh visit opened on a dead line and one press of fire did nothing at
+   * all -- the title simply would not go away.
+   *
+   * The two callers that do pass one are the sound and difficulty lines, which
+   * rebuild the menu under the player's hand and must not move it.
+   */
+  return cursor === undefined ? built : { ...built, cursor }
 }
 
 let menu: Menu = titleMenu()
@@ -210,7 +292,20 @@ let hazard = makeHazard()
  * summary branch returns before the death branch can run, which is exactly the
  * kind of harmless-for-now that stops being harmless quietly.
  */
-function enterLevel(next: LevelState): void {
+function enterLevel(
+  next: LevelState,
+  /**
+   * Whether to write the run down on the way in.
+   *
+   * True for every ordinary entry, and false for the one that is about to lay
+   * a save over the level it just built. Saving there would write the empty
+   * level -- full health, nothing found -- over the save being restored, so
+   * continuing twice in a row started you over the second time. The screen was
+   * right and the storage was wrong, which is the shape of fault that survives
+   * a look.
+   */
+  keep = true,
+): void {
   state = next
   /*
    * What you did in the last level did not happen in this one.
@@ -239,6 +334,23 @@ function enterLevel(next: LevelState): void {
   mapOpen = false
   hazard = makeHazard()
   say(state.def.name)
+  /*
+   * And write the run down, which is every point worth saving.
+   *
+   * Entering a level is the only moment a campaign run changes shape: it is
+   * where finishing one lands, where dying and restarting lands, and where
+   * choosing a level from the title lands. Saving here rather than on a timer
+   * means a save is always a level boundary, which is also the only place the
+   * counts a save depends on are known to match the level.
+   */
+  if (keep) {
+    keepRun()
+    // And the title's list is rebuilt, because the offer it was built from has
+    // just changed. Reading the save without rebuilding left a first visit
+    // showing yesterday's answer for the rest of the session.
+    offered = readSave()
+    menu = titleMenu()
+  }
 }
 
 /**
@@ -392,6 +504,19 @@ function say(text: string): void {
   notice = text
   noticeTime = 2.5
 }
+
+/*
+ * And when the page is put away, because a level boundary can be half an hour
+ * of play away.
+ *
+ * `visibilitychange` rather than `beforeunload`: a phone closing a tab often
+ * never fires the latter, and hiding is the event that actually happens when
+ * somebody switches away. Writing on every hide costs one small string and
+ * means the worst a crash takes is the walk since you last looked elsewhere.
+ */
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && !titleUp) keepRun()
+})
 
 const held = new Set<string>()
 const down = (event: KeyboardEvent) => {
@@ -644,9 +769,44 @@ function step(): void {
     const pressing = asked.fire || asked.use
     if (pressing && !choosing) {
       const action = chosen(menu)
-      if (action?.kind === 'begin') {
+      if (action?.kind === 'continue' && offered !== null) {
+        const save = offered
+        titleUp = false
+        // The level is built first and the save laid over it, which is the
+        // order `restore` is written for: `enterLevel` clears everything the
+        // page owns, so anything put back before it would be cleared again.
+        wadSource = null
+        levelIndex = save.levelIndex
+        enterLevel(beginLevel(save.levelIndex, carrier), false)
+        if (fits(save, state)) {
+          const back = restore(save, state, carrier)
+          seen = back.seen
+          foundSecrets = back.secrets
+          kills = back.kills
+          shotsFired = back.shotsFired
+          say(`${state.def.name} · continued`)
+          // Written again now that the level is the one somebody left, so the
+          // next visit continues from here rather than from the blank level
+          // this branch built a moment ago.
+          keepRun()
+          offered = readSave()
+        } else {
+          // The level gained or lost something since: the save cannot be laid
+          // on it without handing one creature another's health. Starting the
+          // level over is the honest failure, and the stale save goes.
+          forgetSave()
+          offered = null
+          say(`${state.def.name} · the save no longer fits`)
+        }
+      } else if (action?.kind === 'begin') {
         titleUp = false
         say(state.def.name)
+        // The first level is already standing -- it was built at boot and
+        // `begin` simply lifts the title off it -- so this is the one way into
+        // a level that does not pass through `enterLevel`, and without this
+        // line a run started the ordinary way was never written down at all.
+        keepRun()
+        offered = readSave()
       } else if (action?.kind === 'level') {
         titleUp = false
         startLevel(action.index)
@@ -669,6 +829,26 @@ function step(): void {
     }
     choosing = pressing
     return
+  }
+
+  /*
+   * And a save every few seconds of actual play.
+   *
+   * Level boundaries alone are not enough: they can be half an hour apart, and
+   * a run measured in level boundaries loses everything somebody did in the
+   * one they were in. Here rather than higher up because the title has already
+   * returned above, so this only ever counts time spent in a room.
+   *
+   * Not while dead. The save would be of a corpse, and coming back to a corpse
+   * is worse than coming back to the start of the level -- dying already puts
+   * the level back, and `enterLevel` writes that down when it does.
+   */
+  if (!isDead(carrier)) {
+    sinceSaved += STEP
+    if (sinceSaved >= SAVE_EVERY) {
+      sinceSaved = 0
+      keepRun()
+    }
   }
 
   if (goal.reached) {
@@ -1363,6 +1543,17 @@ function frame(now: number): void {
      */
     fromFile: state.fromFile,
     titleUp,
+    /**
+     * What the title's cursor is standing on, by name.
+     *
+     * Reported because the screen cannot say it: a disabled item is drawn the
+     * same as any other and only the cursor mark differs, so a check reading
+     * glyphs could not tell "continue is offered" from "continue is greyed and
+     * skipped". Empty once the title is down.
+     */
+    menuLabel: titleUp ? (menu.items[menu.cursor]?.label ?? '') : '',
+    /** Whether a run is on offer, which is what enables the first menu item. */
+    offering: offered !== null,
     statusBar: bar === null ? 0 : bar.panels.length,
     /**
      * What the first creature in the level is actually drawn with.

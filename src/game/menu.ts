@@ -24,6 +24,14 @@
  * MAP32 in the other, and the order they appear in is the file's business.
  */
 export type MenuAction =
+  /**
+   * Pick a run back up where it was left.
+   *
+   * First in the union and first on the screen, because somebody who has a run
+   * to continue almost always means to continue it. Disabled rather than
+   * absent when there is nothing saved.
+   */
+  | { readonly kind: 'continue' }
   | { readonly kind: 'begin' }
   | { readonly kind: 'level'; readonly index: number }
   | { readonly kind: 'map'; readonly name: string }

@@ -86,16 +86,18 @@ import { finishNow, makeGoal, reachExit, summaryLayout, summaryLines } from '../
 import { HURT_INTERVAL, bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
+import { fits, restore, snapshot } from '../src/game/save.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
+  applyHeight,
   makeMover,
   moverInFront,
   updateMovers,
   type Mover,
   type MoverKind,
 } from '../src/game/movers.ts'
-import { LEVEL_1, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
+import { LEVEL_1, LEVEL_1_DEF, LEVEL_1_MOVERS, SPAWN, sectorIndexByTag } from '../src/game/level1.ts'
 import {
   damageActor,
   isAlive,
@@ -3727,6 +3729,137 @@ test('the summary reads as a clock and a pair of counts', () => {
   const hidden = summaryLines({ seconds: 30, kills: 1, creatures: 2, collected: 1, supplies: 2, secrets: 3, found: 1 })
   assert(hidden.length === 5, `a map with secrets in it produced ${hidden.length} lines`)
   assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
+})
+
+console.log('\nsaving')
+
+test('a menu item that cannot be chosen is stepped over rather than landed on', () => {
+  /*
+   * The title offers "continue" first and disables it when there is nothing
+   * saved, so this is the rule that decides whether a first visit opens with
+   * the cursor on a dead line. It is the menu's own behaviour and predates
+   * saving -- pinned here because saving is now the thing that depends on it.
+   */
+  const items: MenuItem[] = [
+    { label: 'continue', action: { kind: 'continue' }, enabled: false },
+    { label: 'begin', action: { kind: 'begin' } },
+    { label: 'the outpost', action: { kind: 'level', index: 0 } },
+  ]
+  const fresh = openMenu(items)
+  assert(fresh.cursor === 1, `a fresh menu opened on item ${fresh.cursor}, which cannot be chosen`)
+  assert(chosen(fresh)?.kind === 'begin', 'the first choosable item is not what a press would take')
+
+  // Moving around it is the neighbouring check's business; this one is about
+  // the first item in particular, which is the one a title opens on.
+  //
+  // This is where the title went wrong the first time it had a disabled first
+  // item: the menu was built by `openMenu`, which puts the cursor on the first
+  // thing that can be chosen, and then had `{ ...built, cursor }` spread over
+  // it with a default of zero -- putting it straight back onto the dead line.
+  // Harmless for as long as the first item was always choosable, and the whole
+  // game the moment it was not: one press of fire chose nothing and the title
+  // would not go away.
+  //
+  // With something saved it is choosable, and it is where the cursor starts.
+  const withSave = openMenu([{ ...items[0]!, enabled: true }, ...items.slice(1)])
+  assert(withSave.cursor === 0, `with a save the menu opened on item ${withSave.cursor}`)
+  assert(chosen(withSave)?.kind === 'continue', 'the saved run is not what a press would take')
+})
+
+test('a level saved and loaded back comes up the way it was left', () => {
+  /*
+   * The whole point of the module in one check: play a little, write it down,
+   * build the level again from its definition, and read it back.
+   *
+   * Built again rather than kept, because that is what a load actually is --
+   * the page has no old level to put the save onto. Every reference a running
+   * level holds (a line, a kind, a sprite) belongs to the copy that is gone, so
+   * a save has to name things by where they sit rather than by what they are.
+   */
+  const played = loadLevel(LEVEL_1_DEF)
+  const kit = carrier({ health: 61, ammo: [7, 3], armour: 25, armourShare: 0.5 })
+  kit.keys.add('amber')
+
+  played.player.x += 1.5
+  played.player.angle = 2
+  played.actors[0]!.state = 'dead'
+  played.actors[0]!.health = 0
+  played.pickups[0]!.taken = true
+  played.movers[0]!.state = 'open'
+  played.movers[0]!.timer = 0
+  applyHeight(played.level, played.movers[0]!, played.movers[0]!.kind.open)
+  played.goal.elapsed = 42.5
+  const walked = new Set([played.level.lines[0]!, played.level.lines[3]!])
+
+  const save = snapshot(1, played, kit, { seen: walked, secrets: new Set([2]), kills: 3, shotsFired: 9 })
+
+  const fresh = loadLevel(LEVEL_1_DEF)
+  const empty = carrier()
+  const extras = restore(save, fresh, empty)
+
+  close(empty.health, 61, 1e-9, 'the health did not come back')
+  assert(empty.ammo[0] === 7 && empty.ammo[1] === 3, `the ammunition came back as ${empty.ammo.join('/')}`)
+  assert(empty.keys.has('amber'), 'the key did not come back')
+  close(empty.armour, 25, 1e-9, 'the armour did not come back')
+  close(fresh.player.x, played.player.x, 1e-9, 'the player came back somewhere else')
+  close(fresh.player.angle, 2, 1e-9, 'the player came back facing elsewhere')
+  assert(fresh.actors[0]!.state === 'dead', `the dead creature came back "${fresh.actors[0]!.state}"`)
+  assert(fresh.pickups[0]!.taken, 'something already taken came back on the floor')
+  assert(fresh.movers[0]!.state === 'open', 'the open door came back shut')
+  close(
+    fresh.level.sectors[fresh.movers[0]!.sector]!.ceiling,
+    played.level.sectors[played.movers[0]!.sector]!.ceiling,
+    1e-9,
+    'the door came back at a different height than it was left',
+  )
+  close(fresh.goal.elapsed, 42.5, 1e-9, 'the clock came back at a different time')
+  assert(extras.kills === 3 && extras.shotsFired === 9, 'the tally did not come back')
+  assert(extras.secrets.has(2), 'the hidden room came back unfound')
+  assert(extras.seen.size === 2, `the automap came back knowing ${extras.seen.size} lines`)
+})
+
+test('a save carries no object from the level it was taken from', () => {
+  /*
+   * The failure this is really about: a save that held a line object would go
+   * through `structuredClone` happily in Node and come out of `localStorage` as
+   * `[object Object]`, and the automap would quietly know nothing.
+   */
+  const played = loadLevel(LEVEL_1_DEF)
+  const save = snapshot(0, played, carrier(), {
+    seen: new Set([played.level.lines[1]!]),
+    secrets: new Set<number>(),
+    kills: 0,
+    shotsFired: 0,
+  })
+  const written = JSON.stringify(save)
+  assert(!written.includes('undefined'), 'the save wrote an undefined into its text')
+
+  // And what comes back through text is as good as what went in.
+  const fresh = loadLevel(LEVEL_1_DEF)
+  const extras = restore(JSON.parse(written) as typeof save, fresh, carrier())
+  assert(extras.seen.size === 1, 'a save that went through text lost the automap')
+  // The line it knows is this level's, not the one the save was taken from.
+  assert(extras.seen.has(fresh.level.lines[1]!), 'the automap came back holding a line from a level that is gone')
+  assert(!extras.seen.has(played.level.lines[1]!), 'the automap came back holding the old level\'s own line object')
+})
+
+test('a save says which level it belongs to, and refuses one it does not fit', () => {
+  const played = loadLevel(LEVEL_1_DEF)
+  const save = snapshot(1, played, carrier(), {
+    seen: new Set<Line>(),
+    secrets: new Set<number>(),
+    kills: 0,
+    shotsFired: 0,
+  })
+  assert(save.levelIndex === 1, `the save says level ${save.levelIndex}`)
+
+  // A save whose counts do not match the level it is handed is refused rather
+  // than half-applied: a level that gained a creature since would otherwise
+  // come back with one of them holding somebody else's health.
+  const shorter = loadLevel(LEVEL_1_DEF)
+  shorter.actors.pop()
+  assert(!fits(save, shorter), 'a save was accepted onto a level with a different number of creatures')
+  assert(fits(save, loadLevel(LEVEL_1_DEF)), 'a save was refused by the very level it came from')
 })
 
 console.log('\npickups')

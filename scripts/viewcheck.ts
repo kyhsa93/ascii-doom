@@ -1672,6 +1672,107 @@ check('a door in a map from a file opens when it is shot', () => {
   assert(!afterTheShot.complete, 'shooting a door finished the level')
 })
 
+/*
+ * A run that survives the tab closing, which is the whole of saving.
+ *
+ * Three visits in one context so the storage carries between them, because
+ * that is the thing being checked: a fresh context would prove only that the
+ * page can write, not that it can come back.
+ */
+const keeping = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const firstVisit = await keeping.newPage()
+firstVisit.on('pageerror', (error) => problems.push(`saving: ${error.message}`))
+await firstVisit.goto(base, { waitUntil: 'domcontentloaded' })
+await firstVisit.waitForTimeout(900)
+const savedAtFirstSight = await firstVisit.evaluate(() =>
+  window.localStorage.getItem('ascii-doom/save'),
+)
+const menuBeforePlaying = await firstVisit.evaluate(
+  () => (window as unknown as { __doom?: Record<string, unknown> }).__doom?.menuLabel ?? '',
+)
+
+// Play: past the title, walk a little, take some damage from the nukage.
+await begin(firstVisit)
+await firstVisit.keyboard.down('w')
+await firstVisit.waitForTimeout(1400)
+await firstVisit.keyboard.up('w')
+await firstVisit.waitForTimeout(300)
+const beforeClosing = await readOpened(firstVisit)
+const savedAfterPlaying = await firstVisit.evaluate(() =>
+  window.localStorage.getItem('ascii-doom/save'),
+)
+await firstVisit.close()
+
+// The tab goes away and comes back.
+const secondVisit = await keeping.newPage()
+secondVisit.on('pageerror', (error) => problems.push(`continuing: ${error.message}`))
+await secondVisit.goto(base, { waitUntil: 'domcontentloaded' })
+await secondVisit.waitForTimeout(900)
+const menuAfterPlaying = await secondVisit.evaluate(
+  () => (window as unknown as { __doom?: Record<string, unknown> }).__doom?.menuLabel ?? '',
+)
+await begin(secondVisit)
+await secondVisit.waitForTimeout(600)
+const afterContinuing = await readOpened(secondVisit)
+const savedAfterContinuing = await secondVisit.evaluate(() => {
+  const raw = window.localStorage.getItem('ascii-doom/save')
+  return raw === null ? null : (JSON.parse(raw) as { carrier: { health: number } }).carrier.health
+})
+await secondVisit.close()
+await keeping.close()
+
+check('a run is written down and offered back', () => {
+  assert(savedAtFirstSight === null, 'a page nobody has played wrote a save anyway')
+  assert(
+    menuBeforePlaying === 'begin',
+    `with nothing saved the cursor opened on "${String(menuBeforePlaying)}" rather than "begin"`,
+  )
+  assert(savedAfterPlaying !== null, 'playing a level wrote nothing down')
+  assert(
+    menuAfterPlaying === 'continue',
+    `with a run saved the cursor opened on "${String(menuAfterPlaying)}" rather than "continue"`,
+  )
+})
+
+check('continuing puts the run back rather than starting it over', () => {
+  // The nukage in the first room costs health on the way to the wall, so the
+  // run that comes back is recognisable by being hurt.
+  assert(beforeClosing.health < 100, `the walk cost nothing, so there is nothing to recognise`)
+  /*
+   * Hurt, rather than hurt by exactly as much.
+   *
+   * The save is written every few seconds, so what comes back is the run as of
+   * the last write rather than as of the last frame -- and the first room's
+   * floor is nukage, which keeps taking health between the two. Demanding the
+   * numbers match would be demanding a save on every frame, which is not the
+   * rule this was built to. What it must never be is a fresh start.
+   */
+  assert(
+    afterContinuing.health < 100,
+    `the run came back on full health, which is a new run rather than the saved one`,
+  )
+  assert(
+    afterContinuing.health <= beforeClosing.health,
+    `the run came back healthier (${afterContinuing.health}) than it was left (${beforeClosing.health})`,
+  )
+  assert(!afterContinuing.titleUp, 'continuing left the title up')
+  assert(afterContinuing.level === beforeClosing.level, 'continuing came back in another level')
+
+  /*
+   * And the save still holds the run, which is not the same claim.
+   *
+   * Continuing builds the level fresh and lays the save over it, and the first
+   * version wrote the run down on the way in -- so the blank level it had just
+   * built replaced the save a moment before the save was applied. The screen
+   * looked perfect and the second continue in a row started you over.
+   */
+  assert(savedAfterContinuing !== null, 'continuing left nothing saved at all')
+  assert(
+    savedAfterContinuing !== 100,
+    'continuing wrote a full-health run over the save it was restoring',
+  )
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass
