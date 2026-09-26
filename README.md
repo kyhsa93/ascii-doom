@@ -65,6 +65,25 @@ Health and ammunition carry between them. Keys do not — each map hides the key
 to its own doors, and one brought forward would open something it was never
 meant to.
 
+## What you see first
+
+A title, because the game used to begin in the first room with no warning and
+there was nowhere for it to say what it was. The logo is Freedoom's own, turned
+into characters like everything else here — and it is the only piece of that
+interface that survives the conversion. The title painting and the status bar
+are 320 by 200 and 320 by 32 pixels of detail; averaged down to anything that
+fits on a character grid they come out as a fog of colons with no shape in
+them. The logo is large flat lettering, which is why it reads at eight rows and
+is crisp at twelve.
+
+So the status bar is built rather than converted. What is taken from the
+original is the arrangement — health, then ammunition, then keys, then where
+you are, each in its own panel with a rule between — because that is the part
+you recognise across the room and the part a grid of characters can actually
+draw. Below about seventy columns there is no room for four panels, and a
+phone keeps the single status line instead, which drops what does not fit by
+priority and says more in one row than a cramped bar says in three.
+
 ## Controls
 
 | | |

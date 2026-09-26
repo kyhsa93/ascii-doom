@@ -16,7 +16,7 @@ import { drawAutomap } from '../src/columns/automap.ts'
 import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
-import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
+import { drawBillboards, drawSprite, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, normalizeAngle, provoke, updateActors } from '../src/game/ai.ts'
 import {
   LEVELS,
@@ -29,6 +29,8 @@ import {
 } from '../src/game/campaign.ts'
 import { deathLines, finishNow, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
+import { LOGO } from '../src/game/freedoomart.ts'
+import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
@@ -66,6 +68,16 @@ let projectiles: Projectile[] = []
  */
 let seen = new Set<Line>()
 let mapOpen = false
+
+/**
+ * Whether the title is still up.
+ *
+ * The game used to begin in the first room with no warning, which is fine for a
+ * thing you are building and wrong for a thing you hand someone: there was
+ * nowhere for it to say what it is. It waits for the trigger rather than for a
+ * timer, because the trigger is the one control every device has.
+ */
+let titleUp = true
 /** The map key as it was last frame, so holding it does not strobe the map. */
 let mapAsked = false
 /** Map units to a grid row. Close enough in to read a room, wide enough to place it. */
@@ -101,6 +113,20 @@ let hazard = makeHazard()
  */
 function enterLevel(next: LevelState): void {
   state = next
+  /*
+   * What you did in the last level did not happen in this one.
+   *
+   * These three were module counters that nothing ever cleared, so the summary
+   * at the end of a level reported the kills of every level before it as well
+   * -- and a map opened from a file inherited whatever the outpost had already
+   * given you. It surfaced as a browser check failing the same way three runs
+   * running: a shot fired to get past the title hit something in the first
+   * room, and the count was still sitting there when a later fixture asserted
+   * that an unaimed shot lands nothing.
+   */
+  shotsFired = 0
+  pelletsLanded = 0
+  kills = 0
   // An index into the creatures of a level that is over.
   locked = null
   // Split once here rather than filtered every time somebody presses use.
@@ -389,6 +415,17 @@ const STEP = 1 / 60
 function step(): void {
   const { level, player, actors, movers, pickups, goal } = state
 
+  if (titleUp) {
+    // Nothing moves behind it. A creature that had been walking while the title
+    // was up would be somewhere else by the time anybody saw the room.
+    const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+    if (asked.fire || asked.use) {
+      titleUp = false
+      say(state.def.name)
+    }
+    return
+  }
+
   if (goal.reached) {
     // The level is over: nothing walks, nothing fires, nothing closes in behind
     // the summary. After a pause the next one starts, or the last one stays.
@@ -611,7 +648,7 @@ function frame(now: number): void {
   // The map replaces the view rather than floating over it, which is what the
   // original does and what this resolution can afford. Nothing new is seen
   // while it is up, because seeing is a side effect of drawing the world.
-  if (!mapOpen) renderView(fb, level, view, surface.cellAspect, { horizonShift, seen })
+  if (!mapOpen && !titleUp) renderView(fb, level, view, surface.cellAspect, { horizonShift, seen })
 
   visible.length = 0
   for (const pickup of pickups) {
@@ -635,7 +672,7 @@ function frame(now: number): void {
     })
   }
   // After the world, so the depth it wrote decides what is hidden.
-  if (!mapOpen) drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
+  if (!mapOpen && !titleUp) drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
 
   fb.resolve(RAMPS.short)
 
@@ -701,7 +738,65 @@ function frame(now: number): void {
 
   const sector = level.sectors[player.sector]
   const keys = [...carrier.keys].join(' ')
-  const line = layoutHud(fb.width, [
+
+  /*
+   * The bar the original has, where there is room for it, and the single line
+   * otherwise.
+   *
+   * Built out of characters rather than converted from `STBAR`: that lump is
+   * thirty-two rows of metal texture with every number composited onto it at
+   * runtime, and averaged down to what fits here it is a stripe of `=` with
+   * nothing legible on it. What is taken is the arrangement -- health, then
+   * ammunition, then keys, then where you are -- which is the part you
+   * recognise and the part a character grid can draw.
+   */
+  const bar = layoutBar(fb.width, fb.height, [
+    { label: 'HEALTH', value: `${carrier.health}%`, priority: 4 },
+    { label: weapon.name.toUpperCase(), value: `${carrier.ammo[weaponIndex]}`, priority: 3 },
+    { label: 'KEYS', value: keys === '' ? '--' : keys, priority: 2 },
+    { label: 'AREA', value: state.def.name, priority: 1 },
+  ])
+  if (bar !== null) {
+    // Wiped first. The original's bar is an opaque panel; this one was drawn
+    // straight over the world and came out as HEALTH and 93 tangled in a wall
+    // of per-cent signs -- legible in a screenshot only if you already knew
+    // what it said. Three rows of nothing, then the bar on top of that.
+    for (let r = 0; r < BAR_ROWS; r++) {
+      const row = bar.top + r
+      if (row < 0 || row >= fb.height) continue
+      for (let c = 0; c < fb.width; c++) {
+        const index = row * fb.width + c
+        fb.chars[index] = 32
+        fb.color[index * 3] = 0
+        fb.color[index * 3 + 1] = 0
+        fb.color[index * 3 + 2] = 0
+      }
+    }
+    const rule = '='.repeat(fb.width)
+    drawText(fb, 0, bar.top, rule, { color: vec3(0.32, 0.3, 0.34) })
+    for (const panel of bar.panels) {
+      const middleOf = centreOf(panel)
+      drawText(fb, middleOf, bar.top + 1, panel.label, { color: vec3(0.5, 0.48, 0.44), align: 'center' })
+      drawText(fb, middleOf, bar.top + 2, panel.value, {
+        color:
+          panel.label === 'HEALTH'
+            ? carrier.health > 40
+              ? vec3(1.1, 0.95, 0.5)
+              : vec3(1.2, 0.4, 0.35)
+            : panel.label === 'KEYS' && keys !== ''
+              ? vec3(1.2, 0.95, 0.45)
+              : vec3(0.9, 0.86, 0.72),
+        align: 'center',
+      })
+      // A rule between panels, which is what makes it a bar rather than four
+      // labels in a row.
+      if (panel.col > 0) {
+        for (let r = 1; r < BAR_ROWS; r++) drawText(fb, panel.col, bar.top + r, '|', { color: vec3(0.3, 0.29, 0.33) })
+      }
+    }
+  }
+
+  const line = bar !== null ? [] : layoutHud(fb.width, [
     { text: `${carrier.health}`, align: 'left', priority: 4 },
     { text: `${weapon.name} ${carrier.ammo[weaponIndex]}`, align: 'left', priority: 3 },
     { text: keys === '' ? '' : `keys ${keys}`, align: 'left', priority: 2 },
@@ -720,6 +815,39 @@ function frame(now: number): void {
               ? vec3(0.95, 0.85, 0.5)
               : vec3(1, 0.4, 0.35)
     drawText(fb, piece.col, fb.height - 1, piece.text, { color, align: piece.align })
+  }
+
+  if (titleUp) {
+    /*
+     * Over the top of everything, on a wiped grid.
+     *
+     * Not an early return, which is how this was written first: the probe is
+     * filled at the foot of this function and a return above it stopped the
+     * page reporting anything at all. Twelve checks that read the level on boot
+     * went with it, and they were right to -- the second copy of the probe I
+     * put in the branch was a second version of the truth, and it disagreed
+     * with the first within a day.
+     *
+     * The world is skipped rather than drawn and covered, so the automap does
+     * not learn the first room before anybody has been in it. What is wiped
+     * here is the handful of overlays that run either way.
+     */
+    for (let i = 0; i < fb.chars.length; i++) {
+      fb.chars[i] = 32
+      fb.color[i * 3] = 0
+      fb.color[i * 3 + 1] = 0
+      fb.color[i * 3 + 2] = 0
+    }
+    // The logo is the one piece of Freedoom's interface that survives becoming
+    // characters: the title painting and the status bar are a fog of colons at
+    // any size that fits, which is why neither is here.
+    const left = Math.floor((fb.width - LOGO.rows[0]!.length) / 2)
+    const topOf = Math.max(0, Math.floor((fb.height - LOGO.rows.length) / 2) - 2)
+    drawSprite(fb, LOGO, left, topOf)
+    drawText(fb, Math.floor(fb.width / 2), Math.min(fb.height - 2, topOf + LOGO.rows.length + 2), 'fire to begin', {
+      color: vec3(0.9, 0.85, 0.7),
+      align: 'center',
+    })
   }
 
   surface.present(fb)
@@ -776,6 +904,8 @@ function frame(now: number): void {
      * art from a file's art, because both are a colour a cell.
      */
     fromFile: state.fromFile,
+    titleUp,
+    statusBar: bar === null ? 0 : bar.panels.length,
     /**
      * What the first creature in the level is actually drawn with.
      *

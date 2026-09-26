@@ -54,6 +54,47 @@ export interface Sprite {
   readonly height: number
 }
 
+/**
+ * Draws a sprite straight onto the grid, at cells rather than in the world.
+ *
+ * Everything else here puts art into a scene: projected for distance, shaded by
+ * the light where it stands, and hidden behind whatever the renderer already
+ * put in front of it. A title screen has none of those -- there is no world
+ * behind it and nothing to be in front of -- so this is the plain version, and
+ * separating them is what keeps the projection out of a picture that has no
+ * business being projected.
+ *
+ * `col` and `row` are the top-left corner, and the art is drawn at whatever
+ * size it already is: one art cell to one screen cell. Anything falling off an
+ * edge is clipped rather than wrapped.
+ */
+export function drawSprite(fb: Framebuffer, sprite: Sprite, col: number, row: number, bright = 1): void {
+  const cols = fb.width
+  for (let y = 0; y < sprite.rows.length; y++) {
+    const screenRow = row + y
+    if (screenRow < 0 || screenRow >= fb.height) continue
+    const line = sprite.rows[y]!
+    const hues = sprite.colors?.[y]
+    for (let x = 0; x < line.length; x++) {
+      const glyph = line[x]!
+      if (glyph === ' ') continue
+      const screenCol = col + x
+      if (screenCol < 0 || screenCol >= cols) continue
+
+      const index = screenRow * cols + screenCol
+      const own = hues?.[x] ?? sprite.tint
+      fb.chars[index] = glyph.charCodeAt(0)
+      const c = index * 3
+      fb.color[c] = own[0] * bright
+      fb.color[c + 1] = own[1] * bright
+      fb.color[c + 2] = own[2] * bright
+      // Nothing is behind a title, so nothing may hide it: the depth is set as
+      // near as it goes rather than left for the world to overwrite.
+      fb.depth[index] = Infinity
+    }
+  }
+}
+
 /** A sprite placed in the world. */
 export interface Billboard {
   x: number

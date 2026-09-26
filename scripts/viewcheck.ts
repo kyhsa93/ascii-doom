@@ -62,6 +62,22 @@ interface Probe {
   overflow: boolean
 }
 
+/**
+ * Gets past the title the way a player does.
+ *
+ * The game opens on a title now, so a check that loads the page and reads the
+ * level is reading a page where the level has not started. Pressing the trigger
+ * is what a player does and is what every device has; a query parameter that
+ * skipped it would be test-only behaviour in the product, and the thing being
+ * checked here is the product.
+ */
+async function begin(page: Page): Promise<void> {
+  await page.keyboard.down(' ')
+  await page.waitForTimeout(220)
+  await page.keyboard.up(' ')
+  await page.waitForTimeout(420)
+}
+
 function readScreen(page: Page): Promise<Probe> {
   return page.evaluate(() => {
     const probe = (window as unknown as { __doom?: Record<string, number> }).__doom ?? {}
@@ -129,6 +145,7 @@ page.on('response', (response) => {
 await page.setViewportSize({ width: 1280, height: 720 })
 await page.goto(base, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(900)
+  await begin(page)
 
 const first = await readScreen(page)
 await page.waitForTimeout(500)
@@ -325,6 +342,7 @@ const phone = await context.newPage()
 await phone.setViewportSize({ width: 390, height: 844 })
 await phone.goto(base, { waitUntil: 'domcontentloaded' })
 await phone.waitForTimeout(900)
+  await begin(phone)
 const small = await readScreen(phone)
 
 check('a phone-width viewport neither overflows nor collapses', () => {
@@ -348,6 +366,7 @@ const mobile = await handheld.newPage()
 mobile.on('pageerror', (error) => problems.push(`mobile: ${error.message}`))
 await mobile.goto(base, { waitUntil: 'domcontentloaded' })
 await mobile.waitForTimeout(900)
+  await begin(mobile)
 
 const padShown = await mobile.evaluate(() => {
   const pad = document.getElementById('pad')
@@ -443,6 +462,7 @@ const turned = await sideways.newPage()
 turned.on('pageerror', (error) => problems.push(`landscape: ${error.message}`))
 await turned.goto(base, { waitUntil: 'domcontentloaded' })
 await turned.waitForTimeout(900)
+  await begin(turned)
 const lying = await measureBand(turned)
 await turned.screenshot({ path: join(SHOTS, 'landscape.png') })
 
@@ -486,6 +506,7 @@ const finish = await ending.newPage()
 finish.on('pageerror', (error) => problems.push(`summary: ${error.message}`))
 await finish.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await finish.waitForTimeout(900)
+  await begin(finish)
 
 function readEnding(page: Page) {
   return page.evaluate(() => {
@@ -549,6 +570,7 @@ const corpse = await grave.newPage()
 corpse.on('pageerror', (error) => problems.push(`death: ${error.message}`))
 await corpse.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await corpse.waitForTimeout(900)
+  await begin(corpse)
 
 function readDeath(page: Page) {
   return page.evaluate(() => {
@@ -634,6 +656,7 @@ const mapper = await cartography.newPage()
 mapper.on('pageerror', (error) => problems.push(`automap: ${error.message}`))
 await mapper.goto(base, { waitUntil: 'domcontentloaded' })
 await mapper.waitForTimeout(900)
+  await begin(mapper)
 
 function readMap(page: Page) {
   return page.evaluate(() => {
@@ -795,6 +818,7 @@ const waded = await wading.newPage()
 waded.on('pageerror', (error) => problems.push(`hazard: ${error.message}`))
 await waded.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await waded.waitForTimeout(900)
+  await begin(waded)
 
 function readGround(page: Page) {
   return page.evaluate(() => {
@@ -854,6 +878,7 @@ const wadPage = await opener.newPage()
 wadPage.on('pageerror', (error) => problems.push(`wad: ${error.message}`))
 await wadPage.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await wadPage.waitForTimeout(900)
+  await begin(wadPage)
 
 function readOpened(page: Page) {
   return page.evaluate(() => {
@@ -1002,6 +1027,7 @@ const picker = await chooser.newPage()
 picker.on('pageerror', (error) => problems.push(`picker: ${error.message}`))
 await picker.goto(base, { waitUntil: 'domcontentloaded' })
 await picker.waitForTimeout(900)
+  await begin(picker)
 
 const beforePick = await readOpened(picker)
 await picker.setInputFiles('#wad', goodWad)
@@ -1371,6 +1397,7 @@ const thumbed = await thumbs.newPage()
 thumbed.on('pageerror', (error) => problems.push(`aiming: ${error.message}`))
 await thumbed.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await thumbed.waitForTimeout(900)
+  await begin(thumbed)
 
 const zones: { name: string; page: Page; screen: DOMRect | null; look: DOMRect | null }[] = []
 const zoneOf = async (name: string, page: Page) => {
@@ -1410,6 +1437,7 @@ const desked = await desks.newPage()
 desked.on('pageerror', (error) => problems.push(`aiming desktop: ${error.message}`))
 await desked.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await desked.waitForTimeout(900)
+  await begin(desked)
 const tookOnDesk = await handing(desked, AIMED_AT)
 await desked.waitForTimeout(500)
 const deskBefore = await readAim(desked)
@@ -1428,6 +1456,7 @@ const laid = await lyingDown.newPage()
 laid.on('pageerror', (error) => problems.push(`aiming sideways: ${error.message}`))
 await laid.goto(base, { waitUntil: 'domcontentloaded' })
 await laid.waitForTimeout(900)
+  await begin(laid)
 await zoneOf('sideways', laid)
 
 check('the half you drag is exactly as tall as the picture', () => {
@@ -1584,6 +1613,7 @@ const shown = await gallery.newPage()
 shown.on('pageerror', (error) => problems.push(`pictures: ${error.message}`))
 await shown.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await shown.waitForTimeout(900)
+  await begin(shown)
 
 const tookPlain = await shown.evaluate(
   ([bytes, name]) =>
@@ -1701,6 +1731,7 @@ for (const [label, options] of [
   page.on('pageerror', (error) => problems.push(`${label}: ${error.message}`))
   await page.goto(base, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(800)
+  await begin(page)
   reachable.push({
     name: label,
     pick: await page.evaluate(() => {
@@ -1763,6 +1794,7 @@ const plain = await gallery2.newPage()
 plain.on('pageerror', (error) => problems.push(`baked: ${error.message}`))
 await plain.goto(base, { waitUntil: 'domcontentloaded' })
 await plain.waitForTimeout(1200)
+  await begin(plain)
 // Walked forward, because the creatures in the outpost are down the hall and a
 // check that never sees one says nothing about how creatures are drawn.
 await plain.keyboard.down('w')
@@ -1813,6 +1845,168 @@ check('the campaign is drawn with the baked art, with no file opened', () => {
     `the first creature is drawn in ${art.colours} colours, which is a flat tint rather than a picture`,
   )
   assert(art.cells > 50, `only ${art.cells} cells of the first creature are painted`)
+})
+
+// --- what the game shows before it starts, and at the foot while it runs -----
+
+function readFront(page: Page) {
+  return page.evaluate(() => {
+    const p = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    const rows = (document.getElementById('screen')?.textContent ?? '').split('\n')
+    return {
+      titleUp: p.titleUp === true,
+      panels: (p.statusBar as number) ?? -1,
+      frames: (p.frames as number) ?? 0,
+      cols: (p.cols as number) ?? 0,
+      x: (p.x as number) ?? -1,
+      ink: rows.reduce((n, row) => n + row.replace(/ /g, '').length, 0),
+      foot: rows
+        .slice(-4)
+        .map((row) => row.trim())
+        .join(' | '),
+    }
+  })
+}
+
+const fronts: { name: string; boot: Awaited<ReturnType<typeof readFront>>; later: Awaited<ReturnType<typeof readFront>>; playing: Awaited<ReturnType<typeof readFront>>; walked: number }[] = []
+for (const [label, width, height, touch] of [
+  ['desktop', 1280, 720, false],
+  ['phone', 390, 844, true],
+] as const) {
+  const ctx = await browser.newContext({ viewport: { width, height }, hasTouch: touch, isMobile: touch })
+  const page = await ctx.newPage()
+  page.on('pageerror', (error) => problems.push(`${label} front: ${error.message}`))
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1100)
+  const boot = await readFront(page)
+  await page.waitForTimeout(900)
+  const later = await readFront(page)
+  await page.keyboard.down(' ')
+  await page.waitForTimeout(250)
+  await page.keyboard.up(' ')
+  await page.waitForTimeout(700)
+  const playing = await readFront(page)
+  await page.keyboard.down('w')
+  await page.waitForTimeout(1100)
+  await page.keyboard.up('w')
+  await page.waitForTimeout(250)
+  const walked = (await readFront(page)).x
+  fronts.push({ name: label, boot, later, playing, walked })
+  await ctx.close()
+}
+
+check('the game waits on a title instead of starting in a room', () => {
+  for (const front of fronts) {
+    assert(front.boot.titleUp, `${front.name}: the page went straight into the level`)
+    // Something is drawn: a title that reports itself and shows nothing would
+    // pass a flag check and fail a player.
+    assert(front.boot.ink > 100, `${front.name}: the title drew ${front.boot.ink} characters`)
+    // And it keeps drawing, rather than reporting once and stopping -- which is
+    // exactly what the first version did, with the probe never reached.
+    assert(
+      front.later.frames > front.boot.frames + 10,
+      `${front.name}: ${front.later.frames - front.boot.frames} frames in nearly a second behind the title`,
+    )
+    assert(front.boot.cols > 20, `${front.name}: the grid reported ${front.boot.cols} columns behind the title`)
+  }
+})
+
+check('nothing in the level moves until the title is dismissed', () => {
+  for (const front of fronts) {
+    // Unchanged rather than absent. This asserted the player's position was -1,
+    // which was never a position: it was the fallback for a probe that had
+    // stopped reporting, and it was written while the title branch was quietly
+    // returning before the probe was filled. A check resting on a bug's side
+    // effect passes until the bug is fixed and then accuses the fix.
+    assert(
+      front.later.x === front.boot.x,
+      `${front.name}: the player moved from ${front.boot.x} to ${front.later.x} behind the title`,
+    )
+    assert(!front.playing.titleUp, `${front.name}: pressing fire left the title up`)
+    assert(front.playing.x > 0, `${front.name}: the level never started`)
+    assert(
+      front.walked > front.playing.x + 1,
+      `${front.name}: walking moved from ${front.playing.x} to ${front.walked}`,
+    )
+  }
+})
+
+check('a wide screen gets the bar and a phone keeps the line', () => {
+  const desktop = fronts.find((f) => f.name === 'desktop')!
+  const phone = fronts.find((f) => f.name === 'phone')!
+  assert(desktop.playing.panels === 4, `a 163-column grid drew ${desktop.playing.panels} panels`)
+  assert(phone.playing.panels === 0, `a phone drew ${phone.playing.panels} panels instead of the single line`)
+  // The bar is opaque. Drawn straight over the world it came out as HEALTH and
+  // 93 tangled into a wall of per-cent signs, so the foot is checked for the
+  // words rather than for the flag that says they were placed.
+  assert(
+    desktop.playing.foot.includes('HEALTH') && desktop.playing.foot.includes('AREA'),
+    `the foot of the screen reads "${desktop.playing.foot}"`,
+  )
+  assert(
+    !/[%#]{4}/.test(desktop.playing.foot),
+    `the bar has wall glyphs run through it: "${desktop.playing.foot}"`,
+  )
+})
+
+// --- what you did in the last level stays there -----------------------------
+//
+// The counters behind the end-of-level summary were module variables that
+// nothing cleared, so every level's tally included every level before it. It
+// showed up sideways: a shot fired to get past the title hit something in the
+// first room, and an aiming fixture two hundred lines away failed three runs
+// running because one pellet had already landed before its map was loaded.
+
+const ledger = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const tally = await ledger.newPage()
+tally.on('pageerror', (error) => problems.push(`tally: ${error.message}`))
+await tally.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await tally.waitForTimeout(900)
+await begin(tally)
+
+const readTally = () =>
+  tally.evaluate(() => {
+    const p = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      shots: (p.shotsFired as number) ?? -1,
+      landed: (p.pelletsLanded as number) ?? -1,
+      kills: (p.kills as number) ?? -1,
+      level: (p.level as string) ?? '',
+    }
+  })
+
+// Fire a few times where there is something to hit, so the counters are not
+// zero by accident when the next level starts.
+await tally.keyboard.down(' ')
+await tally.waitForTimeout(900)
+await tally.keyboard.up(' ')
+await tally.waitForTimeout(300)
+const afterShooting = await readTally()
+
+const tookFresh = await tally.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [[...tinyWad('E1M1')], 'E1M1'] as [number[], string],
+)
+await tally.waitForTimeout(600)
+const afterNewLevel = await readTally()
+await ledger.close()
+
+check('a new level starts the tally from nothing', () => {
+  assert(tookFresh, 'the page would not take a fresh map')
+  // The premise: something was counted before the level changed. Without it,
+  // "it is zero now" would pass against a page that never counts anything.
+  assert(afterShooting.shots > 0, `the trigger was held and ${afterShooting.shots} shots were counted`)
+  assert(
+    afterNewLevel.level === 'E1M1',
+    `the page was showing "${afterNewLevel.level}" rather than the map just loaded`,
+  )
+  assert(afterNewLevel.shots === 0, `${afterNewLevel.shots} shots carried into the new level`)
+  assert(afterNewLevel.landed === 0, `${afterNewLevel.landed} hits carried into the new level`)
+  assert(afterNewLevel.kills === 0, `${afterNewLevel.kills} kills carried into the new level`)
 })
 
 await browser.close()

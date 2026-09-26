@@ -51,6 +51,7 @@ import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
 import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
+import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
@@ -1771,6 +1772,85 @@ test('a map from a file is drawn with the file’s pictures', () => {
   // which is what every map did before any of this.
   const without = wadLevelState(tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0), 'E1M1', 1)
   assert(without.actors[0]!.kind.sprite === CRAWLER_KIND.sprite, 'a file with no art still changed the drawing')
+})
+
+console.log('\na status bar laid out like the original')
+
+/** The four things the bar shows, in the order the original puts them. */
+const PANELS = [
+  { label: 'HEALTH', value: '100%', priority: 4 },
+  { label: 'AMMO', value: '50', priority: 3 },
+  { label: 'KEYS', value: 'cobalt', priority: 2 },
+  { label: 'LEVEL', value: 'the outpost', priority: 1 },
+]
+
+test('a wide grid gets a bar at the foot of it', () => {
+  const bar = layoutBar(163, 50, PANELS)
+  assert(bar !== null, 'a 163-column grid was refused a status bar')
+  assert(bar.rows === BAR_ROWS, `the bar is ${bar.rows} rows rather than ${BAR_ROWS}`)
+  assert(bar.top === 50 - BAR_ROWS, `the bar starts at row ${bar.top} of fifty`)
+  assert(bar.panels.length === PANELS.length, `${bar.panels.length} panels of ${PANELS.length}`)
+
+  // Panels are equal width and touch, so the bar is continuous rather than a
+  // row of islands, and the last one reaches the right-hand edge.
+  const first = bar.panels[0]!
+  assert(first.col === 0, `the first panel starts at column ${first.col}`)
+  for (let i = 1; i < bar.panels.length; i++) {
+    const before = bar.panels[i - 1]!
+    assert(
+      bar.panels[i]!.col === before.col + before.width,
+      `panel ${i} starts at ${bar.panels[i]!.col} and the one before ends at ${before.col + before.width}`,
+    )
+  }
+  const last = bar.panels[bar.panels.length - 1]!
+  assert(last.col + last.width === 163, `the bar ends at column ${last.col + last.width} of 163`)
+})
+
+test('a phone keeps the single line instead', () => {
+  // Forty-nine columns over four panels is ten each before the numbers start
+  // colliding, and the line in `hud.ts` drops what does not fit by priority --
+  // which says more in one row than a cramped bar says in three.
+  assert(layoutBar(49, 47, PANELS) === null, 'a phone-width grid was given a status bar')
+  assert(layoutBar(NARROWEST - 1, 47, PANELS) === null, `a grid one under ${NARROWEST} still got a bar`)
+  assert(layoutBar(NARROWEST, 47, PANELS) !== null, `a grid of exactly ${NARROWEST} was refused`)
+})
+
+test('a bar too tall for the grid is no bar', () => {
+  // Three rows of bar on a five-row grid leaves two rows of game, which is not
+  // a game. The picture wins.
+  assert(layoutBar(163, BAR_ROWS + 3, PANELS) === null, 'a bar was laid over almost the whole grid')
+  assert(layoutBar(163, BAR_ROWS + 4, PANELS) !== null, 'a grid with room to spare was refused')
+})
+
+test('the least important panel is the one that goes', () => {
+  // Narrow enough for three of the four. The level name is the longest and the
+  // least useful, so it is the one dropped -- and what remains keeps the order
+  // it was written in rather than the order it was ranked in.
+  const wide = layoutBar(163, 50, PANELS)!
+  const tight = layoutBar(NARROWEST, 50, PANELS)
+  assert(tight !== null, 'the narrowest grid that takes a bar was refused one')
+  assert(tight.panels.length <= wide.panels.length, 'a narrower grid kept more panels than a wide one')
+  assert(tight.panels[0]!.label === 'HEALTH', `the first panel is ${tight.panels[0]!.label}`)
+  const labels = tight.panels.map((panel) => panel.label)
+  assert(
+    labels.join(' ') === PANELS.filter((p) => labels.includes(p.label)).map((p) => p.label).join(' '),
+    `the panels came out in the order ${labels.join(' ')}`,
+  )
+})
+
+test('a panel centres its text on itself', () => {
+  const bar = layoutBar(163, 50, PANELS)!
+  for (const panel of bar.panels) {
+    const centre = centreOf(panel)
+    assert(
+      centre >= panel.col && centre < panel.col + panel.width,
+      `${panel.label} centres on column ${centre}, outside its own ${panel.col}..${panel.col + panel.width}`,
+    )
+  }
+})
+
+test('nothing to show is no bar rather than an empty one', () => {
+  assert(layoutBar(163, 50, []) === null, 'an empty bar was laid out')
 })
 
 console.log('\nart that was baked in')

@@ -58,7 +58,14 @@ const COVERAGE = 0.34
  */
 const BRIGHTEST = 1.2
 
-/** How many rows of characters a picture is worth, unless it is smaller than that. */
+/**
+ * How many rows of characters a picture is worth, unless asked for otherwise.
+ *
+ * Sixteen suits a creature, which is a few cells tall by the time you meet it.
+ * It ruins a picture meant to fill the screen, so the caller can say -- and the
+ * sizes that matter are worked out from the grid rather than guessed: a title
+ * is as tall as the screen, and a status bar as wide as it.
+ */
 const ROWS = 16
 
 /** How far a death frame may grow before it is the burst rather than the fall. */
@@ -137,11 +144,12 @@ export function spriteFromPicture(
   palette: Uint8Array,
   fit: { readonly height: number } | { readonly width: number },
   cellAspect: number,
+  rowsWanted = ROWS,
 ): Sprite | null {
   const shape = picture.width / picture.height
   const height = 'height' in fit ? fit.height : fit.width / shape
   const width = 'height' in fit ? fit.height * shape : fit.width
-  const rows = Math.max(1, Math.min(ROWS, picture.height))
+  const rows = Math.max(1, Math.min(rowsWanted, picture.height))
   // Not about shape. The art is stretched across whatever box `width` and
   // `height` describe, so a grid of any proportion comes out the right shape --
   // what the proportion decides is how much of the picture each cell has to

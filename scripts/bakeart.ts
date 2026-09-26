@@ -69,6 +69,24 @@ const SUPPLIES: readonly (readonly [string, string])[] = [
 ]
 
 /**
+ * The interface pictures worth having, which is one of them.
+ *
+ * Most of Freedoom's interface does not survive being turned into characters,
+ * and looking at it is what settled that. `TITLEPIC` is a 320 by 200 painting:
+ * at thirty rows and again at forty-six it comes out as a low-contrast fog of
+ * colons with no shape in it at all. `STBAR` is worse value -- it is the metal
+ * texture behind the status bar, and everything that makes a status bar useful
+ * is composited onto it at runtime, so baking it buys a noisy stripe with no
+ * numbers on it. The small font is 9 by 7 pixels a glyph, and drawing a picture
+ * of the letter A as characters is a worse letter A than the letter A.
+ *
+ * The logo does survive. At eight rows it is still readable and at twelve it is
+ * crisp, because it is large flat lettering rather than a painting -- which is
+ * the property that decides this, not whether something is "interface".
+ */
+const INTERFACE: readonly (readonly [string, string, number])[] = [['M_DOOM', 'LOGO', 12]]
+
+/**
  * The cell aspect the sampling is done at.
  *
  * Measured off the real font in a browser. It decides how many columns of
@@ -196,6 +214,28 @@ function emit(baked: Baked): string {
   )
 }
 
+/**
+ * Where a lump starts, by name, anywhere in the file.
+ *
+ * `readArt` collects the run between the sprite markers, which is where the
+ * creatures live and where the interface does not.
+ */
+function lumpAt(view: DataView, want: string): number | null {
+  const count = view.getInt32(4, true)
+  const directory = view.getInt32(8, true)
+  for (let i = 0; i < count; i++) {
+    const entry = directory + i * 16
+    let name = ''
+    for (let c = 0; c < 8; c++) {
+      const code = view.getUint8(entry + 8 + c)
+      if (code === 0) break
+      name += String.fromCharCode(code)
+    }
+    if (name === want && view.getInt32(entry + 4, true) > 0) return view.getInt32(entry, true)
+  }
+  return null
+}
+
 const files = process.argv.slice(2)
 if (files.length === 0) {
   console.error('give me one or more WADs to read; the first one that has a picture wins')
@@ -212,6 +252,17 @@ for (const path of files) {
     continue
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+
+  // The interface pieces are named exactly and live outside the sprite run, so
+  // they are looked up by name rather than by walking frames.
+  for (const [lump, name, rows] of INTERFACE) {
+    if (done.has(lump)) continue
+    const where = lumpAt(view, lump)
+    if (where === null) continue
+    done.add(lump)
+    const picture = spriteFromPicture(readPicture(view, where), art.palette, { height: 1 }, CELL_ASPECT, rows)
+    if (picture !== null) made.push(encode(name, picture))
+  }
 
   for (const [prefix, name] of [...CREATURES, ...SUPPLIES]) {
     if (done.has(prefix)) continue
@@ -237,7 +288,9 @@ for (const path of files) {
   }
 }
 
-const missing = [...CREATURES, ...SUPPLIES].filter(([prefix]) => !done.has(prefix)).map(([prefix]) => prefix)
+const missing = [...CREATURES, ...SUPPLIES, ...INTERFACE]
+  .filter(([prefix]) => !done.has(prefix))
+  .map(([prefix]) => prefix)
 if (missing.length > 0) console.error(`no picture found for: ${missing.join(', ')}`)
 
 const header = `/**
