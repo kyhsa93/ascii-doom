@@ -120,6 +120,12 @@ The page is a progressive web app: it can be installed from the browser's own
 menu and then runs from the home screen with no address bar, which on a phone
 is the difference between a web page and a game.
 
+Uninstalled it still fits. The page is sized to the window you can actually see
+rather than to the one the browser reports having, and on iOS Safari those are
+not the same number while the address bar is up — the difference is about the
+height of the strip the controls sit in, which is why it was the controls that
+went missing.
+
 One visit is enough to play it with the network off. That takes a little doing,
 because the build hashes its asset names and the service worker is copied
 through the build untouched — so the only place those names exist is the page

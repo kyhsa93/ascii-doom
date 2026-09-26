@@ -49,7 +49,23 @@
       html,
       body {
         margin: 0;
+        /*
+          The height you can see, not the height the page thinks it has.
+
+          On iOS Safari a percentage here resolves against the layout viewport,
+          which is the window with the toolbars out of the way. With the address
+          bar showing -- which is most of the time, since it only retracts when
+          something scrolls -- the page is taller than the visible part, and
+          what falls off the bottom is the foot of the screen. That is where the
+          controls are.
+
+          Written second rather than instead: a browser that does not know the
+          unit drops this line and keeps the one above it. And it cannot flicker
+          the way a dynamic unit usually can, because the toolbar moves in
+          response to scrolling and nothing on this page scrolls.
+        */
         height: 100%;
+        height: 100dvh;
         overflow: hidden;
         background: #05050a;
         color: #cfc8bc;
@@ -123,9 +139,19 @@
         pushed the picture up would cost more of the game than it gave back.
         It cost more than it looked: see the note on `#screen` below.
       */
+      /*
+        Sized the same way as the page, and for the same reason: a fixed element
+        measures its percentages against that same too-tall layout viewport, so
+        `inset: 0` put the foot of the controls behind the address bar even
+        while the picture above them was the right size.
+      */
       #pad {
         position: fixed;
-        inset: 0;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 100%;
+        height: 100dvh;
         display: none;
         touch-action: none;
       }

@@ -1425,6 +1425,51 @@ check('the half you drag is exactly as tall as the picture', () => {
   }
 })
 
+// Read out of the parsed stylesheet rather than out of the source file. An
+// invalid unit is discarded when the sheet is parsed, so a misspelt `dvh` would
+// leave the percentage above it as what remains -- which is exactly the bug,
+// and exactly what a grep of the source would have missed.
+const sizing = await thumbed.evaluate(() => {
+  const found: Record<string, string> = {}
+  // Indexed rather than iterated: these two collections are old enough to
+  // predate the iteration protocol, and the types here say so.
+  const sheets = document.styleSheets
+  for (let s = 0; s < sheets.length; s++) {
+    let rules: CSSRuleList
+    try {
+      rules = sheets[s]!.cssRules
+    } catch {
+      continue
+    }
+    for (let r = 0; r < rules.length; r++) {
+      const rule = rules[r]
+      if (!(rule instanceof CSSStyleRule)) continue
+      if (rule.style.height !== '') found[rule.selectorText] = rule.style.height
+    }
+  }
+  return found
+})
+
+check('the page is sized to the viewport you can actually see', () => {
+  // What this cannot say is whether it works, because the browser the unit is
+  // for is the one that will not run on this machine: iOS Safari is where a
+  // percentage of the layout viewport is taller than the visible window, and
+  // Chromium has no address bar to hide anything behind. So this holds the
+  // declaration to account and says plainly that it is not the behaviour.
+  for (const [selector, wanted] of [
+    ['html, body', '100dvh'],
+    ['#pad', '100dvh'],
+  ] as const) {
+    const height = sizing[selector]
+    assert(height !== undefined, `nothing in the stylesheet gives "${selector}" a height at all`)
+    assert(
+      height === wanted,
+      `"${selector}" comes out as ${height} rather than ${wanted} -- on a phone that puts the ` +
+        'foot of the controls behind the address bar',
+    )
+  }
+})
+
 check('a thumb is told what the gun has hold of', () => {
   assert(tookEmpty && tookAimed, 'the page would not take the aiming maps')
   assert(withNobody.aimed === -1, `something was aimed at in an empty room: ${withNobody.aimed}`)
