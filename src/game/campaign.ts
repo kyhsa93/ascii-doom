@@ -88,10 +88,22 @@ export function isDead(carrier: Carrier): boolean {
  */
 export function restartLevel(index: number, carrier: Carrier): LevelState {
   const def = levelOrThrow(index)
+  refillCarrier(carrier)
+  return loadLevel(def)
+}
+
+/**
+ * Hands back the kit a run begins with, in place.
+ *
+ * Its own function because dying is not the only way to need it: a map opened
+ * from a file starts you over too, and it has no campaign index to restart by.
+ * Written twice, the two would drift the moment the loadout changed -- which
+ * is the whole reason the loadout stopped living in the page.
+ */
+export function refillCarrier(carrier: Carrier): void {
   carrier.health = STARTING_HEALTH
   carrier.ammo = [...STARTING_AMMO]
   carrier.keys.clear()
-  return loadLevel(def)
 }
 
 function levelOrThrow(index: number): LevelDef {
