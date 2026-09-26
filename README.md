@@ -644,14 +644,64 @@ A tick that cannot run stops the clock rather than being skipped. Skipping is
 how two games quietly stop being one, and the accumulator keeping its time
 means a side that fell behind runs the ticks it owes when the other catches up.
 
-What this does not do yet is let the two of you shoot each other, and the
-reason is worth writing down rather than hiding. Being shootable means being in
-the list a shot is traced against, and that list is creatures -- so a player put
-into it becomes a monster to every count in the game: the tally at the end of a
-level, what the creatures decide to fight, what a barrel's blast catches. That
-is a change to what a creature is, and it belongs in its own round rather than
-smuggled into this one. For now the other player is somebody you can see
-walking the same rooms.
+You can shoot each other, and what it took was one list rather than a change to
+what a creature is. A shot is traced against bodies, and that list used to be
+the creatures -- so the only way to be hit was to be a monster, and a player put
+in there becomes one to every count in the game: the tally at the end of a
+level, what the creatures decide to fight, what a barrel's blast catches. So
+`fire` takes a second list of things that can be hit and are not creatures,
+traces both together so neither can shadow the other, and reports what it
+struck instead of damaging it. Whoever passed the body in decides what a hit
+means.
+
+Nothing about damage goes over the wire, which is the part worth dwelling on.
+Both sides already have both players' input and the same seed, so each works
+out for itself that a pellet landed and how hard -- the same way each works out
+where the other is standing. What had to follow is that both sides simulate
+*both* players completely: their ammunition, the boxes they walk over, the
+floor burning them, their death. Simulating only your own would have the two
+sides disagree the moment somebody picked up a clip.
+
+That makes the order the two are resolved in load-bearing, and it is the kind of
+thing that would have been very hard to find later. Every roll comes out of one
+generator and a shot takes one per pellet, so two sides that each resolved their
+own shot first would draw different numbers from that moment on -- and the
+creatures share that generator, so the monsters would walk different ways on the
+two screens. "Mine then theirs" is a different order on each machine. "The
+host's then the guest's" is the same one, and that is what both sides do, for
+firing and for reaching a box at the same instant.
+
+Dying in a duel stops you rather than the room. Alone, death halts the world and
+a press rebuilds the level; neither can happen here, because a side that stopped
+stepping would stop simulating the other player, and a level rebuilt underneath
+somebody would shut every door they had opened. So the body waits out the same
+pause and stands up at its own start with the kit a run begins with, and both
+sides reach that on the same tick from the same clock.
+
+Checking any of this taught me something about checking lockstep. The browser
+checks waited a fixed number of milliseconds and then measured what had
+happened, which works for one page and quietly stops working for two: neither
+side may run a tick the other has not spoken for, so a page whose frames are
+being throttled does not slow itself down, it stops both. The same check passed
+on its own and failed in a full gate run with another browser open, reporting
+that somebody had walked no distance at all. They had walked for the whole
+second. The second just had almost no ticks in it. The checks wait on the tick
+counter now, and a slow machine makes them slower rather than wrong.
+
+Aiming one player at another turned out to have a floor for the same reason. A
+frame runs as many ticks as the time it swallowed, so the smallest turn a check
+can ask for is however many ticks that frame happens to do -- about a fifth of a
+radian when the machine is busy. At the two and three quarter metres MAP11 puts
+the two starts apart, a player is a tenth of a radian wide, which is narrower
+than the aim can be adjusted, and the loop circles them for ever. Walking in to
+a metre first makes them a third of a radian wide. The tolerance is computed
+from the distance rather than picked, because a number picked out of the air is
+a number that passes for the wrong reason.
+
+One cheat is switched off while two of you are playing. Nothing can hurt you is
+a decision about your own machine, and a player who cannot be hurt on one screen
+and can be on the other is two games again. Playing alone it works as it always
+did.
 
 It is played on the maps that ship, and that follows from what the two sides
 can both have. A file one of you opened is a file the other has never seen; the

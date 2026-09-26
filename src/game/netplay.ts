@@ -98,6 +98,28 @@ export function forget(net: Lockstep, before: number): void {
   }
 }
 
+/**
+ * Which of the two to resolve first, so that both sides pick the same one.
+ *
+ * Anything that draws from the shared generator -- a shot takes one roll per
+ * pellet -- has to happen in the same order at both ends, or the two sides
+ * draw different numbers from that moment on and the creatures, which share
+ * that generator, walk different ways on the two screens.
+ *
+ * "Mine, then theirs" is the obvious rule and is wrong, because it names a
+ * different player on each machine. "The host, then the guest" names the same
+ * one, which is what this returns: the side that is hosting resolves itself
+ * first, and the side that is not resolves the other first.
+ *
+ * A function rather than the condition written at each place that needs it.
+ * It was written twice within a day of existing -- once for firing and once
+ * for two people reaching the same box -- and a rule kept in two places is a
+ * rule that will be half changed.
+ */
+export function hostFirst(iAmHost: boolean): readonly ('mine' | 'theirs')[] {
+  return iAmHost ? ['mine', 'theirs'] : ['theirs', 'mine']
+}
+
 /** How many ticks are being held, for a check that memory stays bounded. */
 export function held(net: Lockstep): number {
   return net.mine.size + net.theirs.size

@@ -1956,6 +1956,31 @@ check('the maps that ship can be reached and played', () => {
   assert(playingAShippedMap.lines > 100, `${playingAShippedMap.level} came up with ${playingAShippedMap.lines} walls`)
 })
 
+/**
+ * Waits for the game to advance, rather than for time to pass.
+ *
+ * In lockstep neither side may run a tick the other has not spoken for, so a
+ * page whose frames are being throttled does not merely slow itself down -- it
+ * stops both. Waiting a fixed number of milliseconds then measures how busy
+ * the machine was: the same check passed alone and failed in a full gate run
+ * with a third browser open, reporting that somebody had walked no distance at
+ * all. They had walked for the whole second; the second just had almost no
+ * ticks in it.
+ */
+const waitTicks = async (page: Page, many: number): Promise<void> => {
+  const reading = () =>
+    page.evaluate(
+      () => ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.netTick as number) ?? 0,
+    )
+  const from = await reading()
+  await page.waitForFunction(
+    (want) =>
+      (((window as unknown as { __doom?: Record<string, unknown> }).__doom?.netTick as number) ?? 0) >= want,
+    from + many,
+    { timeout: 60000 },
+  )
+}
+
 /*
  * Two people, in one world, with nothing between the two browsers.
  *
@@ -2025,16 +2050,22 @@ const standing = (page: Page) =>
     }
   })
 
-// The handshake, the fetch of a map on both sides, and a few seconds of play.
-await hostPage.waitForTimeout(6000)
+// The handshake and the fetch of a map on both sides, then enough ticks to be
+// sure both are actually running rather than merely connected.
+await hostPage.waitForFunction(
+  () => (window as unknown as { __doom?: Record<string, unknown> }).__doom?.linked === true,
+  undefined,
+  { timeout: 30000 },
+)
+await waitTicks(hostPage, 60)
 const hostJoined = await standing(hostPage)
 const guestJoined = await standing(guestPage)
 
 // One of them walks, and the question is whether the other sees it.
 await hostPage.keyboard.down('w')
-await hostPage.waitForTimeout(1200)
+await waitTicks(hostPage, 72)
 await hostPage.keyboard.up('w')
-await hostPage.waitForTimeout(800)
+await waitTicks(hostPage, 30)
 const hostWalked = await standing(hostPage)
 const guestWatching = await standing(guestPage)
 await pairBrowser.close()
@@ -2079,6 +2110,215 @@ check('what one player does reaches the other', () => {
   // And the far screen agrees about where they ended up, not merely that they moved.
   const agree = Math.hypot(guestWatching.mate!.x - hostWalked.x, guestWatching.mate!.y - hostWalked.y)
   assert(agree < 0.5, `after walking, the two sides are ${agree.toFixed(1)} m apart about where the host is`)
+})
+
+/*
+ * Two people shooting at each other, which is the last of the original's parts.
+ *
+ * On MAP11 because the map decides where the two of you stand and on that one
+ * the two starts are two and a half metres apart with nothing in between --
+ * measured across all sixty-eight, ten of which are in sight of each other.
+ * Anywhere else the check would have to walk somebody through a maze first,
+ * and a check that sometimes arrives is worse than none.
+ */
+const duelBrowser = await chromium.launch({
+  args: [
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+  ],
+})
+const duelContext = await duelBrowser.newContext({ viewport: { width: 1280, height: 720 } })
+const duelHost = await duelContext.newPage()
+const duelGuest = await duelContext.newPage()
+for (const page of [duelHost, duelGuest]) {
+  page.on('pageerror', (error) => problems.push(`duel: ${error.message}`))
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+}
+await duelHost.waitForTimeout(1400)
+
+const duelAskToMeet = async (page: Page): Promise<void> => {
+  for (let i = 0; i < 12; i++) {
+    if ((await readOpened(page)).menuLabel === 'play somebody') break
+    await hold(page, 'ArrowDown', 150)
+  }
+  await hold(page, ' ', 150)
+}
+await duelAskToMeet(duelHost)
+await duelAskToMeet(duelGuest)
+await duelHost.selectOption('#meetmap', 'MAP11')
+await duelHost.click('#meethost')
+await duelHost.waitForFunction(
+  () => ((document.getElementById('meetmine') as HTMLTextAreaElement | null)?.value.length ?? 0) > 0,
+  undefined,
+  { timeout: 15000 },
+)
+await duelGuest.fill('#meettheirs', await duelHost.inputValue('#meetmine'))
+await duelGuest.click('#meetjoin')
+await duelGuest.waitForFunction(
+  () => ((document.getElementById('meetmine') as HTMLTextAreaElement | null)?.value.length ?? 0) > 0,
+  undefined,
+  { timeout: 15000 },
+)
+await duelHost.fill('#meettheirs', await duelGuest.inputValue('#meetmine'))
+await duelHost.click('#meetaccept')
+await duelHost.waitForFunction(
+  () => (window as unknown as { __doom?: Record<string, unknown> }).__doom?.linked === true,
+  undefined,
+  { timeout: 30000 },
+)
+await waitTicks(duelHost, 60)
+
+const duelLook = (page: Page) =>
+  page.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      level: (d.level as string) ?? '',
+      linked: d.linked === true,
+      health: (d.health as number) ?? -1,
+      mateHealth: (d.mateHealth as number | null) ?? null,
+      crowd: (d.crowd as number) ?? -1,
+      x: (d.x as number) ?? NaN,
+      y: (d.y as number) ?? NaN,
+      angle: (d.angle as number) ?? NaN,
+      mate: (d.mateAt as { x: number; y: number } | null) ?? null,
+    }
+  })
+
+const duelHostBefore = await duelLook(duelHost)
+const duelGuestBefore = await duelLook(duelGuest)
+
+/**
+ * Turns a player to face whoever they can see, by reading where that is.
+ *
+ * Both of them, because a duel where only one side fires does not exercise the
+ * thing that matters. Every roll comes from one generator; with one shooter
+ * the two sides draw the same numbers whatever order they resolve in, so the
+ * order could be wrong and nothing would notice. Two shooters in the same tick
+ * is what makes the order visible.
+ */
+const duelAimAt = async (page: Page, within: number): Promise<number> => {
+  let off = Math.PI
+  for (let i = 0; i < 25; i++) {
+    const now = await duelLook(page)
+    if (now.mate === null) break
+    const want = Math.atan2(now.mate.y - now.y, now.mate.x - now.x)
+    off = want - now.angle
+    while (off > Math.PI) off -= Math.PI * 2
+    while (off < -Math.PI) off += Math.PI * 2
+    if (Math.abs(off) < within) break
+    // Turning is 2.4 radians a second at sixty ticks to the second, so this is
+    // how many ticks of holding the key are wanted -- ticks rather than time,
+    // because a slow frame is not a slow game.
+    const forTicks = Math.min(24, Math.max(1, Math.round((Math.abs(off) / 2.4) * 60)))
+    const key = off > 0 ? 'ArrowLeft' : 'ArrowRight'
+    await page.keyboard.down(key)
+    await waitTicks(page, forTicks)
+    await page.keyboard.up(key)
+    await waitTicks(page, 3)
+  }
+  return Math.abs(off)
+}
+/*
+ * Close the distance before aiming properly, because a frame is not a tick.
+ *
+ * One frame runs as many ticks as the time it swallowed, so the shortest turn
+ * this can ask for is however many ticks that frame happens to do -- about a
+ * fifth of a radian in a busy gate. At two and three quarter metres the other
+ * player is a tenth of a radian wide, which is narrower than the aim can be
+ * adjusted, and the loop oscillates around them for ever. Walking in to a
+ * metre makes them a third of a radian wide, which is wider than the step.
+ */
+for (let i = 0; i < 14; i++) {
+  const now = await duelLook(duelHost)
+  if (now.mate === null) break
+  if (Math.hypot(now.mate.x - now.x, now.mate.y - now.y) < 1) break
+  await duelAimAt(duelHost, 0.2)
+  await duelHost.keyboard.down('w')
+  await waitTicks(duelHost, 10)
+  await duelHost.keyboard.up('w')
+  await waitTicks(duelHost, 3)
+}
+
+/*
+ * And now aim to within what the geometry asks for rather than a figure picked
+ * out of the air: half the angle the other player subtends from here.
+ */
+const duelClosed = await duelLook(duelHost)
+const duelApart = duelClosed.mate === null
+  ? Infinity
+  : Math.hypot(duelClosed.mate.x - duelClosed.x, duelClosed.mate.y - duelClosed.y)
+const duelWithin = Math.atan2(0.35, duelApart) * 0.8
+const duelHostOff = await duelAimAt(duelHost, duelWithin)
+const duelGuestOff = await duelAimAt(duelGuest, duelWithin)
+
+// Both triggers at once, and briefly: three shots each is a wound rather than
+// a death, and somebody who died would come back on full health with nothing
+// left to assert.
+await duelHost.keyboard.down(' ')
+await duelGuest.keyboard.down(' ')
+await waitTicks(duelHost, 48)
+await duelHost.keyboard.up(' ')
+await duelGuest.keyboard.up(' ')
+await waitTicks(duelHost, 54)
+const duelHostAfter = await duelLook(duelHost)
+const duelGuestAfter = await duelLook(duelGuest)
+await duelBrowser.close()
+
+check('the two of them can shoot each other, and agree about the wounds', () => {
+  assert(duelHostBefore.level === 'MAP11', `the duel is on ${duelHostBefore.level} rather than MAP11`)
+  assert(duelHostBefore.linked && duelGuestBefore.linked, 'the two never connected')
+  assert(
+    duelHostBefore.health === 100 && duelGuestBefore.health === 100,
+    'somebody was already hurt before a shot was fired',
+  )
+  assert(duelApart < 1.6, `they never got within reach of each other: ${duelApart.toFixed(2)} m`)
+  assert(
+    duelHostOff < duelWithin,
+    `the host never lined up, ${duelHostOff.toFixed(2)} radians off against ${duelWithin.toFixed(2)}`,
+  )
+  assert(
+    duelGuestOff < duelWithin,
+    `the guest never lined up, ${duelGuestOff.toFixed(2)} radians off against ${duelWithin.toFixed(2)}`,
+  )
+
+  // Both of them are hurt, and neither is dead -- a death would put them back
+  // on full health and leave nothing to compare.
+  assert(duelHostAfter.health < 100 && duelHostAfter.health > 0, `the host is on ${duelHostAfter.health}`)
+  assert(duelGuestAfter.health < 100 && duelGuestAfter.health > 0, `the guest is on ${duelGuestAfter.health}`)
+
+  /*
+   * And each of them worked out the other's wound without being told.
+   *
+   * Nothing about damage crosses the wire. Both sides hold both players' input
+   * and the same seed, so each decides for itself that a pellet landed. If
+   * they decided differently, one screen would show somebody dying and the
+   * other would not.
+   */
+  assert(
+    duelHostAfter.mateHealth === duelGuestAfter.health,
+    `the host says they are on ${String(duelHostAfter.mateHealth)} and they say ${duelGuestAfter.health}`,
+  )
+  assert(
+    duelGuestAfter.mateHealth === duelHostAfter.health,
+    `the guest says the host is on ${String(duelGuestAfter.mateHealth)} and the host says ${duelHostAfter.health}`,
+  )
+})
+
+check('the two of them keep the same world while they fight', () => {
+  /*
+   * The order the two are resolved in, which health alone cannot catch: at
+   * arm's length a pellet lands whichever way round the sides went. What
+   * catches it is the creatures, which draw from the same generator a shot
+   * does -- so a side that consumed it in a different order walks them
+   * somewhere else. That is only true with two people firing, which is why
+   * both triggers are held above.
+   */
+  assert(duelHostBefore.crowd === duelGuestBefore.crowd, 'the two worlds differed before a shot was fired')
+  assert(
+    duelHostAfter.crowd === duelGuestAfter.crowd,
+    'the two worlds parted once both of them fired, which is the resolving order',
+  )
 })
 
 check('pushing the stick walks the player', () => {

@@ -90,7 +90,7 @@ import { loadLevel } from '../src/game/levels.ts'
 import { fits, restore, snapshot } from '../src/game/save.ts'
 import { cheatWords, effectOf, fresh, typeLetter } from '../src/game/cheats.ts'
 import { intentAt, record, remember, sealed, seeded } from '../src/game/demo.ts'
-import { earliestHeld, forget, hear, held, intentsAt, lockstep, ready, speak } from '../src/game/netplay.ts'
+import { earliestHeld, forget, hear, held, hostFirst, intentsAt, lockstep, ready, speak } from '../src/game/netplay.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -3799,6 +3799,89 @@ test('every map that ships opens, and stands up as a level', () => {
 })
 
 console.log('\ntwo players')
+
+test('both machines resolve the same player first', () => {
+  /*
+   * Written as the two machines rather than as the function, because the rule
+   * is about them agreeing rather than about what the function returns. On the
+   * host's own machine the host is "mine"; on the guest's machine the host is
+   * "theirs". The same player has to go first in both.
+   *
+   * It matters because everything that draws from the shared generator has to
+   * draw in the same order at both ends. Two people firing in one tick is the
+   * case that makes it visible: resolve your own shot first on each side and
+   * the two draw different numbers from then on, which moves the creatures --
+   * they share the generator -- to different places on the two screens.
+   */
+  const onTheHost = hostFirst(true)
+  const onTheGuest = hostFirst(false)
+  assert(onTheHost[0] === 'mine', `the host resolves ${String(onTheHost[0])} first`)
+  assert(onTheGuest[0] === 'theirs', `the guest resolves ${String(onTheGuest[0])} first`)
+
+  // And each order names both of them, once.
+  for (const order of [onTheHost, onTheGuest]) {
+    assert(order.length === 2, `an order naming ${order.length}`)
+    assert(new Set(order).size === 2, 'one of them is resolved twice and the other not at all')
+  }
+})
+
+test('a shot can hit somebody who is not a creature', () => {
+  /*
+   * The whole reason the other player was not shootable for a round.
+   *
+   * A shot is traced against a list of bodies, and that list was the
+   * creatures -- so the only way to be hit was to be a monster, and a player
+   * put in that list becomes one to every count in the game: the tally at the
+   * end of a level, what the creatures decide to fight, what a barrel's blast
+   * catches. So `fire` takes a second list of things that can be hit and are
+   * not creatures, and reports what it struck rather than damaging it.
+   */
+  const shooter = shooterAt(2, 3, 0)
+  const other: ShotBody = { x: 12, y: 3, radius: 0.45 }
+  const result = fire(LEVEL_1, shooter, SIDEARM, [], 1.6, 0, () => 0.5, undefined, [other])
+
+  assert(result.struck.length === 1, `${result.struck.length} things were struck rather than one`)
+  assert(result.struck[0]!.index === 0, 'the wrong body was named')
+  assert(result.struck[0]!.damage === SIDEARM.damage, `the hit did ${result.struck[0]!.damage}`)
+  assert(result.hits === 1, `a pellet landed and the count says ${result.hits}`)
+  // And none of it is a kill, because none of it was a creature.
+  assert(result.kills === 0, 'shooting a player counted as a kill')
+  assert(result.killed.length === 0, 'shooting a player put somebody in the killed list')
+})
+
+test('whichever is nearer takes the shot, creature or not', () => {
+  // One list to trace against, so the two kinds of target cannot shadow each
+  // other. A player standing behind a monster is behind it.
+  const shooter = shooterAt(2, 3, 0)
+  const far: ShotBody = { x: 16, y: 3, radius: 0.45 }
+  const guard = actorAt(10, 3, Math.PI, CRAWLER_KIND)
+  const shielded = fire(LEVEL_1, shooter, SIDEARM, [guard], 1.6, 1, () => 0.5, undefined, [far])
+  assert(shielded.struck.length === 0, 'the shot went through a creature to reach the player')
+  assert(guard.health < CRAWLER_KIND.health, 'the creature in the way was not hit')
+
+  // And the other way round: a player in front of a creature is in front of it.
+  const near: ShotBody = { x: 10, y: 3, radius: 0.45 }
+  const behind = actorAt(16, 3, Math.PI, CRAWLER_KIND)
+  const shadowed = fire(LEVEL_1, shooter, SIDEARM, [behind], 1.6, 1, () => 0.5, undefined, [near])
+  assert(shadowed.struck.length === 1, 'the shot went through the player to reach a creature')
+  assert(behind.health === CRAWLER_KIND.health, 'the creature behind the player was hit')
+})
+
+test('every pellet that lands is reported on its own', () => {
+  /*
+   * One entry per pellet rather than one per body, because a scattergun is
+   * several shots and the caller is the thing that knows what several hits
+   * add up to. Rolled at a half, which puts no spread on any of them.
+   */
+  const shooter = shooterAt(2, 3, 0)
+  const other: ShotBody = { x: 10, y: 3, radius: 0.45 }
+  const result = fire(LEVEL_1, shooter, SCATTERGUN, [], 1.6, 0, () => 0.5, undefined, [other])
+  assert(
+    result.struck.length === SCATTERGUN.pellets,
+    `${SCATTERGUN.pellets} pellets landed and ${result.struck.length} were reported`,
+  )
+  assert(result.hits === SCATTERGUN.pellets, `the hit count says ${result.hits}`)
+})
 
 test('every map that ships has somewhere for a second person to stand', () => {
   /*

@@ -13,7 +13,7 @@ import { RAMPS } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { drawAutomap } from '../src/columns/automap.ts'
-import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
+import { bite, hurtOf, makeHazard, type Hazard } from '../src/game/hazard.ts'
 import { insideSector, lineInFront, sectorAt, type Line, type Sector } from '../src/columns/level.ts'
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
 import { crossings } from '../src/columns/crossing.ts'
@@ -54,8 +54,17 @@ import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
 import { intentAt, record, remember, sealed, seeded, type Demo, type Tape } from '../src/game/demo.ts'
-import { forget, hear, intentsAt, lockstep, ready as tickReady, speak, type Lockstep } from '../src/game/netplay.ts'
-import { keyboardIntent, mergeIntents, touchIntent, type Intent, type TouchState } from '../src/game/input.ts'
+import {
+  forget,
+  hear,
+  hostFirst,
+  intentsAt,
+  lockstep,
+  ready as tickReady,
+  speak,
+  type Lockstep,
+} from '../src/game/netplay.ts'
+import { IDLE, keyboardIntent, mergeIntents, touchIntent, type Intent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState, type Skill } from '../src/game/wadlevel.ts'
@@ -81,6 +90,8 @@ const meetPanel = document.getElementById('meet')
 const meetMine = document.getElementById('meetmine') as HTMLTextAreaElement | null
 const meetTheirs = document.getElementById('meettheirs') as HTMLTextAreaElement | null
 const meetSaid = document.getElementById('meetsaid')
+/** Which of the maps that ship the two of you meet on. */
+const meetMap = document.getElementById('meetmap') as HTMLSelectElement | null
 const surface = new PreSurface(screen)
 
 /**
@@ -252,6 +263,17 @@ void fetch(new URL('maps/maps.json', document.baseURI))
     shipped = listed
     // The title may already be up and built, and it was built without these.
     if (titleUp) menu = titleMenu(menu.cursor)
+    // And the arena chooser, which has nothing to offer until now.
+    if (meetMap !== null) {
+      meetMap.replaceChildren(
+        ...listed.map((one) => {
+          const choice = document.createElement('option')
+          choice.value = one.name
+          choice.textContent = one.name
+          return choice
+        }),
+      )
+    }
   })
   .catch(() => {
     // A list that will not load leaves the game exactly as it was before the
@@ -610,6 +632,23 @@ let channel: RTCDataChannel | null = null
 let spokenFor = -1
 /** Which of the two this side is, which decides where each of you stands. */
 let hosting = false
+/*
+ * Everything the other player owns, kept on this side as well as on theirs.
+ *
+ * Not a copy of what they tell us -- nothing tells us. Both sides run both
+ * players through the same rules from the same input and the same seed, so
+ * this side works out their ammunition, their wounds and their death for
+ * itself and arrives at the same answers. That is what lockstep buys, and it
+ * is why nothing about damage goes over the wire.
+ */
+let mateCarrier: Carrier = freshCarrier()
+let mateWeapon = 0
+let mateCooldown = 0
+let mateHazard: Hazard = makeHazard()
+let mateDeadFor = 0
+/** Where each of the two goes back to, which the map decided when you joined. */
+let myStart = { x: 0, y: 0, angle: 0, sector: 0 }
+let theirStart = { x: 0, y: 0, angle: 0, sector: 0 }
 /** What the loop decided this tick runs with, for `step` to pick up. */
 let runMine: Intent | null = null
 let runTheirs: Intent | null = null
@@ -948,6 +987,130 @@ function hurtActor(index: number, amount: number, by: number): void {
   }
 }
 
+/**
+ * One player pulling the trigger, whichever of the two it is.
+ *
+ * One function rather than the same twenty lines twice, because what a shot
+ * does is not a property of who fired it: pellets are traced, walls are worked,
+ * creatures are hurt and whatever they leave behind goes off. What differs is
+ * only whose ammunition it spends and who feels it, and those are arguments.
+ *
+ * Returns the cooldown rather than writing it, because the two sides keep
+ * theirs in different places and handing this a setter would be a larger lie
+ * than handing back a number.
+ */
+function pullTrigger(
+  shooter: Body & { angle: number },
+  kit: Carrier,
+  weaponAt: number,
+  cooling: number,
+  foe: (Body & { angle: number }) | null,
+  foeKit: Carrier | null,
+  aim: number | undefined,
+  own: boolean,
+  wants: boolean,
+): number {
+  const { level, actors, player } = state
+  const weapon = WEAPONS[weaponAt]
+  if (weapon === undefined) return cooling
+  if (!wants || cooling > 0 || (kit.ammo[weaponAt] ?? 0) < weapon.cost) return cooling
+  kit.ammo[weaponAt] = (kit.ammo[weaponAt] ?? 0) - weapon.cost
+  if (own) {
+    flash = 0.06
+    shotsFired++
+  }
+  noise(weaponAt === 0 ? 'sidearm' : weaponAt === 1 ? 'scattergun' : 'launcher')
+
+  // The other player goes in the second list, which is traced with the
+  // creatures and counted as none of them.
+  const result = fire(
+    level,
+    shooter,
+    weapon,
+    actors,
+    EYE_HEIGHT,
+    actors.length,
+    rolls,
+    aim,
+    foe === null ? [] : [foe],
+  )
+  if (own) {
+    pelletsLanded += result.hits
+    // Only the ones that were creatures. `fire` reports every body it killed,
+    // and a barrel is a body.
+    kills += result.killed.filter((index) => {
+      const dead = actors[index]
+      return dead !== undefined && isCreature(dead)
+    }).length
+  }
+  for (const shot of result.shots) projectiles.push(shot)
+
+  // What the pellets landed on, which on thirteen maps is how a door opens.
+  for (const wall of result.walls) {
+    for (const machine of state.shotLines.get(wall) ?? []) {
+      if (activate(machine, kit.keys)) noise('switch')
+    }
+  }
+
+  // And the other player, if a pellet found them. Every pellet on its own,
+  // which is what makes a scattergun at arm's length what it is.
+  if (foeKit !== null) {
+    for (const hit of result.struck) {
+      if (foeKit === carrier) hurtPlayer(hit.damage)
+      else takeDamage(foeKit, hit.damage)
+    }
+  }
+
+  /*
+   * And anything a pellet killed sets off whatever it leaves behind.
+   *
+   * Both players are in the list the blast is resolved against, so a barrel
+   * burst next to the other one catches them too -- the same rule that has
+   * always caught you.
+   */
+  for (const index of result.killed) {
+    const dead = actors[index]
+    const goes = dead?.kind.explodes
+    if (dead === undefined || goes === undefined) continue
+    const caughtIn = mate === null ? [...actors, player] : [...actors, player, mate]
+    for (const caught of blast(
+      level,
+      dead.x,
+      dead.y,
+      dead.floor + dead.kind.height / 2,
+      goes.radius,
+      goes.damage,
+      caughtIn,
+    )) {
+      if (caught.body === actors.length) hurtPlayer(caught.damage)
+      else if (caught.body === actors.length + 1) takeDamage(mateCarrier, caught.damage)
+      else hurtActor(caught.body, caught.damage, actors.length)
+    }
+  }
+  return weapon.interval
+}
+
+/**
+ * Puts one of the two back where they started, with the kit a run begins with.
+ *
+ * Dying in a duel does not rebuild the level the way dying alone does. The
+ * other player is still standing in it, and a level rebuilt underneath them
+ * would shut every door they had opened. So only the body moves, and only
+ * their own kit is handed back.
+ */
+function putBack(
+  body: Body & { angle: number },
+  kit: Carrier,
+  where: { x: number; y: number; angle: number; sector: number },
+): void {
+  refillCarrier(kit)
+  body.x = where.x
+  body.y = where.y
+  body.angle = where.angle
+  body.sector = where.sector
+  body.floor = state.level.sectors[where.sector]?.floor ?? body.floor
+}
+
 function step(): void {
   const { level, player, actors, movers, pickups, goal } = state
 
@@ -1095,7 +1258,7 @@ function step(): void {
     return
   }
 
-  if (isDead(carrier)) {
+  if (isDead(carrier) && net === null) {
     // Everything stops, including the creatures standing over you. The level is
     // still drawn behind the panel, so what killed you is still on screen.
     deadFor += STEP
@@ -1117,6 +1280,35 @@ function step(): void {
   }
 
   /*
+   * Dying in a duel stops you, not the room.
+   *
+   * Alone, death halts everything and a press rebuilds the level. Neither can
+   * happen here: a side that stopped stepping would stop simulating the other
+   * player and the two games would part, and a level rebuilt underneath
+   * somebody still playing would shut every door they had opened. So the body
+   * waits out the same pause and stands up again where it started, and both
+   * sides work that out on the same tick from the same clock rather than being
+   * told.
+   */
+  if (net !== null) {
+    if (isDead(carrier)) {
+      deadFor += STEP
+      if (deadFor >= REVIVE_DELAY) {
+        putBack(state.player, carrier, myStart)
+        deadFor = 0
+        say('again')
+      }
+    } else deadFor = 0
+    if (mate !== null && isDead(mateCarrier)) {
+      mateDeadFor += STEP
+      if (mateDeadFor >= REVIVE_DELAY) {
+        putBack(mate, mateCarrier, theirStart)
+        mateDeadFor = 0
+      }
+    } else mateDeadFor = 0
+  }
+
+  /*
    * What is being asked for this step, from the devices or from a recording.
    *
    * A replay ignores the devices entirely rather than merging with them --
@@ -1134,6 +1326,16 @@ function step(): void {
   }
   if (taping !== null) remember(taping, intent)
   tick++
+  // Recorded before it is blanked: what a dead player was pressing is still
+  // what they pressed, and a replay has to see the same stream.
+  if (isDead(carrier)) intent = IDLE
+  /*
+   * And what the other one is asking for, or nothing while they are down.
+   *
+   * Worked out once and used by both the walking below and the trigger further
+   * on, so the two cannot disagree about whether they are able to act.
+   */
+  const theirAsk = mate !== null && runTheirs !== null && !isDead(mateCarrier) ? runTheirs : null
   // A weapon request is a one-shot: consumed here so holding the button does
   // not keep re-selecting, and cleared whether or not it changed anything.
   if (intent.weapon >= 0 && intent.weapon < WEAPONS.length) weaponIndex = intent.weapon
@@ -1193,8 +1395,8 @@ function step(): void {
    * counted, and that is this machine's business rather than a remote body's.
    * Two people tripping one line is a door that opens and opens again.
    */
-  if (mate !== null && runTheirs !== null) {
-    const asked = runTheirs
+  if (mate !== null && theirAsk !== null) {
+    const asked = theirAsk
     mate.angle += asked.turn * TURN_SPEED * STEP
     const theirSpeed = (asked.run ? RUN_SPEED : WALK_SPEED) * STEP
     const tfx = Math.cos(mate.angle)
@@ -1276,82 +1478,84 @@ function step(): void {
     say('burning')
     noise('hurt', 0.5)
   }
+  // The same floor under the other one. Its own clock, because the interval is
+  // counted from when that body stepped in rather than when this one did.
+  if (mate !== null) {
+    const theirBurn = bite(level, mate.sector, mateHazard, STEP)
+    if (theirBurn > 0) takeDamage(mateCarrier, theirBurn)
+  }
 
   // Walked over. Nothing is taken that would give nothing, so crossing a room
   // at full health leaves the kit there for when it is worth something.
-  for (const taken of collect(pickups, player.x, player.y, PLAYER_RADIUS, carrier)) {
-    const grant = taken.grant
-    noise(grant.kind === 'weapon' ? 'weaponUp' : 'pickup')
-    if (grant.kind === 'health') say(`+${grant.amount} health`)
-    else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
-    else if (grant.kind === 'armour') say(`armour ${carrier.armour}`)
-    else if (grant.kind === 'weapon') say(`${WEAPONS[grant.weapon]?.name ?? 'a weapon'} — ${carrier.ammo[grant.weapon] ?? 0} rounds`)
-    else say(`${grant.key} key`)
+  const takeMine = (): void => {
+    for (const taken of collect(pickups, player.x, player.y, PLAYER_RADIUS, carrier)) {
+      const grant = taken.grant
+      noise(grant.kind === 'weapon' ? 'weaponUp' : 'pickup')
+      if (grant.kind === 'health') say(`+${grant.amount} health`)
+      else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
+      else if (grant.kind === 'armour') say(`armour ${carrier.armour}`)
+      else if (grant.kind === 'weapon') say(`${WEAPONS[grant.weapon]?.name ?? 'a weapon'} — ${carrier.ammo[grant.weapon] ?? 0} rounds`)
+      else say(`${grant.key} key`)
+    }
+  }
+  const takeTheirs = (): void => {
+    if (mate !== null) collect(pickups, mate.x, mate.y, PLAYER_RADIUS, mateCarrier)
+  }
+  // The host reaches first, on both machines: two people can be standing on the
+  // same box on the same tick and only one of them gets it.
+  for (const who of hostFirst(net === null || hosting)) {
+    if (who === 'mine') takeMine()
+    else takeTheirs()
   }
 
   cooldown = Math.max(0, cooldown - STEP)
+  mateCooldown = Math.max(0, mateCooldown - STEP)
   flash = Math.max(0, flash - STEP)
   noticeTime = Math.max(0, noticeTime - STEP)
-  const weapon = WEAPONS[weaponIndex]!
-  // No test for being alive: the step above has already returned if you are not.
-  if (intent.fire && cooldown <= 0 && carrier.ammo[weaponIndex]! >= weapon.cost) {
-    carrier.ammo[weaponIndex] = carrier.ammo[weaponIndex]! - weapon.cost
-    cooldown = weapon.interval
-    flash = 0.06
-    shotsFired++
-    // The player's index in the body list the flight is resolved against, which
-    // is `[...actors, player]` — so a slug cannot detonate on the person who
-    // fired it, by the same rule that keeps a creature from shooting itself.
-    noise(weaponIndex === 0 ? 'sidearm' : weaponIndex === 1 ? 'scattergun' : 'launcher')
-    const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length, rolls, locked?.angle)
-    pelletsLanded += result.hits
-    // Only the ones that were creatures. `fire` reports every body it killed,
-    // and a barrel is a body.
-    kills += result.killed.filter((index) => {
-      const dead = actors[index]
-      return dead !== undefined && isCreature(dead)
-    }).length
-    for (const shot of result.shots) projectiles.push(shot)
-    /*
-     * And the walls the pellets landed on, which on thirteen maps is the only
-     * way a door there opens.
-     *
-     * Every pellet rather than the first: a scattergun puts several into the
-     * same wall and `activate` is idempotent on a door already opening, so
-     * counting them is neither needed nor harmful. Keys apply the same as
-     * anywhere else -- shooting a lock is not a way past it.
-     */
-    for (const wall of result.walls) {
-      for (const machine of state.shotLines.get(wall) ?? []) {
-        if (activate(machine, carrier.keys)) noise('switch')
-      }
-    }
-    /*
-     * And anything a pellet killed sets off whatever it leaves behind.
-     *
-     * `fire` damages creatures itself -- it has to, since it traces the pellets
-     * -- so the deaths it causes do not pass through `hurtActor`. Without this,
-     * a barrel burst by a rocket exploded and the same barrel shot with a
-     * pistol quietly fell over, which is the sort of inconsistency nobody
-     * reports and everybody feels.
-     */
-    for (const index of result.killed) {
-      const dead = actors[index]
-      const goes = dead?.kind.explodes
-      if (dead === undefined || goes === undefined) continue
-      for (const caught of blast(
-        level,
-        dead.x,
-        dead.y,
-        dead.floor + dead.kind.height / 2,
-        goes.radius,
-        goes.damage,
-        [...actors, player],
-      )) {
-        if (caught.body === actors.length) hurtPlayer(caught.damage)
-        else hurtActor(caught.body, caught.damage, actors.length)
-      }
-    }
+  if (theirAsk !== null && theirAsk.weapon >= 0 && theirAsk.weapon < WEAPONS.length) {
+    mateWeapon = theirAsk.weapon
+  }
+
+  /*
+   * Both triggers, and always the host's first.
+   *
+   * The order matters more than it looks. Every roll in this game comes out of
+   * one seeded generator and a shot takes one per pellet, so two sides that
+   * each resolved their own shot first would draw different numbers from that
+   * moment on -- and the creatures, which share the generator, would walk
+   * different ways on the two screens. "Mine then theirs" is not the same
+   * order on both machines. "The host's then the guest's" is.
+   */
+  const pullMine = (): void => {
+    cooldown = pullTrigger(
+      player,
+      carrier,
+      weaponIndex,
+      cooldown,
+      mate,
+      mate === null ? null : mateCarrier,
+      locked?.angle,
+      true,
+      intent.fire,
+    )
+  }
+  const pullTheirs = (): void => {
+    if (mate === null || theirAsk === null) return
+    mateCooldown = pullTrigger(
+      mate,
+      mateCarrier,
+      mateWeapon,
+      mateCooldown,
+      player,
+      carrier,
+      undefined,
+      false,
+      theirAsk.fire,
+    )
+  }
+  for (const who of hostFirst(net === null || hosting)) {
+    if (who === 'mine') pullMine()
+    else pullTheirs()
   }
 
   // Use: opens whatever you are facing, if you are carrying what it asks for.
@@ -1881,6 +2085,21 @@ function frame(now: number): void {
     mateAt: mate === null ? null : { x: mate.x, y: mate.y },
     netTick: tick,
     hosting,
+    /** The other player's health, worked out here rather than taken on trust. */
+    mateHealth: mate === null ? null : mateCarrier.health,
+    /*
+     * One number that changes if the creatures are anywhere different.
+     *
+     * Reported because the thing two sides have to agree about is the whole
+     * world, and comparing the world cell by cell across two browsers is not
+     * something a check can do. Every roll in the game comes from one seeded
+     * generator, so a side that consumed them in a different order walks its
+     * monsters somewhere else -- and this is what notices.
+     */
+    crowd: state.actors.reduce(
+      (sum, one, at) => sum + (at + 1) * (Math.round(one.x * 8) + Math.round(one.y * 8) * 31 + one.health * 131),
+      0,
+    ),
     statusBar: bar === null ? 0 : bar.panels.length,
     /**
      * What the first creature in the level is actually drawn with.
@@ -2187,6 +2406,13 @@ async function pairUp(seed: number, mapName: string, first: boolean): Promise<vo
     height: PLAYER_HEIGHT,
   }
   hosting = first
+  mateCarrier = freshCarrier()
+  mateWeapon = 0
+  mateCooldown = 0
+  mateHazard = makeHazard()
+  mateDeadFor = 0
+  myStart = mine
+  theirStart = theirs
   meetPanel?.classList.remove('up')
   say(`${mapName} · two players`)
 }
@@ -2222,8 +2448,9 @@ document.getElementById('meethost')?.addEventListener('click', () => {
     const open = pc.createDataChannel('play')
     listen(open)
     open.onopen = () => {
-      const map = shipped[0]?.name
-      if (map === undefined) {
+      // What the person hosting chose, or the first if the list never arrived.
+      const map = meetMap?.value || shipped[0]?.name
+      if (map === undefined || map === '') {
         meetSay('no maps to play on')
         return
       }

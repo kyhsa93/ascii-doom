@@ -143,6 +143,18 @@ export interface FireResult {
   readonly walls: Line[]
   /** Anything now in flight, for the caller to add to what it is tracking. */
   readonly shots: Projectile[]
+  /**
+   * Pellets that landed on somebody who is not a creature, one entry each.
+   *
+   * Reported rather than resolved, which is the whole point of the second
+   * list. A creature is damaged here because this is what traces the pellets
+   * and there is nowhere else to do it; anything else that can be hit belongs
+   * to whoever passed it in, and this says only what it struck and how hard.
+   *
+   * One entry per pellet rather than per body: a scattergun is several shots,
+   * and what several hits add up to is the caller's arithmetic.
+   */
+  readonly struck: { readonly index: number; readonly damage: number }[]
 }
 
 /**
@@ -171,14 +183,29 @@ export function fire(
    * and thrown in two different directions at once.
    */
   aim?: number,
+  /**
+   * Bodies that can be hit and are not creatures. Usually another player.
+   *
+   * A second list rather than more entries in the first, because the first
+   * one's meaning is load-bearing: every count in this game reads it as the
+   * creatures of the level. A player put in there becomes a monster to the
+   * tally at the end of a level, to what the creatures decide to fight, and to
+   * what a barrel's blast catches.
+   *
+   * Traced together with the creatures rather than separately, so the two
+   * kinds cannot shadow each other: whoever is nearer takes the shot, and a
+   * player standing behind a monster is behind it.
+   */
+  others: readonly ShotBody[] = [],
 ): FireResult {
-  const bodies: ShotBody[] = actors
+  const bodies: ShotBody[] = others.length === 0 ? actors : [...actors, ...others]
   let hits = 0
   let kills = 0
   const ends: { x: number; y: number }[] = []
   const walls: Line[] = []
   const shots: Projectile[] = []
   const killed: number[] = []
+  const struck: { index: number; damage: number }[] = []
 
   for (let pellet = 0; pellet < weapon.pellets; pellet++) {
     const angle = (aim ?? shooter.angle) + (random() * 2 - 1) * weapon.spread
@@ -201,17 +228,26 @@ export function fire(
       angle,
       weapon.range,
       bodies,
-      (index) => isAlive(actors[index]!),
+      // Past the creatures is the other list, and nothing in it is ever a
+      // corpse to be shot through: a player is either there or not playing.
+      (index) => index >= actors.length || isAlive(actors[index]!),
     )
     ends.push({ x: shot.x, y: shot.y })
     if (shot.wall) walls.push(shot.wall)
     if (!shot.hit) continue
     hits++
-    if (damageActor(actors[shot.hit.index]!, weapon.damage, random)) {
+    const at = shot.hit.index
+    if (at >= actors.length) {
+      // Not a creature: say what was hit and let the caller decide what that
+      // means. Nothing here counts it, because a kill is a creature killed.
+      struck.push({ index: at - actors.length, damage: weapon.damage })
+      continue
+    }
+    if (damageActor(actors[at]!, weapon.damage, random)) {
       kills++
-      killed.push(shot.hit.index)
+      killed.push(at)
     }
   }
 
-  return { hits, kills, killed, ends, shots, walls }
+  return { hits, kills, killed, ends, shots, walls, struck }
 }
