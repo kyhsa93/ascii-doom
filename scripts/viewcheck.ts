@@ -599,11 +599,26 @@ await quietPage.waitForTimeout(900)
  */
 // The same `hold` every other check uses now, rather than a second copy of it
 // written inside this block -- which is how two of them came to exist.
-for (let i = 0; i < 4; i++) await hold(quietPage, 'ArrowDown', 170)
+/*
+ * Down to the sound line by reading the cursor rather than by counting presses.
+ *
+ * Counting was the first version and it broke the day a line was added above
+ * this one: four presses landed on the difficulty, "e" cycled that instead, and
+ * the failure read as "choosing the sound line did not switch it off" -- which
+ * blames the feature for a check that had drifted. A menu is allowed to grow.
+ */
+const walkTo = async (page: Page, label: string): Promise<boolean> => {
+  for (let i = 0; i < 12; i++) {
+    if ((await readOpened(page)).menuLabel.startsWith(label)) return true
+    await hold(page, 'ArrowDown', 170)
+  }
+  return (await readOpened(page)).menuLabel.startsWith(label)
+}
+const foundSoundLine = await walkTo(quietPage, 'sound:')
 await hold(quietPage, 'e', 170)
 await quietPage.waitForTimeout(300)
 const muted = await readOpened(quietPage)
-for (let i = 0; i < 4; i++) await hold(quietPage, 'ArrowUp', 170)
+await walkTo(quietPage, 'begin')
 await hold(quietPage, 'e', 170)
 await quietPage.waitForTimeout(600)
 const mutedStart = await readOpened(quietPage)
@@ -623,6 +638,7 @@ check('the game asks for a noise when you fire, and stops when told to', () => {
   )
 
   // And the switch. Without this half, a count that only ever rises would pass.
+  assert(foundSoundLine, 'the title has no line offering the sound')
   assert(!muted.audible, 'choosing the sound line did not switch it off')
   assert(
     mutedAfter.noisesPlayed === mutedStart.noisesPlayed,
@@ -1208,6 +1224,7 @@ function readOpened(page: Page) {
       seen: (probe.seen as number) ?? -1,
       /** The colours being carried, which is how a check sees a key arrive. */
       keys: (probe.keys as string[]) ?? [],
+      menuLabel: (probe.menuLabel as string) ?? '',
       cols: (probe.cols as number) ?? 0,
       frames: (probe.frames as number) ?? 0,
       health: (probe.health as number) ?? -1,
@@ -1888,6 +1905,55 @@ check('a recorded run plays itself back to the same place', () => {
     Math.hypot(whereRecordingEnded.x - 2, whereRecordingEnded.y - 3) > 1,
     'the recording never left the spawn, so matching it proves nothing',
   )
+})
+
+/*
+ * The maps that ship, reached the way a person reaches them.
+ *
+ * Sixty-eight files sit beside the page and are fetched one at a time, so this
+ * asks the two things that arrangement can get wrong: that the list arrives and
+ * turns the title line on, and that picking one actually loads that map rather
+ * than the campaign it was standing in.
+ */
+const shippedPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+shippedPage.on('pageerror', (error) => problems.push(`shipped maps: ${error.message}`))
+await shippedPage.goto(base, { waitUntil: 'domcontentloaded' })
+// Long enough for the list to arrive over the loopback, which is instant, plus
+// the frame that rebuilds the title with it.
+await shippedPage.waitForTimeout(1200)
+const titleWithMaps = await readOpened(shippedPage)
+// Down to the line that offers them: continue (disabled), begin, two levels,
+// then this one.
+for (let i = 0; i < 3; i++) await hold(shippedPage, 'ArrowDown')
+const onTheMapsLine = await readOpened(shippedPage)
+await hold(shippedPage, ' ')
+await shippedPage.waitForTimeout(400)
+const listOfMaps = await readOpened(shippedPage)
+// The first map in the list, which is the one the cursor starts on.
+await hold(shippedPage, ' ')
+await shippedPage.waitForTimeout(1500)
+const playingAShippedMap = await readOpened(shippedPage)
+await shippedPage.close()
+
+check('the maps that ship can be reached and played', () => {
+  assert(titleWithMaps.titleUp, 'the page did not come up on the title')
+  assert(
+    onTheMapsLine.menuLabel === 'the maps that ship',
+    `three lines down from the top is "${onTheMapsLine.menuLabel}" rather than the maps`,
+  )
+  // Choosing it swaps the title's list for the maps themselves.
+  assert(listOfMaps.titleUp, 'choosing the map list left the title')
+  assert(
+    /^(E\dM\d|MAP\d\d)$/.test(listOfMaps.menuLabel),
+    `the list offers "${listOfMaps.menuLabel}", which is not a map name`,
+  )
+  // And choosing one of those fetches it and plays it.
+  assert(!playingAShippedMap.titleUp, 'picking a map left the title up')
+  assert(
+    playingAShippedMap.level === listOfMaps.menuLabel,
+    `picked ${listOfMaps.menuLabel} and ended up in ${playingAShippedMap.level}`,
+  )
+  assert(playingAShippedMap.lines > 100, `${playingAShippedMap.level} came up with ${playingAShippedMap.lines} walls`)
 })
 
 check('pushing the stick walks the player', () => {

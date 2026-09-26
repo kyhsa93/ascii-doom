@@ -12,6 +12,7 @@
  * second copy of the projection formula.
  */
 
+import { readFileSync } from 'node:fs'
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { squeezed } from '../src/columns/sprite.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
@@ -3731,6 +3732,68 @@ test('the summary reads as a clock and a pair of counts', () => {
   const hidden = summaryLines({ seconds: 30, kills: 1, creatures: 2, collected: 1, supplies: 2, secrets: 3, found: 1 })
   assert(hidden.length === 5, `a map with secrets in it produced ${hidden.length} lines`)
   assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
+})
+
+console.log('\nthe maps that ship')
+
+test('every way of choosing something from the title is a distinct action', () => {
+  /*
+   * Written out here rather than read from the union, for the reason the
+   * tagged-special table is: a list that supplies its own expectations cannot
+   * notice a deletion. The title is the only way into anything in this game,
+   * so an action quietly disappearing is a feature quietly becoming
+   * unreachable -- which has happened twice in this project already.
+   */
+  const EXPECTED = ['continue', 'begin', 'level', 'map', 'shipped', 'pick', 'skill', 'sound']
+  const built: MenuItem[] = [
+    { label: 'continue', action: { kind: 'continue' } },
+    { label: 'begin', action: { kind: 'begin' } },
+    { label: 'a level', action: { kind: 'level', index: 0 } },
+    { label: 'a file map', action: { kind: 'map', name: 'E1M1' } },
+    { label: 'the maps that ship', action: { kind: 'shipped' } },
+    { label: 'one of them', action: { kind: 'pick', name: 'E1M1' } },
+    { label: 'difficulty', action: { kind: 'skill' } },
+    { label: 'sound', action: { kind: 'sound' } },
+  ]
+  assert(built.length === EXPECTED.length, `${built.length} items against ${EXPECTED.length} expected`)
+  for (const [at, item] of built.entries()) {
+    assert(item.action.kind === EXPECTED[at], `item ${at} is a ${item.action.kind}`)
+    // And each is choosable, which is what a title item is for.
+    assert(chosen(openMenu([item]))?.kind === item.action.kind, `${item.action.kind} cannot be chosen`)
+  }
+})
+
+test('every map that ships opens, and stands up as a level', () => {
+  /*
+   * The baked maps, read the same way a file somebody opens is read.
+   *
+   * This asks only what can be asked without the originals, because the
+   * originals are not in this repository and never will be: that each listed
+   * file is there, parses, has somewhere to stand, and is a room rather than
+   * an empty shell. Whether it matches what it was cut from is checked once at
+   * the desk that cuts it, by `scripts/bakemaps.ts` and the eyes on its output.
+   */
+  const listed = JSON.parse(readFileSync('web/public/maps/maps.json', 'utf8')) as {
+    name: string
+    file: string
+    bytes: number
+  }[]
+  assert(listed.length === 68, `${listed.length} maps are listed rather than sixty-eight`)
+
+  let smallest = Infinity
+  for (const entry of listed) {
+    const bytes = new Uint8Array(readFileSync(`web/public/maps/${entry.file}`))
+    assert(
+      bytes.length === entry.bytes,
+      `${entry.name} is ${bytes.length} bytes against the ${entry.bytes} the list claims`,
+    )
+    const state = wadLevelState(bytes, entry.name)
+    assert(state.level.sectors.length > 1, `${entry.name} came up with one room`)
+    assert(state.level.lines.length > 8, `${entry.name} came up with ${state.level.lines.length} walls`)
+    smallest = Math.min(smallest, state.level.sectors.length)
+  }
+  // Every one of them is a real map rather than a stub that happens to parse.
+  assert(smallest > 4, `the smallest map that ships has ${smallest} rooms`)
 })
 
 console.log('\ndemos')

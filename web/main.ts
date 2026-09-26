@@ -213,6 +213,40 @@ function keepRun(): void {
 const SAVE_EVERY = 5
 let sinceSaved = 0
 
+/*
+ * The maps that ship, listed once and fetched one at a time.
+ *
+ * Sixty-eight small WADs sit beside the page rather than inside it: all of
+ * them together are thirty times the game, and any one of them is a fraction
+ * of it. So the list arrives at startup -- a few hundred bytes -- and a map is
+ * only fetched when somebody picks it.
+ *
+ * Addressed from the document rather than from a path written out, because
+ * Pages serves this from a subdirectory and a URL that works locally and 404s
+ * there is the oldest mistake in this repository. `document.baseURI` is the
+ * page's own address, which is right under any prefix and needs nothing from
+ * the build to be true.
+ */
+interface Shipped {
+  readonly name: string
+  readonly file: string
+  readonly bytes: number
+}
+let shipped: readonly Shipped[] = []
+
+void fetch(new URL('maps/maps.json', document.baseURI))
+  .then((answer) => (answer.ok ? (answer.json() as Promise<Shipped[]>) : []))
+  .then((listed) => {
+    shipped = listed
+    // The title may already be up and built, and it was built without these.
+    if (titleUp) menu = titleMenu(menu.cursor)
+  })
+  .catch(() => {
+    // A list that will not load leaves the game exactly as it was before the
+    // maps shipped, which is a playable game. Nothing is said: nobody asked
+    // for them yet.
+  })
+
 /** The save on offer at the title, read once rather than on every frame. */
 let offered: Save | null = readSave()
 
@@ -230,6 +264,8 @@ function titleMenu(cursor?: number): Menu {
     { label: 'begin', action: { kind: 'begin' } },
     { label: 'the outpost', action: { kind: 'level', index: 0 } },
     { label: 'the cistern', action: { kind: 'level', index: 1 } },
+    // One line rather than sixty-eight, and disabled until the list arrives.
+    { label: 'the maps that ship', action: { kind: 'shipped' }, enabled: shipped.length > 0 },
     { label: `difficulty: ${skill}`, action: { kind: 'skill' } },
     { label: `sound: ${audible ? 'on' : 'off'}`, action: { kind: 'sound' } },
   ])
@@ -926,6 +962,30 @@ function step(): void {
       } else if (action?.kind === 'level') {
         titleUp = false
         startLevel(action.index)
+      } else if (action?.kind === 'shipped') {
+        // The same shape the file picker produces, so picking a map that ships
+        // and picking one out of a file you opened look and behave alike.
+        menu = openMenu(shipped.map((entry) => ({ label: entry.name, action: { kind: 'pick', name: entry.name } })))
+        say(`${shipped.length} maps — pick one`)
+      } else if (action?.kind === 'pick') {
+        const wanted = shipped.find((entry) => entry.name === action.name)
+        if (wanted === undefined) say(`there is no map called ${action.name}`)
+        else {
+          const asked = action.name
+          say(`fetching ${asked}`)
+          void fetch(new URL(`maps/${wanted.file}`, document.baseURI))
+            .then(async (answer) => {
+              if (!answer.ok) throw new Error(`${asked} answered ${answer.status}`)
+              return new Uint8Array(await answer.arrayBuffer())
+            })
+            .then((bytes) => {
+              titleUp = false
+              enterWad(bytes, asked)
+            })
+            // Said rather than thrown, the way the file picker's failures are:
+            // a map that will not load leaves you on the title with a reason.
+            .catch((error: unknown) => say((error as Error).message))
+        }
       } else if (action?.kind === 'map' && opened !== null) {
         titleUp = false
         enterWad(opened, action.name)

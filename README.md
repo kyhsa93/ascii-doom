@@ -140,10 +140,31 @@ BSD licence, and an independent work that merely happens to be compatible with
 a commercial game rather than taken from one.
 
 The pictures are turned into characters before the game ships, by
-`scripts/bakeart.ts`, and the result is committed as source. No WAD is
-redistributed and none is needed: the converter reads one once, at a desk. The
-notice the licence asks to travel with the work is in `docs/freedoom/`, with
-the contributors it names.
+`scripts/bakeart.ts`, and the result is committed as source: the converter
+reads a file once, at a desk, and what ships is characters rather than
+pictures. The notice the licence asks to travel with the work is in
+`docs/freedoom/`, with the contributors it names.
+
+The maps ship too, and they ship as maps. That sentence used to say no WAD was
+redistributed, and it is worth saying plainly that this is no longer true:
+`scripts/bakemaps.ts` cuts each of the sixty-eight down to the five lumps this
+engine reads and writes it out as a small WAD of its own, and those are in
+`web/public/maps/`. The licence allows it and the notice travels with them; the
+reason for saying so here is that a file which quietly stops being accurate is
+worse than one that never claimed anything.
+
+They are cut down rather than copied. A real map file is mostly a BSP tree, a
+visibility matrix and a collision grid -- SEGS, SSECTORS, NODES, REJECT,
+BLOCKMAP -- and this renderer has none of those ideas in it, so nine tenths of
+the weight goes. What is left is where the walls are, what is on them, how the
+rooms are lit and what is standing in them.
+
+And they stay as WADs rather than becoming some format of this project's own,
+which was the whole design decision. A format of mine would need a second
+importer beside the one that already reads files people open, and two
+importers for one job is how the two of them drift apart -- so the maps that
+ship and the maps you open go through exactly the same code and are held to
+exactly the same checks.
 
 That costs something and it is worth saying which: the page was seventeen
 kilobytes gzipped and is about seventy-eight now. Thirty-one of that is the art

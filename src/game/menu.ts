@@ -36,6 +36,18 @@ export type MenuAction =
   | { readonly kind: 'level'; readonly index: number }
   | { readonly kind: 'map'; readonly name: string }
   /**
+   * Show the maps that ship with the game, which is most of what there is.
+   *
+   * Separate from `map` because the two arrive differently: a file's maps are
+   * already in hand once somebody has opened it, and these are sixty-eight
+   * small files fetched one at a time. Reaching them is one line on the title
+   * rather than sixty-eight, for the same reason the difficulty is one line
+   * that cycles.
+   */
+  | { readonly kind: 'shipped' }
+  /** One of those, by name, fetched when it is chosen. */
+  | { readonly kind: 'pick'; readonly name: string }
+  /**
    * Turn the difficulty up or down.
    *
    * A setting rather than a destination, which is why it is one item that
