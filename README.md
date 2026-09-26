@@ -132,9 +132,19 @@ Nothing is bundled: thirty megabytes of someone else's work has no business in
 a page that is thirty kilobytes and caches itself for offline use, and the file
 never leaves your machine.
 
-Be clear about what arrives. It is a place to walk around in, not a level: no
-creatures, no supplies, no doors, and no way to finish. What does come across
-is the geometry, the lighting, the outdoor rooms — drawn as open air rather
+Be clear about what arrives. It is not a level: no supplies, no doors, and no
+way to finish.
+
+The creatures do come across, after a fashion. A map says where something
+stood and roughly what weight it was, and one of this project's own three
+creatures stands there instead — nothing of the original's art, names or
+behaviour is reproduced, and the grouping is by weight rather than by identity.
+Numbers this game has no answer for put nothing there at all, which is why a
+map arrives without its lamps and barrels rather than with them swinging at
+you. The first map of the set this was built against places fifty-three of
+them.
+
+What else comes across is the geometry, the lighting, the outdoor rooms — drawn as open air rather
 than as a ceiling twenty metres up — and the damaging floors, which land on the
 same hazard rules the maps here already use, because the original marks them
 with a sector type this engine now reads. Dying in one puts you back at its

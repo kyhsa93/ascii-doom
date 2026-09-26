@@ -107,11 +107,38 @@ export interface Spawn {
   readonly sector: number
 }
 
+/**
+ * Something the map places, as the file describes it.
+ *
+ * Reported rather than interpreted. What a type number means is a question
+ * about a game, not about a file format, so the decision about what -- if
+ * anything -- stands here is made a layer up.
+ */
+export interface WadThing {
+  /** The editor number. Every map format shares these; what they mean is not. */
+  readonly type: number
+  readonly x: number
+  readonly y: number
+  readonly angle: number
+  /** Which sector it stands in, or -1 for one placed outside the map. */
+  readonly sector: number
+}
+
 export interface WadMap {
   readonly name: string
   readonly level: Level
   /** Where the first player starts, or null if the map has no start at all. */
   readonly spawn: Spawn | null
+  /**
+   * Everything the file places except two kinds: the player starts, and the
+   * things marked for deathmatch only.
+   *
+   * Both exclusions are facts about the format rather than about any game. A
+   * start is consumed above; bit four of a thing's flags means "multiplayer
+   * only", and there are some nine hundred of those across the maps this was
+   * built against. What the rest of the numbers mean is decided a layer up.
+   */
+  readonly things: readonly WadThing[]
 }
 
 export function readMap(bytes: Uint8Array, name: string): WadMap {
@@ -235,22 +262,29 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
   const level: Level = { sectors: built, lines }
 
   let spawn: Spawn | null = null
+  const placed: WadThing[] = []
   for (let i = 0; i < things.size / 10; i++) {
     const at = things.at + i * 10
-    // Thing type 1 is where the first player starts.
-    if (view.getUint16(at + 6, true) !== 1) continue
+    const type = view.getUint16(at + 6, true)
+    const flags = view.getUint16(at + 8, true)
     const x = view.getInt16(at, true) / UNITS_PER_METRE
     const y = view.getInt16(at + 2, true) / UNITS_PER_METRE
-    spawn = {
-      x,
-      y,
-      // Doom's angles are degrees counter-clockwise from east, and so are this
-      // engine's, so the only conversion is to radians.
-      angle: (view.getInt16(at + 4, true) * Math.PI) / 180,
-      sector: sectorAt(level, x, y),
+    // Doom's angles are degrees counter-clockwise from east, and so are this
+    // engine's, so the only conversion is to radians.
+    const angle = (view.getInt16(at + 4, true) * Math.PI) / 180
+
+    // Thing type 1 is where the first player starts. The first one wins, and
+    // the rest are skipped rather than reported: a map may carry several, and a
+    // list that called itself "everything else" while holding player starts
+    // would be a small lie waiting for somebody to count on it.
+    if (type === 1) {
+      spawn ??= { x, y, angle, sector: sectorAt(level, x, y) }
+      continue
     }
-    break
+    // Bit four is "this exists only in a deathmatch".
+    if ((flags & 0x10) !== 0) continue
+    placed.push({ type, x, y, angle, sector: sectorAt(level, x, y) })
   }
 
-  return { name, level, spawn }
+  return { name, level, spawn, things: placed }
 }

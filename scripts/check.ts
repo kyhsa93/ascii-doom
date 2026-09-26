@@ -37,6 +37,7 @@ import {
 } from '../src/columns/render.ts'
 import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
+import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
@@ -1441,6 +1442,84 @@ test('a map that puts nobody anywhere is refused rather than run', () => {
     complained = (error as Error).message
   }
   assert(complained.includes('no player start'), `a map with nobody in it gave "${complained}"`)
+})
+
+test('a map from a file stands its creatures up', () => {
+  // Two monsters in the eastern room, at known places, facing known ways.
+  const map = tinyWad('E1M1', true, '', [
+    [160, 32, 90, 3001],
+    [200, 96, 180, 3002],
+  ])
+  const state = wadLevelState(map, 'E1M1')
+
+  assert(state.actors.length === 2, `the map placed two creatures and ${state.actors.length} stood up`)
+  for (const [i, actor] of state.actors.entries()) {
+    assert(actor.sector >= 0, `creature ${i} is standing outside the map`)
+    const room = state.level.sectors[actor.sector]!
+    close(actor.floor, room.floor, 1e-9, `creature ${i} standing on its own room's floor`)
+    assert(actor.health === actor.kind.health, `creature ${i} started on ${actor.health} health`)
+  }
+
+  // The facing comes across. It decides which way a creature is looking when
+  // you walk in, so a dropped angle is the difference between being seen and
+  // seeing first -- and it would never show up as a crash.
+  close(state.actors[0]!.angle, Math.PI / 2, 1e-9, 'a creature placed facing north')
+  close(state.actors[1]!.angle, Math.PI, 1e-9, 'a creature placed facing west')
+})
+
+test('creatures from a file wake up and behave like what they are', () => {
+  // A populated array is not a living map. This steps the same rules the page
+  // steps and asks whether anything happens.
+  //
+  // Two kinds on purpose: the mapping groups the original's classes by weight
+  // onto three creatures of this project's own, and if that grouping were
+  // doing nothing, both of these would be the same thing standing in two
+  // places.
+  const state = wadLevelState(
+    tinyWad('E1M1', true, '', [
+      [160, 64, 180, 3001],
+      [200, 64, 180, 3002],
+    ]),
+    'E1M1',
+  )
+  assert(state.actors.length === 2, `two things placed, ${state.actors.length} stood up`)
+  assert(!state.actors.some((actor) => actor.awake), 'a creature was awake before anyone had seen it')
+
+  const thrower = state.actors.find((actor) => actor.kind.ranged !== undefined)
+  const brawler = state.actors.find((actor) => actor.kind.ranged === undefined)
+  assert(thrower !== undefined, 'neither creature throws, so the grouping put the same kind twice')
+  assert(brawler !== undefined, 'neither creature closes, so the grouping put the same kind twice')
+
+  const reach = (actor: { x: number; y: number }) =>
+    Math.hypot(actor.x - state.player.x, actor.y - state.player.y)
+  const was = reach(brawler)
+  // Five seconds, in the same sixtieths the page runs.
+  for (let i = 0; i < 300; i++) updateActors(state.level, state.actors, state.player, 1.6, 1 / 60)
+
+  assert(state.actors.every((actor) => actor.awake), 'a creature in plain sight never woke')
+  assert(reach(brawler) < was, `the one with no way to hit from a distance stayed ${was.toFixed(2)}m away`)
+})
+
+test('only the numbers this game has a creature for put anything there', () => {
+  // The whitelist's whole claim. A hundred and twenty-one distinct thing types
+  // appear across the maps this was built against, and nearly all of them are
+  // supplies, scenery and markers. A map missing a lamp is a map; a map with a
+  // lamp swinging at you is not.
+  assert(creatureFor(3001) !== null, 'the commonest monster in both files stands nothing up')
+  assert(creatureFor(3002) !== null, 'a heavy monster stands nothing up')
+  assert(creatureFor(2014) === null, 'a health bonus was given a creature')
+  assert(creatureFor(2035) === null, 'a barrel was given a creature')
+  assert(creatureFor(1) === null, "the player's own start was given a creature")
+  assert(creatureFor(11) === null, 'a deathmatch start was given a creature')
+
+  // Every number in the table resolves. A typo here is a monster that silently
+  // never appears, and nothing else would notice.
+  for (const type of creatureTypes()) {
+    assert(creatureFor(type) !== null, `type ${type} is in the table and maps to nothing`)
+  }
+
+  const scenery = wadLevelState(tinyWad('E1M1', true, '', [[160, 32, 0, 2035]]), 'E1M1')
+  assert(scenery.actors.length === 0, `a barrel put ${scenery.actors.length} creatures on the map`)
 })
 
 test('asking for a map the file does not have says so', () => {

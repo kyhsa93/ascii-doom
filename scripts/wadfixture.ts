@@ -11,7 +11,13 @@
  * full of nukage, and the western floor above zero so that a check comparing a
  * player's floor against the room's compares something.
  */
-export function tinyWad(mapName: string, withStart = true, ceilingFlat = ''): Uint8Array {
+export function tinyWad(
+  mapName: string,
+  withStart = true,
+  ceilingFlat = '',
+  /** Extra things, as [x, y, angle, type] in map units, placed after the start. */
+  extraThings: readonly [number, number, number, number][] = [],
+): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
     [128, 0],
@@ -41,7 +47,10 @@ export function tinyWad(mapName: string, withStart = true, ceilingFlat = ''): Ui
   ]
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.
-  const THINGS: [number, number, number, number][] = withStart ? [[64, 64, 90, 1]] : []
+  const THINGS: [number, number, number, number][] = [
+    ...(withStart ? ([[64, 64, 90, 1]] as [number, number, number, number][]) : []),
+    ...extraThings,
+  ]
 
   const bytes = (size: number) => new Uint8Array(size)
   const lump = (size: number, write: (view: DataView) => void) => {

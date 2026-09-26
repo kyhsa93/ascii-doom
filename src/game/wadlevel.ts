@@ -15,9 +15,11 @@
  */
 
 import { readMap } from '../columns/wad.ts'
+import { spawnActor, type Actor } from './ai.ts'
 import { makeGoal } from './exit.ts'
 import type { LevelDef, LevelState } from './levels.ts'
 import { spawnPlayer } from './player.ts'
+import { creatureFor } from './wadthings.ts'
 
 /**
  * A sector index no map can have.
@@ -50,11 +52,35 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
     exitTag: '',
   }
 
+  /**
+   * What the map placed, where this game has an answer for it.
+   *
+   * Two things are dropped rather than guessed at. A number this game has no
+   * creature for -- a lamp, a medikit, a marker -- puts nothing there, which is
+   * why the mapping is a whitelist. And a thing the file places outside every
+   * sector has no floor to stand on, so it is skipped instead of being spawned
+   * into nowhere.
+   *
+   * The facing comes across, because it decides which way a creature is looking
+   * when you walk in on it, and that is the difference between being seen and
+   * seeing first.
+   */
+  const actors: Actor[] = []
+  for (const thing of map.things) {
+    const kind = creatureFor(thing.type)
+    if (!kind || thing.sector < 0) continue
+    const floor = map.level.sectors[thing.sector]?.floor
+    if (floor === undefined) continue
+    const actor = spawnActor(kind, thing.x, thing.y, thing.sector, floor)
+    actor.angle = thing.angle
+    actors.push(actor)
+  }
+
   return {
     def,
     level: map.level,
     player: spawnPlayer(map.level, map.spawn.x, map.spawn.y, map.spawn.angle),
-    actors: [],
+    actors,
     pickups: [],
     movers: [],
     goal: makeGoal(NO_EXIT),

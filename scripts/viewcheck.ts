@@ -867,6 +867,8 @@ function readOpened(page: Page) {
       frames: (probe.frames as number) ?? 0,
       health: (probe.health as number) ?? -1,
       dead: probe.dead === true,
+      alive: (probe.alive as number) ?? -1,
+      awake: (probe.awake as number) ?? -1,
     }
   })
 }
@@ -879,7 +881,15 @@ await wadPage.keyboard.up('w')
 await wadPage.waitForTimeout(200)
 const onOutpost = await readOpened(wadPage)
 
-const wadBytes = [...tinyWad('E1M1')]
+// With monsters in it. The page had only ever been handed an empty map, so
+// nothing said it could carry a level with creatures standing in it -- and a
+// level from a file is the only kind whose creatures the page did not build.
+const wadBytes = [
+  ...tinyWad('E1M1', true, '', [
+    [160, 32, 180, 3001],
+    [200, 96, 180, 3002],
+  ]),
+]
 const tookIt = await wadPage.evaluate(
   ([bytes, name]) =>
     (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
@@ -903,6 +913,10 @@ check('the page can open a map from a file and keep running', () => {
   assert(onWad.lines === 7, `the page built ${onWad.lines} lines from a seven-line map`)
   assert(onWad.cols > 20, `the grid came back ${onWad.cols} columns wide`)
   assert(stillRunning.frames > onWad.frames, 'the page stopped drawing once the map changed')
+  // The creatures the file placed are standing in it, and the page is stepping
+  // them: Node can say the array was built, but only a running page can say
+  // the simulation took it up without falling over.
+  assert(onWad.alive === 2, `the map placed two creatures and the page reports ${onWad.alive} alive`)
 })
 
 check('opening a map forgets the one before it', () => {
