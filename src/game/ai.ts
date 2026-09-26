@@ -101,6 +101,21 @@ export interface ActorKind {
     readonly radius: number
     readonly damage: number
   }
+  /**
+   * How far off the ground it floats, for the ones that do not walk.
+   *
+   * Seven hundred and forty-three of the bodies a normal game meets fly in the
+   * original -- the floating one, the skull that charges, the one that spawns
+   * them -- and every one of them was standing on the floor here. What was
+   * missing turned out not to be a third dimension: this renderer already draws
+   * a sprite from a height and traces sight from one, so a creature that floats
+   * is a creature whose art, eyes and muzzle all sit higher. Nothing moves up
+   * and down; it hovers, which is what they look like anyway.
+   *
+   * Clamped against the ceiling where it spawns, because ten of those
+   * seven hundred stand in rooms with no headroom to rise into.
+   */
+  readonly hover?: number
 }
 
 export interface Actor extends Body {
@@ -126,13 +141,49 @@ export interface Actor extends Body {
   grudge: number
 }
 
-export function spawnActor(kind: ActorKind, x: number, y: number, sector: number, floor: number): Actor {
+export function spawnActor(
+  kind: ActorKind,
+  x: number,
+  y: number,
+  sector: number,
+  floor: number,
+  /**
+   * The ceiling of the room it is spawning in, for clamping a hover.
+   *
+   * Optional so every existing caller means what it meant; without it a flyer
+   * rises by its full amount, which is right for the levels written here and
+   * for any room tall enough.
+   */
+  ceiling = Infinity,
+): Actor {
+  // Worked out once, here, rather than added wherever a height is read. There
+  // are five such places -- two for sight, two for its gun, one for the art --
+  // and a hover applied at four of them would be a creature that sees from the
+  // air and shoots from its feet.
+  const wanted = kind.hover ?? 0
+  const room = Math.max(0, ceiling - floor - kind.height)
+  const lift = Math.min(wanted, room)
+
   return {
     kind,
     x,
     y,
     sector,
-    floor,
+    floor: floor + lift,
+    hover: lift,
+    /*
+     * Recorded on the body, not just added to the floor.
+     *
+     * `moveBody` recomputes the floor from whatever room the body ends up in
+     * and adds back whatever the body says it floats at -- so a lift that lived
+     * only in the spawned floor lasted exactly one frame. Measured before this
+     * line existed: a floater rose 1.6 metres and was back on the ground two
+     * metres of walking later.
+     *
+     * The clamped value rather than the kind's, so a creature squeezed under a
+     * low ceiling stays squeezed when it moves along the corridor it is in.
+     */
+
     radius: kind.radius,
     height: kind.height,
     state: 'dormant',

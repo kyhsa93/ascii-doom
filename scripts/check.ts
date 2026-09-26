@@ -127,6 +127,8 @@ import {
   ALL_SPRITES,
   BARREL_KIND,
   CRAWLER_KIND,
+  EMBER_KIND,
+  FLOATER_KIND,
   GUNMAN_KIND,
   SHOOTER_KIND,
   DRIFTER_KIND,
@@ -4925,6 +4927,73 @@ test('the widest weapon fits the narrowest grid the game draws', () => {
   // And it leaves room to see the room: fourteen rows of weapon and three of
   // status bar out of the forty-six a phone lying down draws.
   assert(14 + BAR_ROWS < 46, 'the weapon and the bar fill a phone held sideways')
+})
+
+console.log('\ncreatures that do not touch the ground')
+
+test('a floating creature spawns off the floor and a walking one does not', () => {
+  /*
+   * Seven hundred and forty-three of the bodies a normal game meets fly in the
+   * original, and all of them stood on the floor here. What was missing was not
+   * a third dimension: the renderer already draws a sprite from a height and
+   * traces sight from one, so a creature that floats is one whose art, eyes and
+   * muzzle sit higher. It hovers rather than rising and falling, which is what
+   * they look like anyway.
+   */
+  const room = plainLevel([0], [])
+  room.sectors[0]!.ceiling = 8
+  const floater = spawnActor(FLOATER_KIND, 1, 1, 0, 0, 8)
+  const crawler = spawnActor(CRAWLER_KIND, 1, 1, 0, 0, 8)
+  close(floater.floor, FLOATER_KIND.hover ?? 0, 1e-9, 'how far the floater rose')
+  close(crawler.floor, 0, 1e-9, 'a walking creature left the ground')
+  assert(FLOATER_KIND.hover !== undefined && FLOATER_KIND.hover > 0, 'the floater has no hover')
+  assert(CRAWLER_KIND.hover === undefined, 'a walking creature was given a hover')
+
+  // The charging skull floats too, and lower than the big one: it comes at your
+  // face rather than looking over the furniture. Two flying kinds rather than
+  // one, because the two fights are not the same fight.
+  const ember = spawnActor(EMBER_KIND, 1, 1, 0, 0, 8)
+  assert(EMBER_KIND.hover !== undefined && EMBER_KIND.hover > 0, 'the ember has no hover')
+  close(ember.floor, EMBER_KIND.hover, 1e-9, 'how far the ember rose')
+  assert(
+    (EMBER_KIND.hover ?? 0) < (FLOATER_KIND.hover ?? 0),
+    'the charging one floats as high as the one that hangs back',
+  )
+  assert(EMBER_KIND.speed > FLOATER_KIND.speed, 'the charging one is no faster than the one that throws')
+})
+
+test('a low ceiling presses a floater back to the ground', () => {
+  // Ten of the seven hundred and forty-three stand in rooms with no headroom to
+  // rise into -- a doorway, usually. Rising through the ceiling would be worse
+  // than not rising.
+  const tight = spawnActor(FLOATER_KIND, 1, 1, 0, 0, FLOATER_KIND.height + 0.2)
+  close(tight.floor, 0.2, 1e-9, 'the rise left under a low ceiling')
+
+  const none = spawnActor(FLOATER_KIND, 1, 1, 0, 0, FLOATER_KIND.height)
+  close(none.floor, 0, 1e-9, 'a floater with no headroom at all still rose')
+
+  // And with no ceiling named, it rises fully: every caller that predates this
+  // means what it always meant.
+  const open = spawnActor(FLOATER_KIND, 1, 1, 0, 0)
+  close(open.floor, FLOATER_KIND.hover ?? 0, 1e-9, 'the rise with no ceiling given')
+})
+
+test('walking does not put a floater back on the ground', () => {
+  /*
+   * The failure this was one line away from. `moveBody` sets the floor from
+   * whatever room the body ended up in, so a creature lifted at spawn would
+   * have dropped on its first step -- the lift would have been real for exactly
+   * one frame and invisible ever after.
+   */
+  const level = LEVEL_1
+  const sector = sectorAt(level, 18, 4)
+  const floater = spawnActor(FLOATER_KIND, 18, 4, sector, level.sectors[sector]!.floor, 8)
+  const rose = floater.floor - level.sectors[sector]!.floor
+  assert(rose > 0.5, `the floater only rose ${rose}`)
+
+  for (let step = 0; step < 40; step++) moveBody(level, floater, 0.05, 0)
+  const still = floater.floor - level.sectors[floater.sector]!.floor
+  close(still, rose, 1e-9, 'the height a floater kept after walking two metres')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

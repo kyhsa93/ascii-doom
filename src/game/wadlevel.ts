@@ -175,7 +175,10 @@ export function wadLevelState(
       const looks =
         upright === null ? kind : { ...kind, sprite: upright, corpse: fallen ?? kind.corpse }
       if (upright !== null) fromFile++
-      const actor = spawnActor(looks, thing.x, thing.y, thing.sector, room.floor)
+      // The ceiling too, so a creature that floats is clamped by the room it
+      // spawns in rather than rising through it: ten of the seven hundred and
+      // forty-three flyers in these files stand where there is no headroom.
+      const actor = spawnActor(looks, thing.x, thing.y, thing.sector, room.floor, room.ceiling)
       actor.angle = thing.angle
       actors.push(actor)
       continue

@@ -142,7 +142,14 @@ export function loadLevel(def: LevelDef): LevelState {
     if (sector < 0) {
       throw new Error(`${def.name}: ${placement.kind.name} at (${placement.x}, ${placement.y}) is outside the map`)
     }
-    const actor = spawnActor(placement.kind, placement.x, placement.y, sector, level.sectors[sector]!.floor)
+    const actor = spawnActor(
+      placement.kind,
+      placement.x,
+      placement.y,
+      sector,
+      level.sectors[sector]!.floor,
+      level.sectors[sector]!.ceiling,
+    )
     actor.angle = placement.angle
     return actor
   })

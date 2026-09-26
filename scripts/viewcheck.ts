@@ -1756,14 +1756,25 @@ await thumbed.waitForTimeout(900)
 
 const zones: { name: string; page: Page; screen: DOMRect | null; look: DOMRect | null }[] = []
 const zoneOf = async (name: string, page: Page) => {
+  // Both boxes are read inline rather than through a helper. A nested function
+  // inside an evaluated body makes the bundler emit a call to its own __name
+  // helper, which does not exist in the page: the whole run died here with
+  // "__name is not defined" and every check after this one never ran.
   const measured = await page.evaluate(() => {
-    const box = (id: string) => {
-      const element = document.getElementById(id)
-      if (!element) return null
-      const rect = element.getBoundingClientRect()
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, bottom: rect.bottom } as unknown as DOMRect
+    const screenEl = document.getElementById('screen')
+    const lookEl = document.getElementById('look')
+    const screenRect = screenEl ? screenEl.getBoundingClientRect() : null
+    const lookRect = lookEl ? lookEl.getBoundingClientRect() : null
+    return {
+      screen: screenRect
+        ? ({ x: screenRect.x, y: screenRect.y, width: screenRect.width,
+             height: screenRect.height, bottom: screenRect.bottom } as unknown as DOMRect)
+        : null,
+      look: lookRect
+        ? ({ x: lookRect.x, y: lookRect.y, width: lookRect.width,
+             height: lookRect.height, bottom: lookRect.bottom } as unknown as DOMRect)
+        : null,
     }
-    return { screen: box('screen'), look: box('look') }
   })
   zones.push({ name, page, ...measured })
 }

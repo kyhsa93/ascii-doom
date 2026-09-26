@@ -552,6 +552,27 @@ The title screen carries it as a line that cycles rather than three that sit
 there, because a file's map list already fills the rows under the logo. Normal
 to begin with, which is where the original starts you.
 
+The things that fly do. Seven hundred and forty-three of the bodies a normal run
+of the two files puts in front of you float in the original -- the big one that
+throws, the skull that charges, the one that spawns them -- and every one of
+them was standing on the floor here, which is why a cacodemon read as a man
+lobbing things.
+
+What was missing turned out not to be a third dimension. This renderer already
+draws a sprite from a height and traces sight and gunfire from one, so a
+creature that floats is a creature whose art, eyes and muzzle all sit higher:
+one number on the kind, applied once where the body is made. Nothing rises or
+falls -- it hovers, which is what they look like anyway.
+
+Two details cost more than the idea. A low ceiling has to press them back down,
+because ten of those seven hundred stand in doorways with no headroom; the rise
+is clamped against the room they spawn in, and eight of them end up flat. And
+the hover has to live on the body rather than only in the height it was spawned
+at, because movement recomputes that height from whatever room the body ends up
+in -- without it a floater rose a metre and a half and was back on the ground
+two metres of walking later. That was one line, and a check caught it rather
+than a screenshot.
+
 The barrels do arrive, and they are the one piece of scenery that is a body:
 five hundred and ninety-seven of them across the two files, standing on
 thirty-eight maps, and three hundred and thirty-three of those are within one

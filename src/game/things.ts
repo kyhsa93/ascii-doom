@@ -351,6 +351,38 @@ export const DRIFTER_KIND: ActorKind = {
   },
 }
 
+/**
+ * The one that floats and throws, which is most of what flies in the original.
+ *
+ * Seven hundred and forty-three flying bodies across a normal run of the two
+ * files, and all of them were standing on the floor here. A drifter with its
+ * feet off the ground is not a new creature -- same bolts, same pace -- but it
+ * reads completely differently in a room, and it is the difference between a
+ * cacodemon and a man throwing things.
+ */
+export const FLOATER_KIND: ActorKind = {
+  ...DRIFTER_KIND,
+  name: 'floater',
+  health: 30,
+  speed: 1.7,
+  // Head height, so it looks over what a walking creature hides behind.
+  hover: 1.6,
+}
+
+/**
+ * The small one that charges, off the ground.
+ *
+ * Fast and weak, as the crawler is, but arriving at eye level: the original's
+ * lost soul is memorable for coming at your face rather than your knees.
+ */
+export const EMBER_KIND: ActorKind = {
+  ...CRAWLER_KIND,
+  name: 'ember',
+  health: 20,
+  speed: 3.2,
+  hover: 1.0,
+}
+
 export const LEVEL_1_ACTORS: ActorPlacement[] = [
   // Down the corridor, facing you: the first thing that moves.
   { kind: CRAWLER_KIND, x: 12, y: 3, angle: Math.PI },

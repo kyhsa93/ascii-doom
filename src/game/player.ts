@@ -33,6 +33,15 @@ export const STEP_HEIGHT = 0.7
 
 /** Anything that occupies space and moves through the map. */
 export interface Body {
+  /**
+   * How far above its room's floor this body rides, for the ones that fly.
+   *
+   * Carried on the body rather than looked up from its kind because movement is
+   * the thing that would otherwise forget it: `moveBody` resets the floor from
+   * whatever room the body ended up in, and a creature that floats has to keep
+   * floating across a threshold.
+   */
+  hover?: number
   x: number
   y: number
   sector: number
@@ -154,6 +163,10 @@ export function moveBody(level: Level, body: Body, dx: number, dy: number): bool
   body.x = nx
   body.y = ny
   body.sector = sector
-  body.floor = level.sectors[sector]!.floor
+  // Whatever it was floating at, it still is. Without the hover the floor is
+  // simply the room's, which walked every flying creature back down to the
+  // ground the moment it took a step -- the spawn lifted them and the first
+  // frame of movement put them back.
+  body.floor = level.sectors[sector]!.floor + (body.hover ?? 0)
   return moved
 }

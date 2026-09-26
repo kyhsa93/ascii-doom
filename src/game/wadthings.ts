@@ -24,6 +24,8 @@ import {
   BARREL_KIND,
   CRAWLER_KIND,
   DRIFTER_KIND,
+  EMBER_KIND,
+  FLOATER_KIND,
   GUNMAN_KIND,
   SENTRY_KIND,
   SHOOTER_KIND,
@@ -33,9 +35,23 @@ import {
  * The commonest small ones -- the things a map puts in the way rather than in
  * your path. Fast, weak, and there are a lot of them.
  */
-const LIGHT = [
-  3006, // the small flying one
+const LIGHT: number[] = []
+
+/**
+ * The ones that do not touch the ground.
+ *
+ * Seven hundred and forty-three of the bodies a normal game meets, and every
+ * one of them used to stand on the floor: the big floating one filed with the
+ * things that throw, the charging skull with the things that scuttle. They are
+ * the same fights at a different height, which is most of what made them
+ * memorable -- a skull comes at your face and a cacodemon looks over what a
+ * walking creature would hide behind.
+ */
+const FLOATERS = [
+  3005, // the big one that throws
+  71, // the one that spawns them, which floats the same way
 ]
+const CHARGERS = [3006]
 
 /**
  * The ones that carry a rifle.
@@ -61,10 +77,8 @@ const SHOTGUNS = [9]
  */
 const THROWERS = [
   3001, // the commonest of all, at three and a half thousand placements
-  3005, // the large floating one
   65,
   66,
-  71,
   64,
 ]
 
@@ -134,6 +148,8 @@ const BARRELS = [2035]
 const BY_TYPE = new Map<number, ActorKind>([
   ...BARRELS.map((type) => [type, BARREL_KIND] as const),
   ...LIGHT.map((type) => [type, CRAWLER_KIND] as const),
+  ...FLOATERS.map((type) => [type, FLOATER_KIND] as const),
+  ...CHARGERS.map((type) => [type, EMBER_KIND] as const),
   ...RIFLES.map((type) => [type, SHOOTER_KIND] as const),
   ...SHOTGUNS.map((type) => [type, GUNMAN_KIND] as const),
   ...THROWERS.map((type) => [type, DRIFTER_KIND] as const),
