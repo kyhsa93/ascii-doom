@@ -368,6 +368,20 @@ creatures and twenty-five of them are armed.
 Numbers this game has no answer for put nothing there at all, which is why a
 map arrives without its lamps rather than with them swinging at you.
 
+A map is built for one difficulty rather than all of them at once. Doom's five
+settings are three sets of flags -- the two easy ones share a bit and the two
+hard ones share another -- and the importer was reading none of them, so every
+body in the file was standing there together: twelve thousand two hundred and
+ninety-two across the two files, which is more than the hardest setting the
+original offers. Counted per setting it is six thousand three hundred and fifty
+on easy, nine thousand on normal, eleven thousand two hundred and eighty-three
+on hard. The supplies barely move between them, which is the original's shape
+too: what a setting changes is who is waiting for you, not what you find.
+
+The title screen carries it as a line that cycles rather than three that sit
+there, because a file's map list already fills the rows under the logo. Normal
+to begin with, which is where the original starts you.
+
 The barrels do arrive, and they are the one piece of scenery that is a body:
 five hundred and ninety-seven of them across the two files, standing on
 thirty-eight maps, and three hundred and thirty-three of those are within one

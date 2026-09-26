@@ -27,6 +27,14 @@ export type MenuAction =
   | { readonly kind: 'begin' }
   | { readonly kind: 'level'; readonly index: number }
   | { readonly kind: 'map'; readonly name: string }
+  /**
+   * Turn the difficulty up or down.
+   *
+   * A setting rather than a destination, which is why it is one item that
+   * cycles rather than three that sit there: the title has room for a handful
+   * of lines and a file's map list already fills them.
+   */
+  | { readonly kind: 'skill' }
 
 export interface MenuItem {
   readonly label: string

@@ -122,6 +122,15 @@ export interface WadThing {
   readonly angle: number
   /** Which sector it stands in, or -1 for one placed outside the map. */
   readonly sector: number
+  /**
+   * Which skills this thing appears on: bit 0 the two easy ones, bit 1 the
+   * middle one, bit 2 the two hard ones.
+   *
+   * Reported rather than applied, like everything else here. Which skill is
+   * being played is a question about a game, and a thing that stands on one
+   * skill and not another is a fact about the file.
+   */
+  readonly skills: number
 }
 
 /**
@@ -399,7 +408,10 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
     }
     // Bit four is "this exists only in a deathmatch".
     if ((flags & 0x10) !== 0) continue
-    placed.push({ type, x, y, angle, sector: sectorAt(level, x, y) })
+    // Bits 0 to 2 are the skills this thing shows up on. Kept raw: the mapping
+    // from a skill setting to these bits belongs a layer up, with everything
+    // else that decides what a number means.
+    placed.push({ type, x, y, angle, sector: sectorAt(level, x, y), skills: flags & 0x07 })
   }
 
   return { name, level, spawn, things: placed, specials, tagged }

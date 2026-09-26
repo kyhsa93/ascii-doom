@@ -48,7 +48,28 @@ import { taggedFrom } from './wadswitch.ts'
  */
 const NO_EXIT = -2
 
-export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0.6): LevelState {
+/**
+ * Which skill a map is being played on.
+ *
+ * Doom's five settings are three sets of flags -- the two easy ones share a
+ * bit, the two hard ones share another -- so three is all a file can actually
+ * distinguish. Counted across the two files: easy places six thousand three
+ * hundred and fifty bodies, normal nine thousand, hard eleven thousand two
+ * hundred and eighty-three. Everything was arriving at once, twelve thousand
+ * two hundred and ninety-two of them, which is more than the hardest setting
+ * the original offers.
+ */
+export type Skill = 'easy' | 'normal' | 'hard'
+
+/** The flag bit each skill looks for. */
+const SKILL_BIT: Record<Skill, number> = { easy: 0x01, normal: 0x02, hard: 0x04 }
+
+export function wadLevelState(
+  bytes: Uint8Array,
+  mapName: string,
+  cellAspect = 0.6,
+  skill: Skill = 'normal',
+): LevelState {
   const map = readMap(bytes, mapName)
   if (!map.spawn) throw new Error(`${mapName} has no player start to stand on`)
   if (map.spawn.sector < 0) throw new Error(`${mapName} starts the player outside its own map`)
@@ -133,8 +154,13 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
   // Counted as it happens. Whether a picture came out of this file is known
   // exactly here and nowhere else afterwards.
   let fromFile = 0
+  const wanted = SKILL_BIT[skill]
   for (const thing of map.things) {
     if (thing.sector < 0) continue
+    // A thing that is not on this skill is not on this map. The original hides
+    // a third of the bodies on the easiest setting and this is the whole of how
+    // it does it.
+    if ((thing.skills & wanted) === 0) continue
     const room = map.level.sectors[thing.sector]
     if (!room) continue
 

@@ -4076,7 +4076,8 @@ function teleportFixture(special: number, tag: number, padSector: number) {
     front: 0, back: 1, material: 'wall', blocking: false,
   }
   const specials: LineSpecial[] = [{ special, tag, front: 0, back: 1, line }]
-  const things: WadThing[] = [{ type: 14, x: 40, y: 60, angle: 90, sector: padSector }]
+  // Every skill, because which skills a pad stands on is not what this is about.
+  const things: WadThing[] = [{ type: 14, x: 40, y: 60, angle: 90, sector: padSector, skills: 7 }]
   const tagged = new Map<number, readonly number[]>([[7, [3]]])
   return { line, specials, things, tagged }
 }
@@ -4434,6 +4435,56 @@ test('what a barrel sets off reaches as far as a rocket', () => {
   assert(rocket !== undefined, 'the launcher throws nothing')
   close(goes.radius, rocket.blastRadius ?? 0, 1e-9, "a barrel's reach against a rocket's")
   close(goes.damage, rocket.blastDamage ?? 0, 1e-9, "a barrel's force against a rocket's")
+})
+
+console.log('\ndifficulty')
+
+test('a skill setting decides who is standing there', () => {
+  /*
+   * Doom's five settings are three sets of flags: the two easy ones share a
+   * bit, the two hard ones share another. Everything was arriving at once --
+   * twelve thousand two hundred and ninety-two bodies across the two files,
+   * which is more than the hardest setting the original offers.
+   *
+   * The fixture writes one creature for each skill and one that stands on all
+   * three, so each setting has a different answer and the answers are known
+   * without reading a real file.
+   */
+  const easyOnly: [number, number, number, number, number] = [96, 64, 0, 3004, 0x01]
+  const normalOnly: [number, number, number, number, number] = [112, 64, 0, 3004, 0x02]
+  const hardOnly: [number, number, number, number, number] = [128, 64, 0, 3004, 0x04]
+  const always: [number, number, number, number, number] = [144, 64, 0, 3004, 0x07]
+  const bytes = tinyWad('E1M1', true, '', [easyOnly, normalOnly, hardOnly, always])
+
+  const counts = (['easy', 'normal', 'hard'] as const).map(
+    (skill) => wadLevelState(bytes, 'E1M1', 0.6, skill).actors.length,
+  )
+  assert(counts[0] === 2, `easy stood up ${counts[0]} of the two that belong on it`)
+  assert(counts[1] === 2, `normal stood up ${counts[1]} of the two that belong on it`)
+  assert(counts[2] === 2, `hard stood up ${counts[2]} of the two that belong on it`)
+
+  // And they are not the same two. A filter that let everything through would
+  // give three fours; one that let nothing through would give three zeroes;
+  // both would pass the counts above if they were written as "fewer than four".
+  const onEasy = wadLevelState(bytes, 'E1M1', 0.6, 'easy').actors.map((actor) => Math.round(actor.x * 26))
+  const onHard = wadLevelState(bytes, 'E1M1', 0.6, 'hard').actors.map((actor) => Math.round(actor.x * 26))
+  assert(onEasy.includes(96), `the easy-only creature is missing from easy (${onEasy.join()})`)
+  assert(!onEasy.includes(128), `the hard-only creature stood up on easy (${onEasy.join()})`)
+  assert(onHard.includes(128), `the hard-only creature is missing from hard (${onHard.join()})`)
+  assert(!onHard.includes(96), `the easy-only creature stood up on hard (${onHard.join()})`)
+  // The one marked for every skill is on all of them, which is what stops this
+  // being a check that the flags simply select one thing each.
+  assert(onEasy.includes(144) && onHard.includes(144), 'the creature marked for every skill missed one')
+})
+
+test('normal is what a map is built for unless asked otherwise', () => {
+  // The page starts on normal, and so does the builder -- written twice, the
+  // two would drift and a check would be needed to notice. This is that check.
+  const bytes = tinyWad('E1M1', true, '', [[112, 64, 0, 3004, 0x02]])
+  assert(
+    wadLevelState(bytes, 'E1M1').actors.length === 1,
+    'the default skill is not the one the normal-only creature stands on',
+  )
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

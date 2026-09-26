@@ -44,7 +44,7 @@ import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
-import { wadLevelState } from '../src/game/wadlevel.ts'
+import { wadLevelState, type Skill } from '../src/game/wadlevel.ts'
 import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
@@ -107,11 +107,34 @@ let titleUp = true
  * Built once at boot rather than each frame: the cursor lives in it, so a menu
  * rebuilt every frame would forget where you were.
  */
-let menu: Menu = openMenu([
-  { label: 'begin', action: { kind: 'begin' } },
-  { label: 'the outpost', action: { kind: 'level', index: 0 } },
-  { label: 'the cistern', action: { kind: 'level', index: 1 } },
-])
+/**
+ * Which skill a map from a file is built for.
+ *
+ * Everything was arriving at once -- twelve thousand two hundred and ninety-two
+ * bodies across the two files, more than the hardest setting the original
+ * offers. Normal to begin with, because that is what the original starts you
+ * on, and it is a setting rather than a destination so the menu cycles it.
+ */
+let skill: Skill = 'normal'
+const SKILLS: readonly Skill[] = ['easy', 'normal', 'hard']
+
+/**
+ * The title's own menu, rebuilt when the difficulty changes.
+ *
+ * Rebuilt rather than mutated because the label carries the setting -- there is
+ * no room on this screen for a row of three -- and a label is part of the item.
+ */
+function titleMenu(cursor = 0): Menu {
+  const built = openMenu([
+    { label: 'begin', action: { kind: 'begin' } },
+    { label: 'the outpost', action: { kind: 'level', index: 0 } },
+    { label: 'the cistern', action: { kind: 'level', index: 1 } },
+    { label: `difficulty: ${skill}`, action: { kind: 'skill' } },
+  ])
+  return { ...built, cursor }
+}
+
+let menu: Menu = titleMenu()
 
 /**
  * Whether the trigger and the stick were already held last step.
@@ -223,6 +246,7 @@ let wadSource: { bytes: Uint8Array; mapName: string } | null = null
  */
 let opened: Uint8Array | null = null
 
+
 function startLevel(index: number): void {
   // What carries between levels and what does not is decided in `campaign.ts`,
   // where a check can ask about it. What is left here is what only the page
@@ -238,7 +262,7 @@ function enterWad(bytes: Uint8Array, mapName: string): void {
   // into characters and the number decides how many columns that is worth.
   // Wrong, it costs detail rather than shape -- but it is measured here and
   // nowhere else, so there is no reason to hand the importer a guess.
-  const next = wadLevelState(bytes, mapName, surface.cellAspect)
+  const next = wadLevelState(bytes, mapName, surface.cellAspect, skill)
   wadSource = { bytes, mapName }
   // Said rather than left at whatever was running: everything that reads this
   // index is about progressing through levels written here, and there is no
@@ -551,6 +575,12 @@ function step(): void {
       } else if (action?.kind === 'map' && opened !== null) {
         titleUp = false
         enterWad(opened, action.name)
+      } else if (action?.kind === 'skill') {
+        // Cycles in place, cursor and all: stepping the difficulty must not
+        // move you off the line you are standing on.
+        skill = SKILLS[(SKILLS.indexOf(skill) + 1) % SKILLS.length] ?? 'normal'
+        menu = titleMenu(menu.cursor)
+        say(`difficulty: ${skill}`)
       }
     }
     choosing = pressing

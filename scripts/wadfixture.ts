@@ -11,12 +11,26 @@
  * full of nukage, and the western floor above zero so that a check comparing a
  * player's floor against the room's compares something.
  */
+/** Bits 0 to 2: the easy pair, the middle one, and the hard pair. */
+const SKILLS_ALL = 0x07
+
 export function tinyWad(
   mapName: string,
   withStart = true,
   ceilingFlat = '',
   /** Extra things, as [x, y, angle, type] in map units, placed after the start. */
-  extraThings: readonly [number, number, number, number][] = [],
+  /**
+   * Extra things, as [x, y, angle, type] in map units, placed after the start.
+   *
+   * A fifth number sets which skills it stands on, as the file's own bits: 1
+   * for the easy pair, 2 for the middle one, 4 for the hard pair. Left out it
+   * is all three, which is what every fixture written before skills existed
+   * meant and what nearly all of them still want to mean.
+   */
+  extraThings: readonly (
+    | readonly [number, number, number, number]
+    | readonly [number, number, number, number, number]
+  )[] = [],
   /**
    * A linedef special to hang on the wall between the two rooms.
    *
@@ -130,9 +144,20 @@ export function tinyWad(
   ]
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.
-  const THINGS: [number, number, number, number][] = [
-    ...(withStart ? ([[64, 64, startAngle, 1]] as [number, number, number, number][]) : []),
-    ...extraThings,
+  const THINGS: [number, number, number, number, number][] = [
+    ...(withStart
+      ? ([[64, 64, startAngle, 1, SKILLS_ALL]] as [number, number, number, number, number][])
+      : []),
+    ...extraThings.map(
+      (thing) =>
+        [thing[0], thing[1], thing[2], thing[3], thing[4] ?? SKILLS_ALL] as [
+          number,
+          number,
+          number,
+          number,
+          number,
+        ],
+    ),
   ]
 
   const bytes = (size: number) => new Uint8Array(size)
@@ -143,11 +168,21 @@ export function tinyWad(
   }
 
   const things = lump(THINGS.length * 10, (view) => {
-    THINGS.forEach(([x, y, angle, type], i) => {
+    THINGS.forEach(([x, y, angle, type, skills], i) => {
       view.setInt16(i * 10, x, true)
       view.setInt16(i * 10 + 2, y, true)
       view.setInt16(i * 10 + 4, angle, true)
       view.setUint16(i * 10 + 6, type, true)
+      /*
+       * On every skill, which is what a fixture wants unless it says otherwise.
+       *
+       * The flags word was left at zero while nothing read it. The moment the
+       * importer started honouring skill flags, zero meant "on no skill at
+       * all" and every thing in every fixture vanished -- so this is not a
+       * default so much as the only value that keeps a fixture meaning what it
+       * used to mean.
+       */
+      view.setUint16(i * 10 + 8, skills, true)
     })
   })
   const linedefs = lump(LINEDEFS.length * 14, (view) => {
