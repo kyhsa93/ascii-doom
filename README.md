@@ -390,6 +390,36 @@ deliberate: special 63's door shuts itself again in the original and stays open
 here, which is eighty-two lines on seventeen maps and makes none of them
 unplayable.
 
+Putting it there caught something older. Three separate browser checks had been
+tapping the key that selects a weapon, and a tap does nothing: this game reads
+which keys are held once a frame, so the keyup arrives in the same instant as
+the keydown and falls between two samples. The one that mattered was the check
+for a rocket fired at your own feet. It had been selecting nothing, firing the
+sidearm at a wall, and passing -- because walking into the first room of the
+outpost costs seven health to something else entirely. It was measuring the
+wrong weapon and the wrong injury at once, and reporting that the blast worked.
+Held properly, the same shot costs fifty-seven. The check asserts which weapon
+is in hand now, and the whole file shares one helper that holds a key rather
+than taps it.
+
+There is a weapon in your hands. It is the one thing on screen in every frame of
+the original and it was the last piece of that missing here: fourteen rows of
+the fifty a desk draws, which is about the third the original gives it, and the
+same fourteen on a phone -- where the grid is seventy-seven rows, so it takes
+proportionally less of them. The gun is furniture; the room is the thing being
+looked at.
+
+It moves when it fires, and the timer it moves on is not the muzzle flash. That
+flash lasts sixty milliseconds, which is four frames -- right for a light and
+far too short for a gun to visibly recoil. What the weapon is actually doing is
+reloading: 0.28 seconds for the sidearm, 0.85 for the scattergun, 1.2 for the
+launcher, and the first third of that reads as recoil at all three speeds.
+
+Six frames cost three kilobytes gzipped, which is what settled the size: at that
+price there was no reason to drop the firing frames or shave the height. The
+chaingun, plasma rifle and BFG are in the file and are not baked -- there is
+nothing here to fire them with, and a picture of a gun you cannot use is weight.
+
 The hidden rooms are counted. Three hundred and twenty-five sectors across the
 two files are marked secret -- on sixty-six of the sixty-eight maps -- and the
 importer had been reading that very word to find damaging floors and then

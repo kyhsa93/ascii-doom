@@ -39,7 +39,15 @@ import {
 } from '../src/game/campaign.ts'
 import { deathLines, finishNow, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
-import { LOGO } from '../src/game/freedoomart.ts'
+import {
+  LAUNCHER_FIRING,
+  LAUNCHER_HELD,
+  LOGO,
+  SCATTERGUN_FIRING,
+  SCATTERGUN_HELD,
+  SIDEARM_FIRING,
+  SIDEARM_HELD,
+} from '../src/game/freedoomart.ts'
 import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
@@ -1170,6 +1178,42 @@ function frame(now: number): void {
       }
     }
   }
+
+  /*
+   * The weapon in your hands, across the foot of the view.
+   *
+   * The one thing on screen in every frame of the original and the last piece
+   * of it missing here. Fourteen rows of the fifty a desk draws, which is about
+   * the third the original gives it, and the same fourteen on a phone -- where
+   * the grid is seventy-seven rows, so it takes proportionally less. The gun is
+   * furniture; the room is what is being looked at.
+   *
+   * Above the status bar rather than behind it, and skipped with everything
+   * else while the map is open: a picture of a gun over a map of the level is
+   * two things asking for the same space.
+   */
+  if (!mapOpen && !titleUp && !goal.reached && !isDead(carrier)) {
+    /*
+     * Firing for the first third of the reload rather than for the flash.
+     *
+     * The muzzle flash lasts sixty milliseconds, which is four frames -- right
+     * for a light on a wall and far too short for a gun to visibly move. The
+     * cooldown is what the weapon is actually doing: 0.28 seconds for the
+     * sidearm, 0.85 for the scattergun, 1.2 for the launcher. A third of it
+     * reads as recoil at every one of those speeds.
+     */
+    const recoiling = cooldown > weapon.interval * (2 / 3)
+    const held = [
+      recoiling ? SIDEARM_FIRING : SIDEARM_HELD,
+      recoiling ? SCATTERGUN_FIRING : SCATTERGUN_HELD,
+      recoiling ? LAUNCHER_FIRING : LAUNCHER_HELD,
+    ][weaponIndex]
+    if (held !== undefined) {
+      const foot = (bar !== null ? bar.top : fb.height - 1) - 1
+      drawSprite(fb, held, Math.floor((fb.width - held.rows[0]!.length) / 2), foot - held.rows.length + 1)
+    }
+  }
+
 
   const line = bar !== null ? [] : layoutHud(fb.width, [
     { text: `${carrier.health}`, align: 'left', priority: 4 },

@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os'
 import { extname, join, normalize, resolve } from 'node:path'
 import { chromium, type Page } from 'playwright'
 import { NARROWEST } from '../src/game/statusbar.ts'
+import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { tinyWad } from './wadfixture.ts'
 
 const DIST = resolve(process.cwd(), 'dist')
@@ -509,7 +510,7 @@ rocketPage.on('pageerror', (error) => problems.push(`rocket: ${error.message}`))
 await rocketPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
 await rocketPage.waitForTimeout(900)
 await begin(rocketPage)
-await rocketPage.keyboard.press('3')
+await hold(rocketPage, '3')
 await rocketPage.keyboard.down('w')
 await rocketPage.waitForTimeout(1200)
 await rocketPage.keyboard.up('w')
@@ -596,18 +597,14 @@ await quietPage.waitForTimeout(900)
  * time this has caught me; a human tap is a hundred milliseconds, which is six
  * frames.
  */
-const hold = async (key: string) => {
-  await quietPage.keyboard.down(key)
-  await quietPage.waitForTimeout(170)
-  await quietPage.keyboard.up(key)
-  await quietPage.waitForTimeout(90)
-}
-for (let i = 0; i < 4; i++) await hold('ArrowDown')
-await hold('e')
+// The same `hold` every other check uses now, rather than a second copy of it
+// written inside this block -- which is how two of them came to exist.
+for (let i = 0; i < 4; i++) await hold(quietPage, 'ArrowDown', 170)
+await hold(quietPage, 'e', 170)
 await quietPage.waitForTimeout(300)
 const muted = await readOpened(quietPage)
-for (let i = 0; i < 4; i++) await hold('ArrowUp')
-await hold('e')
+for (let i = 0; i < 4; i++) await hold(quietPage, 'ArrowUp', 170)
+await hold(quietPage, 'e', 170)
 await quietPage.waitForTimeout(600)
 const mutedStart = await readOpened(quietPage)
 await quietPage.keyboard.down(' ')
@@ -680,7 +677,112 @@ check('walking into a hidden room is noticed', () => {
   assert(afterWalking.found === 1, `after walking east ${afterWalking.found} were found`)
 })
 
+/*
+ * The weapon in your hands, and whether it moves when it fires.
+ *
+ * Node can say the two frames were baked and that they differ. It cannot say
+ * the page ever draws the second one -- and when the wiring was reverted to
+ * the held frame deliberately, the only complaint came from the compiler about
+ * an unused import, which a real regression would not produce.
+ *
+ * So this reads the screen: the rows the weapon occupies are found by swapping
+ * weapons and seeing which rows change, rather than by guessing at a slice.
+ */
+/**
+ * A row of each weapon's art, long enough that nothing else draws it.
+ *
+ * Read out of the baked sprites rather than written down here, so re-baking the
+ * art cannot leave the check looking for a picture that no longer exists.
+ */
+const signatureOf = (sprite: { rows: readonly string[] }): string =>
+  sprite.rows.reduce((one, other) => (other.trim().length > one.trim().length ? other : one)).trim()
+const SIDEARM_SIGNATURE = signatureOf(FREEDOOM.SIDEARM_HELD)
+const LAUNCHER_SIGNATURE = signatureOf(FREEDOOM.LAUNCHER_HELD)
+
+const gunPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+gunPage.on('pageerror', (error) => problems.push(`weapon: ${error.message}`))
+await gunPage.goto(base, { waitUntil: 'domcontentloaded' })
+await gunPage.waitForTimeout(900)
+await begin(gunPage)
+const screenRows = async (): Promise<string[]> =>
+  await gunPage.evaluate(() => {
+    const pre = document.querySelector('pre')
+    return pre ? pre.innerText.split('\n') : []
+  })
+
+const withSidearm = await screenRows()
+/*
+ * Held, not tapped. Third time this has caught me in one session.
+ *
+ * `keyboard.press` puts the keyup in the same instant as the keydown, and the
+ * game reads which keys are held once a frame -- so a tap falls between two
+ * samples and the weapon never changes. The check then reported, accurately and
+ * uselessly, that the launcher was not on screen: it was never selected.
+ */
+await gunPage.keyboard.down('3')
+await gunPage.waitForTimeout(200)
+await gunPage.keyboard.up('3')
+await gunPage.waitForTimeout(400)
+const withLauncher = await screenRows()
+
+// Firing, read inside the reload. The launcher takes 1.2 seconds, so a third
+// of it is four hundred milliseconds and there is no race to lose.
+await gunPage.keyboard.down(' ')
+await gunPage.waitForTimeout(150)
+const whileFiring = await screenRows()
+await gunPage.keyboard.up(' ')
+await gunPage.close()
+
+const differing = (one: readonly string[], other: readonly string[]): number[] => {
+  const rows: number[] = []
+  for (let i = 0; i < Math.max(one.length, other.length); i++) {
+    if ((one[i] ?? '') !== (other[i] ?? '')) rows.push(i)
+  }
+  return rows
+}
+
+check('the weapon is on screen and moves when it fires', () => {
+  /*
+   * Looked for by its own shape rather than by "something changed".
+   *
+   * The first version asked whether swapping weapons changed any row in the
+   * lower half of the screen. It passed while no weapon was drawn at all: what
+   * changed was the status bar, whose middle panel is named after the weapon
+   * you are holding. A check that can be satisfied by the thing it is not
+   * about is not a check.
+   *
+   * These strings are rows of the baked art, so a wall cannot produce them.
+   */
+  const shows = (rows: readonly string[], signature: string): boolean =>
+    rows.some((row) => row.includes(signature))
+
+  assert(
+    shows(withSidearm, SIDEARM_SIGNATURE),
+    `the sidearm is not on screen; the foot of the view reads ${JSON.stringify(withSidearm.slice(-18, -4).map((r) => r.trim()).join(' / ').slice(0, 200))}`,
+  )
+  assert(
+    shows(withLauncher, LAUNCHER_SIGNATURE),
+    'switching to the launcher did not put the launcher on screen',
+  )
+  assert(!shows(withLauncher, SIDEARM_SIGNATURE), 'both weapons are on screen at once')
+
+  const fired = differing(withLauncher, whileFiring)
+  assert(fired.length > 0, 'the weapon is drawn the same whether it is firing or not')
+})
+
 check('a rocket fired at your feet costs you health', () => {
+  /*
+   * Which weapon was in hand, asserted rather than assumed.
+   *
+   * This check tapped the key that selects the launcher, which does nothing,
+   * and so spent its life firing the sidearm at a wall -- and passed, because
+   * walking into the outpost's first room costs seven health to something else
+   * entirely. It was measuring the wrong weapon and the wrong injury at once.
+   */
+  assert(
+    beforeRocket.weapon === 'launcher',
+    `the check fired a ${beforeRocket.weapon} rather than the launcher`,
+  )
   assert(beforeRocket.health === 100, `the walk to the wall already cost health (${beforeRocket.health})`)
   assert(
     afterRocket.health < beforeRocket.health,
@@ -1079,6 +1181,23 @@ await wadPage.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
 await wadPage.waitForTimeout(900)
   await begin(wadPage)
 
+/**
+ * Holds a key for long enough that the game notices it.
+ *
+ * `keyboard.press` puts the keyup in the same instant as the keydown, and this
+ * game reads which keys are held once a frame -- so a tap falls between two
+ * samples and does nothing at all. That has cost three separate checks in one
+ * session: a menu that would not move, a sound switch that would not switch,
+ * and a rocket check that spent its life firing a pistol because the key that
+ * selects the launcher never registered.
+ */
+async function hold(page: Page, key: string, ms = 200): Promise<void> {
+  await page.keyboard.down(key)
+  await page.waitForTimeout(ms)
+  await page.keyboard.up(key)
+  await page.waitForTimeout(90)
+}
+
 function readOpened(page: Page) {
   return page.evaluate(() => {
     const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
@@ -1102,6 +1221,7 @@ function readOpened(page: Page) {
       audible: probe.audible === true,
       secrets: (probe.secrets as number) ?? -1,
       found: (probe.found as number) ?? -1,
+      weapon: (probe.weapon as string) ?? '',
     }
   })
 }
@@ -1532,8 +1652,7 @@ try {
   await page.keyboard.down('ArrowLeft')
   await page.waitForTimeout(500)
   await page.keyboard.up('ArrowLeft')
-  await page.keyboard.press('3')
-  await page.waitForTimeout(150)
+  await hold(page, '3', 150)
   await page.keyboard.down(' ')
   await page.waitForTimeout(120)
   await page.keyboard.up(' ')

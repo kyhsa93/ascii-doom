@@ -110,7 +110,28 @@ const SUPPLIES: readonly (readonly [string, string])[] = [
  * crisp, because it is large flat lettering rather than a painting -- which is
  * the property that decides this, not whether something is "interface".
  */
-const INTERFACE: readonly (readonly [string, string, number])[] = [['M_DOOM', 'LOGO', 12]]
+const INTERFACE: readonly (readonly [string, string, number])[] = [
+  ['M_DOOM', 'LOGO', 12],
+  /*
+   * The weapon in your hands, at rest and firing.
+   *
+   * Fourteen rows, which is about a third of the fifty a desk draws -- the
+   * proportion the original gives it. A fixed count rather than a fraction of
+   * the grid: a phone draws seventy-seven rows at eight pixels and the same
+   * fourteen come out smaller there, which is what you want, because the gun is
+   * furniture and the room is the thing being looked at.
+   *
+   * Only the three this game has. The chaingun, plasma rifle, BFG and chainsaw
+   * are in the file and would each cost their own kilobytes to say nothing --
+   * there is nothing here to fire them with.
+   */
+  ['PISGA0', 'SIDEARM_HELD', 14],
+  ['PISGB0', 'SIDEARM_FIRING', 14],
+  ['SHTGA0', 'SCATTERGUN_HELD', 14],
+  ['SHTGB0', 'SCATTERGUN_FIRING', 14],
+  ['MISGA0', 'LAUNCHER_HELD', 14],
+  ['MISGB0', 'LAUNCHER_FIRING', 14],
+]
 
 /**
  * The cell aspect the sampling is done at.

@@ -4788,5 +4788,54 @@ test('a flat decides what the ground is made of, and the sky stays sky', () => {
   assert(flatMaterial('ZZQQ7', true) === 'ceiling', 'an unknown flat overhead became something other than ceiling')
 })
 
+console.log('\nthe weapon in your hands')
+
+test('each weapon has a held frame and a different one for firing', () => {
+  /*
+   * The one thing on screen in every frame of the original, and the last piece
+   * of it that was missing. Baked at fourteen rows -- about the third of a
+   * fifty-row grid the original gives it -- and the same fourteen on a phone,
+   * where the grid is seventy-seven rows, so it takes proportionally less.
+   *
+   * The pairs have to differ, or the recoil is a timer driving nothing.
+   */
+  const pairs = [
+    ['sidearm', FREEDOOM.SIDEARM_HELD, FREEDOOM.SIDEARM_FIRING],
+    ['scattergun', FREEDOOM.SCATTERGUN_HELD, FREEDOOM.SCATTERGUN_FIRING],
+    ['launcher', FREEDOOM.LAUNCHER_HELD, FREEDOOM.LAUNCHER_FIRING],
+  ] as const
+
+  for (const [name, held, firing] of pairs) {
+    assert(held !== undefined && firing !== undefined, `${name} has no held frames`)
+    assert(held.rows.length === 14, `${name} at rest is ${held.rows.length} rows rather than fourteen`)
+    assert(firing.rows.length === 14, `${name} firing is ${firing.rows.length} rows rather than fourteen`)
+    assert(
+      held.rows.join('\n') !== firing.rows.join('\n'),
+      `${name} is drawn identically whether it is firing or not`,
+    )
+    // Colour a cell, like everything else baked out of a file.
+    assert(held.colors !== undefined, `${name} came through in a single tint`)
+  }
+})
+
+test('the widest weapon fits the narrowest grid the game draws', () => {
+  // A phone upright is eighty columns; sideways a hundred and eighteen; a desk
+  // a hundred and sixty-three. The launcher is the wide one.
+  const widest = Math.max(
+    ...[
+      FREEDOOM.SIDEARM_HELD,
+      FREEDOOM.SIDEARM_FIRING,
+      FREEDOOM.SCATTERGUN_HELD,
+      FREEDOOM.SCATTERGUN_FIRING,
+      FREEDOOM.LAUNCHER_HELD,
+      FREEDOOM.LAUNCHER_FIRING,
+    ].map((sprite) => Math.max(...sprite.rows.map((row) => row.length))),
+  )
+  assert(widest <= 80, `the widest weapon is ${widest} columns and a phone draws eighty`)
+  // And it leaves room to see the room: fourteen rows of weapon and three of
+  // status bar out of the forty-six a phone lying down draws.
+  assert(14 + BAR_ROWS < 46, 'the weapon and the bar fill a phone held sideways')
+})
+
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)
 process.exit(failed === 0 ? 0 : 1)
