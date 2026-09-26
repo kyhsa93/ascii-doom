@@ -461,11 +461,24 @@ clothes: it took the six blocked maps to eleven. Trying all six assignments
 against all sixty-eight maps put the original order back, and the counting is in
 a check now rather than in my head.
 
-Seven maps still want a key they do not place, six of them yellow. That is no
-longer a colour problem -- the door textures settle the colours and the key
-sprites settle the keys -- so it is something those maps do that this importer
-still does not read, and guessing at it is how the last three hours went wrong.
-It is written here rather than fixed.
+Six maps still want a key they do not place, five of them yellow, and chasing
+that number taught me more than fixing it would have. It is not one problem.
+Only two of the six carry a locked switch at all -- one 135 on E2M5, one 133 on
+MAP26 -- though a note in the importer blamed all six on those for weeks. The
+other four carry neither, and no unread special is common to the four except
+the two that every other map carries too.
+
+It is not the table either. Every assignment of the three colours was scored
+again after the gun-triggered doors went in, on the chance that opening
+thirteen maps' worth of them moved the count: this order still leaves six, and
+the other five leave eleven to sixteen. Each of these maps does place keys, on
+every skill. They place the wrong colours for the locks they hold.
+
+And the number reads worse than it is, which is the part worth writing down.
+Each of these maps has two to five rooms behind a locked line, out of two
+hundred to seven hundred. What the count measures is "a door that never opens",
+not "a map that cannot be finished" -- I had been treating the two as the same
+thing while using the number to decide what to build next.
 
 The hidden rooms are counted. Three hundred and twenty-five sectors across the
 two files are marked secret -- on sixty-six of the sixty-eight maps -- and the

@@ -77,10 +77,23 @@ const MANUAL = new Map<number, { stays: boolean; fast: boolean; keyThing: number
    * in the same order", which is recollection wearing the clothes of evidence,
    * and it took the six to eleven. The counting is in a check now.
    *
-   * The remaining six are not a colour problem. E2M5, MAP04 and MAP26 lock
-   * something behind specials 133 and 135 -- switches that need a key -- which
-   * this importer does not read at all, so the key those maps expect you to
-   * fetch is behind a door it cannot open.
+   * The remaining six are not a colour problem, and they are not one problem
+   * either. That was measured rather than reasoned about, after an earlier note
+   * here blamed all six on the locked switches: only two of them carry one at
+   * all -- E2M5 has a single 135 and MAP26 a single 133. E2M3, E3M3, MAP17 and
+   * MAP23 have neither, and no unread special is common to the four beyond the
+   * two harmless ones every other map carries as well.
+   *
+   * Nor is it the table. Every assignment of the three colours was scored again
+   * once gun-triggered doors went in, in case opening thirteen maps' worth of
+   * them moved the count: this order still leaves six and the other five leave
+   * eleven to sixteen. Every one of these maps does place keys, on all three
+   * skills; they place the wrong colours for the locks they carry.
+   *
+   * What the count is measuring is worth saying plainly, because it reads
+   * worse than it is: a map here has two to five rooms behind a locked line,
+   * out of two hundred to seven hundred. These are side rooms that stay shut,
+   * not maps that cannot be finished.
    */
   [26, { stays: false, fast: false, keyThing: 5 }],
   [27, { stays: false, fast: false, keyThing: 6 }],

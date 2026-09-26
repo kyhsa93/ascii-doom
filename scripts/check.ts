@@ -4808,6 +4808,16 @@ test('a locked door asks for the key its own texture is named after', () => {
    * on their floor can open. This order leaves six, the others eleven to
    * sixteen -- and "they are the twins of 33 and 34, in order" leaves eleven,
    * which is what I changed them to before measuring.
+   *
+   * Scored again once gun-triggered doors existed, in case thirteen maps'
+   * worth of newly opening doors moved it. It did not: six against eleven to
+   * sixteen, exactly as before.
+   *
+   * What the six counts is a door that never opens, not a map that cannot be
+   * finished. Those maps have two to five rooms behind a locked line out of
+   * two hundred to seven hundred, so the number is a measure of side rooms
+   * left shut -- worth keeping honest precisely because it was being used to
+   * decide what to build next.
    */
   assert(asks(26) === 'cobalt', `26 asks for ${asks(26)} rather than cobalt`)
   assert(asks(27) === 'amber', `27 asks for ${asks(27)} rather than amber`)
