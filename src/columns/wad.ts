@@ -176,6 +176,21 @@ export interface WadMap {
    * for the sake of one importer.
    */
   readonly specials: readonly LineSpecial[]
+  /**
+   * Which sectors carry each tag.
+   *
+   * A tag is how the format says "somewhere else": a line names a number and
+   * the rooms wearing that number are what it acts on. Doors did not need this
+   * because a manual door special is untagged by definition, but nothing else
+   * in the format can be reduced that way -- every lift line in these files
+   * carries a tag, and eighty-three of them name more than one room.
+   *
+   * Zero is deliberately absent. It is what the format writes on an ordinary
+   * sector, so a table containing it would answer "which rooms are tagged
+   * nothing" with "most of them", and one stray zero on a line would turn a
+   * whole map into machinery.
+   */
+  readonly tagged: ReadonlyMap<number, readonly number[]>
 }
 
 export function readMap(bytes: Uint8Array, name: string): WadMap {
@@ -219,9 +234,17 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
   // lines name sectors, so one of the two has to be built incomplete.
   const edges: (readonly [number, number, number, number])[][] = []
   const sectors: Sector[] = []
+  const tagged = new Map<number, number[]>()
   for (let i = 0; i < sectorLump.size / 26; i++) {
     const at = sectorLump.at + i * 26
     const special = view.getInt16(at + 22, true)
+    // Zero means untagged, and is dropped here rather than by every caller.
+    const wadTag = view.getInt16(at + 24, true)
+    if (wadTag !== 0) {
+      const sharing = tagged.get(wadTag)
+      if (sharing) sharing.push(i)
+      else tagged.set(wadTag, [i])
+    }
     const hurt = DAMAGING.has(special) ? DAMAGE : 0
     edges.push([])
     sectors.push({
@@ -331,5 +354,5 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
     placed.push({ type, x, y, angle, sector: sectorAt(level, x, y) })
   }
 
-  return { name, level, spawn, things: placed, specials }
+  return { name, level, spawn, things: placed, specials, tagged }
 }

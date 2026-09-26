@@ -5,9 +5,12 @@
  * property of a room, it is a number on a line, and there are two families of
  * them: a line that opens *the sector behind it*, and a line that opens every
  * sector carrying some tag. The first is what this engine already models --
- * `moverInFront` finds the sector across the line you are facing -- and the
- * second wants a tag table and a notion of a switch, which this game does not
- * have. So the untagged ones come across and the rest are left alone.
+ * `moverInFront` finds the sector across the line you are facing -- so those
+ * come across. The tagged ones do not, and since the lifts arrived that is a
+ * choice rather than an inability: there is a tag table now, and a way to press
+ * a wall. What is still missing is narrower. A tagged door is a switch opening
+ * a room you may be nowhere near, and nothing here says what a press should
+ * mean when the thing it moved is out of sight.
  *
  * On the maps this was built against that is not a small corner: six hundred
  * and ninety-two of them in the first file, against a few dozen tagged door

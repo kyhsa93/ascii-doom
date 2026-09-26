@@ -148,11 +148,28 @@ The doors you open by pressing come across. In the original a door is not a
 property of a room but a number on a line, and there are two families: a line
 that opens the room behind it, and a line that opens every room carrying some
 tag. The first is what this engine already models — it finds the sector across
-the line you are facing — so those arrive, locks and all, while switches and
-the tagged kind are left alone. The height a door opens to is measured from the
-rooms around it rather than chosen: across one file that gap runs from sixty
-map units to a hundred and twenty-four, so any fixed number would be wrong
-nearly every time.
+the line you are facing — so those arrive, locks and all, while the tagged kind
+are left alone. The height a door opens to is measured from the rooms around it
+rather than chosen: across one file that gap runs from sixty map units to a
+hundred and twenty-four, so any fixed number would be wrong nearly every time.
+
+The lifts come across too, and they are the first thing here that needed a tag
+at all. A manual door special carries none — that is the format's way of saying
+"the room behind this line" — but every one of the seven hundred and sixty-one
+lift lines in these two files carries one, and eighty-three of them name more
+than one room. So a lift is a line that calls a list of platforms, and pressing
+the wall the map marked is what calls them. Five hundred and sixty-five of
+those lines are a switch, and five hundred and eight of those arrive as
+something you can press — across sixty-two of the sixty-eight maps. The
+hundred and ninety-six you trigger by walking over instead do not arrive at
+all, because crossing a line is not something this engine can notice.
+
+A platform starts raised, drops to the floor of the lowest room touching it,
+rests three seconds and climbs back. None of that needed building: a door is a
+ceiling with two heights and a lift is a floor with two, and the same loop has
+always stepped both. Ninety-eight of the rooms those lines point at are already
+at the bottom, and are refused rather than imported as floors that would rise
+when called.
 
 The supplies come across the same way the creatures do — the file says
 something of a certain class lay here, and one of this project's own is put

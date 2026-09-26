@@ -68,6 +68,16 @@ export interface LevelState {
    * whether the field is there.
    */
   readonly exitLines: ReadonlySet<Line>
+  /**
+   * Walls that call a platform when pressed, and which platforms each calls.
+   *
+   * Empty for every level written here, whose lifts are called by standing on
+   * them. A map read from a file names its platforms by a tag instead, from a
+   * line that is often nowhere near them and sometimes has nothing behind it,
+   * so neither the sector you are standing in nor the room across the line can
+   * say which floor should move. One line may call several.
+   */
+  readonly liftLines: ReadonlyMap<Line, readonly Mover[]>
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
 }
@@ -123,5 +133,6 @@ export function loadLevel(def: LevelDef): LevelState {
       .filter((mover) => mover.kind.surface === 'floor')
       .map((mover) => mover.sector),
     exitLines: new Set<Line>(),
+    liftLines: new Map<Line, readonly Mover[]>(),
   }
 }

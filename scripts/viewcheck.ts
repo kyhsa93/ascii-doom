@@ -871,6 +871,7 @@ function readOpened(page: Page) {
       awake: (probe.awake as number) ?? -1,
       pickupsLeft: (probe.pickupsLeft as number) ?? -1,
       doorState: (probe.doorState as string | null) ?? null,
+      liftFloor: (probe.liftFloor as number | null) ?? null,
       complete: probe.complete === true,
     }
   })
@@ -1125,6 +1126,64 @@ check('a map that ends on a switch can be ended by pressing it', () => {
   assert(
     wellAfter.level === 'E1M1',
     `after the pause the page was showing "${wellAfter.level}" instead of the map that was open`,
+  )
+})
+
+// A lift from a file, which is the other thing a wall can be. The platform
+// stands sixty-four map units up against the western room's thirty-two: a step
+// that tall cannot be walked, so the body stops in front of the wall rather
+// than strolling through the gap above it -- which is precisely how the switch
+// check above failed the first two times it was written.
+//
+// Both directions are read on purpose. A platform that only goes down is a hole
+// in the floor, and a check that watched it fall and looked no further would
+// call that a working lift.
+const liftWad = [...tinyWad('E1M1', true, '', [], 62, false, 0, 5, 64)]
+const openedLift = await wadPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [liftWad, 'E1M1'] as [number[], string],
+)
+await wadPage.waitForTimeout(300)
+const beforeCalling = await readOpened(wadPage)
+
+await wadPage.keyboard.down('w')
+await wadPage.waitForTimeout(1200)
+await wadPage.keyboard.up('w')
+await wadPage.waitForTimeout(200)
+const atThePlatform = await readOpened(wadPage)
+
+// A drop of about 1.23 metres at 1.4 a second is nine tenths of a second, and
+// it rests three seconds at the bottom, so this reads it well inside that rest.
+await wadPage.keyboard.down('e')
+await wadPage.waitForTimeout(300)
+await wadPage.keyboard.up('e')
+await wadPage.waitForTimeout(1200)
+const calledDown = await readOpened(wadPage)
+// Then the rest runs out and it climbs back.
+await wadPage.waitForTimeout(4500)
+const climbedBack = await readOpened(wadPage)
+
+check('a platform in a map from a file comes down when its wall is pressed', () => {
+  assert(openedLift, 'the page would not take the lift map')
+  assert(beforeCalling.level === 'E1M1', `the lift map came up as "${beforeCalling.level}"`)
+  assert(beforeCalling.liftFloor !== null, 'the map arrived with no platform in it at all')
+  const resting = beforeCalling.liftFloor!
+  assert(resting > 2.4, `the platform started at ${resting.toFixed(2)} rather than up at about 2.46`)
+  assert(
+    atThePlatform.liftFloor === resting,
+    `walking up to the platform moved it to ${atThePlatform.liftFloor?.toFixed(2)}`,
+  )
+  assert(
+    calledDown.liftFloor !== null && calledDown.liftFloor < resting - 0.5,
+    `pressing the wall left the platform at ${calledDown.liftFloor?.toFixed(2)}`,
+  )
+  assert(
+    climbedBack.liftFloor !== null && climbedBack.liftFloor > resting - 0.1,
+    `the platform stayed down at ${climbedBack.liftFloor?.toFixed(2)} instead of climbing back`,
   )
 })
 

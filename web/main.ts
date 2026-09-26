@@ -33,7 +33,7 @@ import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../s
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
-import { activate, moverInFront, updateMovers } from '../src/game/movers.ts'
+import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
 import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
 import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/player.ts'
@@ -100,6 +100,8 @@ let hazard = makeHazard()
  */
 function enterLevel(next: LevelState): void {
   state = next
+  // Split once here rather than filtered every time somebody presses use.
+  doors = next.movers.filter((mover) => mover.kind.surface === 'ceiling')
   projectiles = []
   advanceIn = 0
   deadFor = 0
@@ -108,6 +110,17 @@ function enterLevel(next: LevelState): void {
   hazard = makeHazard()
   say(state.def.name)
 }
+
+/**
+ * The movers a press can open by facing the room they are in.
+ *
+ * Doors, and only doors. A lift is a floor rather than a ceiling and answers to
+ * the wall the map marked rather than to any face of the room it sits in, so
+ * handing the whole list to `moverInFront` would let one be called from the
+ * wrong side -- and, worse, would mean the lift table below never ran at all on
+ * the four fifths of lift lines that do have their platform behind them.
+ */
+let doors: readonly Mover[] = []
 
 /**
  * The file a map came from, while one is open, and null while the campaign runs.
@@ -440,24 +453,24 @@ function step(): void {
   // Use: opens whatever you are facing, if you are carrying what it asks for.
   // The lock is on the door rather than here, so this cannot forget to check.
   if (intent.use) {
-    const target = moverInFront(level, movers, player.sector, player.x, player.y, player.angle)
+    const target = moverInFront(level, doors, player.sector, player.x, player.y, player.angle)
     if (target) {
       if (!activate(target, carrier.keys)) say(`locked — needs the ${target.kind.requiresKey} key`)
-    } else if (state.exitLines.size > 0) {
-      // A door is looked for first and this is the fallback. That ordering is
-      // belt and braces rather than a rule anybody can observe: one line
-      // carries one special, so a press finds a door or a switch and never
-      // both. Taking the door branch away does not prove the order -- it just
-      // leaves nothing to do -- and there is no fixture that could prove it,
-      // because the format cannot produce the case.
-      //
-      // A switch is the piece of wall itself rather than the room behind it --
-      // most of them have no room behind them -- so this asks what is being
-      // faced rather than what lies across it.
+    } else {
+      // One ray, then whatever that piece of wall turns out to be. A switch is
+      // the wall itself rather than the room behind it -- most of them have
+      // nothing behind them -- and a line carries one special, so this asks
+      // what is being faced and dispatches on it rather than trying the two
+      // kinds in an order it could not justify.
       const facing = lineInFront(level, player.x, player.y, player.angle)
-      if (facing && state.exitLines.has(facing) && finishNow(goal)) {
-        advanceIn = 3.5
-        say('that was the last of them')
+      if (facing) {
+        if (state.exitLines.has(facing) && finishNow(goal)) {
+          advanceIn = 3.5
+          say('that was the last of them')
+        }
+        // A wall may call more than one platform: eighty-three of the lift
+        // lines in the files this was built against name several rooms.
+        for (const platform of state.liftLines.get(facing) ?? []) activate(platform, carrier.keys)
       }
     }
   }
@@ -693,6 +706,13 @@ function frame(now: number): void {
     doorState: state.movers[0]?.state ?? null,
     liftHeight:
       state.liftSectors[0] === undefined ? null : (level.sectors[state.liftSectors[0]]?.floor ?? null),
+    // The first platform a marked wall can call, for a map from a file. Not the
+    // line above: those are this game's own lifts, which are called by being
+    // stood on and are not in `liftLines` at all.
+    liftFloor: ((): number | null => {
+      const platform = [...state.liftLines.values()][0]?.[0]
+      return platform === undefined ? null : (level.sectors[platform.sector]?.floor ?? null)
+    })(),
   }
 
   requestAnimationFrame(frame)

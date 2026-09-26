@@ -23,6 +23,7 @@ import {
   lineInFront,
   lineOfSight,
   sectorAt,
+  type Level,
   type Line,
   type Sector,
   type SectorDef,
@@ -40,6 +41,7 @@ import { UNITS_PER_METRE, mapNames, readMap, type LineSpecial } from '../src/col
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
+import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
@@ -1406,6 +1408,7 @@ test('a map from a file becomes a state the game could step', () => {
   assert(state.pickups.length === 0, 'a map with no supplies brought supplies')
   assert(state.movers.length === 0, 'a map with no doors brought doors')
   assert(state.liftSectors.length === 0, 'a map with no lifts brought lifts')
+  assert(state.liftLines.size === 0, 'a map with no lifts brought walls that call them')
 })
 
 test('the player stands on the floor of the room they start in', () => {
@@ -1573,6 +1576,172 @@ test('only a line with somewhere beyond it can be the way out', () => {
       `special ${special} is in the table and finishes nothing`,
     )
   }
+})
+
+console.log('\nlifts from a file')
+
+/**
+ * A level that is nothing but floor heights and which rooms touch which.
+ *
+ * `liftsFrom` reads exactly two things: a room's floor, and which rooms share a
+ * line. Everything else here is a stub, and saying so is the point -- an
+ * assertion that came to rest on these coordinates would be resting on nothing.
+ * Built by hand rather than from the fixture because the fixture has two rooms
+ * and the cases that matter need three.
+ */
+function plainLevel(floors: readonly number[], joins: readonly [number, number][]): Level {
+  const sectors: Sector[] = floors.map((floor) => ({
+    polygon: [],
+    edges: [],
+    floor,
+    ceiling: floor + 4,
+    light: 1,
+    floorMaterial: 'floor',
+    ceilingMaterial: 'ceiling',
+    hurt: 0,
+    sky: false,
+    tag: null,
+    minX: 0,
+    minY: 0,
+    maxX: 0,
+    maxY: 0,
+  }))
+  const lines: Line[] = joins.map(([front, back]) => ({
+    ax: 0,
+    ay: 0,
+    bx: 1,
+    by: 0,
+    front,
+    back,
+    material: 'wall',
+    blocking: false,
+  }))
+  return { sectors, lines }
+}
+
+test('a platform drops to the floor of the lowest room that touches it', () => {
+  const level = plainLevel([0, 3], [[0, 1]])
+  const lifts = liftsFrom(level, [spec(62, null, 5)], new Map([[5, [1]]]))
+
+  assert(lifts.platforms.length === 1, `${lifts.platforms.length} platforms from one lift line`)
+  const platform = lifts.platforms[0]!
+  assert(platform.sector === 1, `the platform is sector ${platform.sector}`)
+  assert(platform.kind.surface === 'floor', 'the platform moves its ceiling')
+  // At rest is up and called is down, which reads backwards against the names
+  // those two fields carry for doors. Pinned to the heights the level was built
+  // with rather than recomputed the way the importer computes them.
+  assert(platform.kind.shut === 3, `at rest the platform sits at ${platform.kind.shut}`)
+  assert(platform.kind.open === 0, `called, the platform goes to ${platform.kind.open}`)
+  assert(platform.kind.wait > 0, 'a platform that never climbs back is a hole in the floor')
+  assert(platform.kind.requiresKey === undefined, 'a lift asked for a key')
+})
+
+test('a room with nothing lower beside it is not a lift', () => {
+  // Ninety-eight of the six hundred and seventy-three rooms the real lift lines
+  // point at are already at the bottom. `updateMovers` walks toward whichever
+  // height it is handed without asking which way that is, so one left in would
+  // climb when called and stand in the ceiling.
+  const level = plainLevel([3, 0], [[0, 1]])
+  const lifts = liftsFrom(level, [spec(62, null, 5)], new Map([[5, [1]]]))
+
+  assert(lifts.platforms.length === 0, 'a room with no lower neighbour became a lift')
+  assert(lifts.calls.size === 0, 'a wall that calls nothing is still in the table')
+})
+
+test('a tag of zero calls nothing, even when the table offers it', () => {
+  // The worst thing this importer could do. Zero is what the format writes on
+  // an ordinary room, so one lift line carrying it would turn every room in the
+  // map into machinery. The parser never puts zero in the table; the table here
+  // is deliberately wrong, which is the only way to reach the second lock.
+  const level = plainLevel([0, 3, 5], [
+    [0, 1],
+    [0, 2],
+  ])
+  const lifts = liftsFrom(level, [spec(62, null, 0)], new Map([[0, [1, 2]]]))
+
+  assert(lifts.platforms.length === 0, `a tag of zero built ${lifts.platforms.length} platforms`)
+})
+
+test('one wall can call several platforms', () => {
+  // Eighty-three of the lift lines in these files name more than one room.
+  const level = plainLevel([0, 3, 5], [
+    [0, 1],
+    [0, 2],
+  ])
+  const wall = spec(62, null, 5)
+  const lifts = liftsFrom(level, [wall], new Map([[5, [1, 2]]]))
+
+  assert(lifts.platforms.length === 2, `${lifts.platforms.length} platforms from a tag naming two rooms`)
+  const called = lifts.calls.get(wall.line)
+  assert(called?.length === 2, `the wall calls ${called?.length ?? 0} of them`)
+  assert(
+    lifts.platforms[called![0]!]!.sector === 1 && lifts.platforms[called![1]!]!.sector === 2,
+    'the wall calls rooms it was never pointed at',
+  )
+})
+
+test('two walls calling the same room share one platform', () => {
+  const level = plainLevel([0, 3], [[0, 1]])
+  const first = spec(62, null, 5)
+  const second = spec(123, null, 5)
+  const lifts = liftsFrom(level, [first, second], new Map([[5, [1]]]))
+
+  assert(lifts.platforms.length === 1, `${lifts.platforms.length} machines for one floor`)
+  assert(lifts.calls.get(first.line)?.[0] === 0, 'the first wall calls nothing')
+  assert(lifts.calls.get(second.line)?.[0] === 0, 'the second wall calls a platform of its own')
+})
+
+test('only the lifts you press come across', () => {
+  const level = plainLevel([0, 3], [[0, 1]])
+  const tagged = new Map([[5, [1]]])
+
+  for (const special of switchLiftSpecials()) {
+    const made = liftsFrom(level, [spec(special, null, 5)], tagged)
+    assert(made.platforms.length === 1, `special ${special} is in the table and makes no lift`)
+  }
+  // The ones triggered by crossing a line, which this engine cannot notice --
+  // and, at the end, the two I expected to carry most of these maps before
+  // counting them. They appear zero times in either file.
+  for (const special of [88, 120, 121, 10, 21]) {
+    const made = liftsFrom(level, [spec(special, null, 5)], tagged)
+    assert(made.platforms.length === 0, `special ${special} came across as a lift`)
+  }
+})
+
+test('the parser leaves untagged rooms out of the tag table', () => {
+  const plain = readMap(tinyWad('E1M1'), 'E1M1')
+  assert(plain.tagged.size === 0, `${plain.tagged.size} tags in a map that has none`)
+
+  const marked = readMap(tinyWad('E1M1', true, '', [], 62, false, 0, 5, 64), 'E1M1')
+  assert(marked.tagged.size === 1, `${marked.tagged.size} tags in a map with one`)
+  assert(
+    marked.tagged.get(5)?.length === 1 && marked.tagged.get(5)![0] === 1,
+    'the tag names a room the file did not mark',
+  )
+})
+
+test('a lift in a file arrives as a platform its own wall can call', () => {
+  const state = wadLevelState(tinyWad('E1M1', true, '', [], 62, false, 0, 5, 64), 'E1M1')
+
+  assert(state.movers.length === 1, `${state.movers.length} movers from a map with one lift`)
+  const platform = state.movers[0]!
+  assert(platform.kind.surface === 'floor', 'the lift arrived as a door')
+  // Sixty-four map units at rest, dropping to the western room's thirty-two.
+  close(platform.kind.shut, 2.4615, 0.001, 'the platform at rest')
+  close(platform.kind.open, 1.2308, 0.001, 'the platform when called')
+
+  assert(state.liftLines.size === 1, `${state.liftLines.size} walls can call it`)
+  const entry = [...state.liftLines][0]!
+  // Within one parse: two reads of the same bytes build two sets of line
+  // objects, and a line from one can never be found among the other's. That is
+  // how the switch check failed first time round, with the code innocent.
+  assert(state.level.lines.includes(entry[0]), 'the calling wall is not one of the map\u2019s own')
+  assert(entry[1].length === 1 && entry[1][0] === platform, 'the wall calls a platform nothing steps')
+
+  // And not this game's own kind, which is called by being stood on. A platform
+  // in a file starts raised; putting one in that list would drop the floor out
+  // from under whoever climbed onto it.
+  assert(state.liftSectors.length === 0, 'an imported platform also became a stand-on lift')
 })
 
 test('a map whose exit is a switch collects the wall you press', () => {

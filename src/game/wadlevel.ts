@@ -3,15 +3,17 @@
  *
  * The parser hands back geometry and a place to stand. This wraps that in the
  * state the page steps every frame, filling in what each importer can answer
- * for: the creatures, the supplies, the doors you press open, and the two ways
- * a map can end. What none of them can answer for is left empty rather than
- * guessed at -- there are no lifts, no switches that act on a tagged room, and
- * no map that arrives with something this game has no notion of.
+ * for: the creatures, the supplies, the doors you press open, the platforms a
+ * marked wall calls, and the two ways a map can end. What none of them can
+ * answer for is left out rather than guessed at -- a line you have to walk
+ * across to trigger, and a switch that opens a tagged room somewhere else, are
+ * both things this engine cannot say.
  *
  * This comment said "no creatures, no supplies, no doors and no way to finish"
- * for four rounds after each of those stopped being true. Kept as a note to
- * whoever writes the next importer: the header is the first thing to go stale
- * and the last thing anybody reads.
+ * for four rounds after each of those stopped being true, and then said "no
+ * lifts" in the round that added them. Kept as a note to whoever writes the
+ * next importer: the header is the first thing to go stale and the last thing
+ * anybody reads.
  *
  * The player is built by the same `spawnPlayer` the authored levels use. A body
  * made a second way here would drift from that one -- a different radius, a
@@ -19,15 +21,17 @@
  * what fits through a door long before anybody noticed.
  */
 
+import type { Line } from '../columns/level.ts'
 import { readMap } from '../columns/wad.ts'
 import { spawnActor, type Actor } from './ai.ts'
 import { makeGoal } from './exit.ts'
 import type { LevelDef, LevelState } from './levels.ts'
-import { makeMover } from './movers.ts'
+import { makeMover, type Mover } from './movers.ts'
 import type { Pickup } from './pickups.ts'
 import { spawnPlayer } from './player.ts'
 import { doorsFrom } from './waddoors.ts'
 import { exitSectorFrom, switchExitLines } from './wadexit.ts'
+import { liftsFrom } from './wadlifts.ts'
 import { supplyFor } from './waditems.ts'
 import { creatureFor } from './wadthings.ts'
 
@@ -107,6 +111,22 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
     }
   }
 
+  /**
+   * Both kinds of moving floor and ceiling, built before the state so the lifts
+   * can be named twice: once in `movers`, which is what steps them every frame,
+   * and once in the table that says which wall calls which.
+   */
+  const doors = doorsFrom(map.level, map.specials).map((door) => makeMover(door.sector, door.kind))
+  const lifts = liftsFrom(map.level, map.specials, map.tagged)
+  const platforms = lifts.platforms.map((lift) => makeMover(lift.sector, lift.kind))
+  const liftLines = new Map<Line, readonly Mover[]>()
+  for (const [line, called] of lifts.calls) {
+    liftLines.set(
+      line,
+      called.map((index) => platforms[index]!),
+    )
+  }
+
   return {
     def,
     level: map.level,
@@ -114,15 +134,13 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
     actors,
     pickups,
     /**
-     * The doors you open by pressing them.
+     * The doors you press open and the platforms a marked wall calls.
      *
-     * No lifts and no switches: both of those act on a sector named by a tag
-     * rather than on the one behind the line, and this game has no notion of
-     * either. So `liftSectors` stays empty -- a lift here is a floor that
-     * carries you when you stand on it, and nothing in a file is imported as
-     * one.
+     * One list because one loop steps them: a door is a ceiling with two
+     * heights and a lift is a floor with two heights, and `updateMovers` has
+     * never needed to know which it is looking at.
      */
-    movers: doorsFrom(map.level, map.specials).map((door) => makeMover(door.sector, door.kind)),
+    movers: [...doors, ...platforms],
     /**
      * Where the map ends, if it ends anywhere this game can notice.
      *
@@ -140,6 +158,18 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
      * neither stands in for the other.
      */
     exitLines: switchExitLines(map.specials),
+    /**
+     * And the walls that call a platform, which is how every lift in a file is
+     * asked for -- not one of the seven hundred and sixty-one lift lines in the
+     * two files this was built against is untagged.
+     */
+    liftLines,
+    /**
+     * Still empty, and now for a reason rather than for want of an importer.
+     * A lift here is a floor that carries you when you stand on it; a lift in a
+     * file starts raised and is called from a wall, and putting one in this
+     * list would drop it out from under anybody who climbed on.
+     */
     liftSectors: [],
   }
 }

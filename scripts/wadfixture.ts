@@ -44,6 +44,27 @@ export function tinyWad(
    * off at right angles to the thing.
    */
   startAngle = 90,
+  /**
+   * A tag, worn by the eastern room and called for by the line between them.
+   *
+   * One parameter for both because that is what a tag is: the line names a
+   * number and the rooms wearing it are what it acts on. A lift cannot be
+   * written any other way -- every lift line in the real files carries one --
+   * and a door cannot be written with one at all, since a tagged door special
+   * means a room somewhere else. Zero, which the format writes on an ordinary
+   * room, by default, so every fixture written before this one comes out byte
+   * for byte the same.
+   */
+  roomTag = 0,
+  /**
+   * The eastern room's floor.
+   *
+   * Zero as it always was. A lift wants it above the western room's thirty-two:
+   * that gives the platform somewhere to drop to, and makes the step up too
+   * tall to walk, which is what leaves a body standing in front of the wall
+   * rather than through it.
+   */
+  backFloor = 0,
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -57,7 +78,7 @@ export function tinyWad(
   const LINEDEFS: [number, number, number, number, number, number, number][] = [
     [0, 1, 1, 0, 0, 0, 0xffff],
     // The one that joins the rooms, and the only one with two sides.
-    [1, 2, 0, lineSpecial, 0, 1, 2],
+    [1, 2, 0, lineSpecial, roomTag, 1, 2],
     [2, 3, 1, 0, 0, 3, 0xffff],
     [3, 0, 1, 0, 0, 4, 0xffff],
     [1, 4, 1, 0, 0, 5, 0xffff],
@@ -65,7 +86,7 @@ export function tinyWad(
     [5, 2, 1, 0, 0, 7, 0xffff],
   ]
   const SIDEDEF_SECTOR = [0, 0, 1, 0, 0, 1, 1, 1]
-  // floor, ceiling, light, special. 7 is Doom's nukage.
+  // floor, ceiling, light, special, tag. 7 is Doom's nukage.
   // The western room's floor sits above zero on purpose: with both at zero, a
   // check comparing the player's floor against the room's compares nothing.
   //
@@ -74,9 +95,9 @@ export function tinyWad(
   // original -- six hundred and eighty-two of the six hundred and ninety-two
   // in the first file are built exactly that way -- and is what lets a check
   // ask whether the way through is blocked before it is opened.
-  const SECTORS: [number, number, number, number][] = [
-    [32, 128, 200, 0],
-    [0, shutBack ? 0 : 128, 200, 7],
+  const SECTORS: [number, number, number, number, number][] = [
+    [32, 128, 200, 0, 0],
+    [backFloor, shutBack ? backFloor : 128, 200, 7, roomTag],
   ]
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.
@@ -115,7 +136,7 @@ export function tinyWad(
     })
   })
   const sectors = lump(SECTORS.length * 26, (view) => {
-    SECTORS.forEach(([floor, ceiling, light, special], i) => {
+    SECTORS.forEach(([floor, ceiling, light, special, tag], i) => {
       view.setInt16(i * 26, floor, true)
       view.setInt16(i * 26 + 2, ceiling, true)
       // The two flat names sit between the heights and the light, eight bytes
@@ -126,6 +147,7 @@ export function tinyWad(
       }
       view.setInt16(i * 26 + 20, light, true)
       view.setInt16(i * 26 + 22, special, true)
+      view.setInt16(i * 26 + 24, tag, true)
     })
   })
 
