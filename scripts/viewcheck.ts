@@ -652,7 +652,15 @@ await mapper.keyboard.up('w')
 await mapper.waitForTimeout(200)
 const walked = await readMap(mapper)
 
-await mapper.keyboard.press('Tab')
+// Held for a moment rather than pressed. `press` sends the key down and up with
+// no dwell between them, and the map toggles on a rising edge read inside a
+// simulation step that runs sixty times a second -- so both events can land
+// between two steps and no step ever sees the key at all. That is why this one
+// line differs from every other key in this file, and why it failed once with
+// "Tab did not open the map" and then passed twice unchanged.
+await mapper.keyboard.down('Tab')
+await mapper.waitForTimeout(100)
+await mapper.keyboard.up('Tab')
 await mapper.waitForTimeout(300)
 const opened = await readMap(mapper)
 await mapper.screenshot({ path: join(SHOTS, 'map.png') })
