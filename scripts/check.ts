@@ -13,6 +13,7 @@
  */
 
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
+import { squeezed } from '../src/columns/sprite.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
 import { drawAutomap, mapToCell, markerFor, plotLine, type Cell } from '../src/columns/automap.ts'
 import {
@@ -52,6 +53,7 @@ import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
 import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
+import { chosen, menuLayout, moveCursor, openMenu, type MenuItem } from '../src/game/menu.ts'
 import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
@@ -1772,6 +1774,93 @@ test('a map from a file is drawn with the file’s pictures', () => {
   // which is what every map did before any of this.
   const without = wadLevelState(tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0), 'E1M1', 1)
   assert(without.actors[0]!.kind.sprite === CRAWLER_KIND.sprite, 'a file with no art still changed the drawing')
+})
+
+console.log('\na menu you can find your way round')
+
+const ITEMS: MenuItem[] = [
+  { label: 'begin', action: { kind: 'begin' } },
+  { label: 'the outpost', action: { kind: 'level', index: 0 } },
+  { label: 'the cistern', action: { kind: 'level', index: 1 } },
+  { label: 'open a WAD', action: { kind: 'openWad' } },
+]
+
+test('a menu opens on something you can actually choose', () => {
+  const menu = openMenu(ITEMS)
+  assert(menu.cursor === 0, `the cursor opened on item ${menu.cursor}`)
+  assert(chosen(menu)?.kind === 'begin', 'the first item is not the one offered')
+
+  // With the first item disabled it must not open on it: pressing fire on a
+  // dead item looks exactly like the game having hung.
+  const locked = openMenu([{ label: 'continue', action: { kind: 'begin' }, enabled: false }, ...ITEMS.slice(1)])
+  assert(locked.cursor === 1, `the cursor opened on a disabled item (${locked.cursor})`)
+  assert(chosen(locked) !== null, 'the menu opened on nothing choosable')
+})
+
+test('the cursor wraps at both ends', () => {
+  // A menu is a ring. Stopping dead at the bottom means travelling back up
+  // through everything to reach the first item.
+  const menu = openMenu(ITEMS)
+  assert(moveCursor(menu, -1).cursor === ITEMS.length - 1, 'moving up from the top did not wrap')
+  let at = menu
+  for (let i = 0; i < ITEMS.length; i++) at = moveCursor(at, 1)
+  assert(at.cursor === menu.cursor, `a full lap left the cursor at ${at.cursor} rather than ${menu.cursor}`)
+})
+
+test('a disabled item is stepped over rather than landed on', () => {
+  const withGap: MenuItem[] = [
+    { label: 'begin', action: { kind: 'begin' } },
+    { label: 'the cistern', action: { kind: 'level', index: 1 }, enabled: false },
+    { label: 'open a WAD', action: { kind: 'openWad' } },
+  ]
+  const menu = openMenu(withGap)
+  const down = moveCursor(menu, 1)
+  assert(down.cursor === 2, `moving down landed on ${down.cursor}, which is the disabled one`)
+  assert(moveCursor(down, 1).cursor === 0, 'wrapping past the end did not skip the disabled one')
+  assert(moveCursor(menu, -1).cursor === 2, 'moving up did not skip it either')
+})
+
+test('a menu with nothing choosable does not spin', () => {
+  // Every item disabled: the search must stop after one lap rather than loop.
+  const dead = openMenu([
+    { label: 'one', action: { kind: 'begin' }, enabled: false },
+    { label: 'two', action: { kind: 'openWad' }, enabled: false },
+  ])
+  assert(moveCursor(dead, 1).cursor === dead.cursor, 'the cursor moved among items that cannot be chosen')
+  assert(chosen(dead) === null, 'a disabled item was offered as a choice')
+})
+
+test('the menu is centred, spaced and clipped like the summary', () => {
+  const menu = openMenu(ITEMS)
+  const placed = menuLayout(80, 40, menu, 10)
+  assert(placed.length === ITEMS.length, `${placed.length} lines placed of ${ITEMS.length}`)
+  // A blank row between lines, so the cursor mark has somewhere to sit.
+  assert(placed[1]!.row - placed[0]!.row === 2, `lines are ${placed[1]!.row - placed[0]!.row} rows apart`)
+  for (const line of placed) {
+    assert(line.col >= 0, `a line starts at column ${line.col}`)
+    close(line.col + line.text.length / 2, 40, 1, 'a menu line centred on the grid')
+  }
+  // The selected line carries its own marks, so a centred line does not shift
+  // sideways when it becomes the selected one.
+  assert(placed[0]!.under, 'the line under the cursor is not marked as such')
+  assert(placed[0]!.text.includes('>') && placed[0]!.text.includes('<'), `the selected line reads "${placed[0]!.text}"`)
+  assert(!placed[1]!.text.includes('>'), `an unselected line reads "${placed[1]!.text}"`)
+  // The same item, selected and not. Comparing two *different* items was the
+  // first version of this, and it failed on a menu whose labels are different
+  // lengths -- which is every menu. The claim is that selecting a line does not
+  // change its width, so both sides have to be the same line.
+  const elsewhere = menuLayout(80, 40, moveCursor(menu, 1), 10)
+  assert(
+    placed[0]!.text.length === elsewhere[0]!.text.length,
+    `"${placed[0]!.text}" and "${elsewhere[0]!.text}" are different widths`,
+  )
+  assert(placed[0]!.col === elsewhere[0]!.col, 'a line moves sideways when it becomes the selected one')
+
+  // And lines that would fall off the bottom are dropped rather than drawn
+  // past it.
+  const cramped = menuLayout(80, 12, menu, 8)
+  assert(cramped.length < ITEMS.length, `${cramped.length} lines fitted in a twelve-row grid`)
+  for (const line of cramped) assert(line.row < 12, `a line was placed on row ${line.row} of twelve`)
 })
 
 console.log('\na status bar laid out like the original')
@@ -3654,6 +3743,40 @@ test('no single glyph is allowed to swallow the frame', () => {
 
   assert(crowded.length === 0, `one glyph dominates the view — ${crowded.join('; ')}`)
   assert(bland.length === 0, `too little variety to read the geometry — ${bland.join('; ')}`)
+})
+
+// --- the title on a grid narrower than it was baked for ---------------------
+
+test('the title fits across rather than being cut off at both edges', () => {
+  const wide = (sprite: { rows: readonly string[] }) =>
+    Math.max(...sprite.rows.map((row) => row.length))
+
+  // The number that matters is the phone held upright, which reads the grid at
+  // 80 columns. The logo is baked at 92, and centring 92 in 80 does not shrink
+  // it -- it puts seven columns off each edge, which took the outer stroke off
+  // the first letter and the last.
+  for (const cols of [80, 72, 40]) {
+    const fitted = squeezed(FREEDOOM.LOGO, cols)
+    assert(wide(fitted) <= cols, `squeezed to ${cols} the title is still ${wide(fitted)} across`)
+    assert(
+      fitted.rows.length === FREEDOOM.LOGO.rows.length,
+      `squeezing to ${cols} cost ${FREEDOOM.LOGO.rows.length - fitted.rows.length} of the title's rows`,
+    )
+    // Colours are a parallel array, so a squeeze that forgets them leaves every
+    // cell taking the colour of whatever used to be to its left.
+    const hues = fitted.colors
+    assert(hues !== undefined, `squeezing to ${cols} dropped the title's colours`)
+    for (let row = 0; row < fitted.rows.length; row++) {
+      assert(
+        hues[row]!.length === fitted.rows[row]!.length,
+        `at ${cols} row ${row} came out ${fitted.rows[row]!.length} glyphs against ${hues[row]!.length} colours`,
+      )
+    }
+  }
+
+  // And a grid with room for it is left alone, rather than rebuilt into an
+  // identical copy each frame.
+  assert(squeezed(FREEDOOM.LOGO, 163) === FREEDOOM.LOGO, 'a title that already fits was rebuilt anyway')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

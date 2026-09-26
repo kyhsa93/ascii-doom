@@ -68,6 +68,55 @@ export interface Sprite {
  * size it already is: one art cell to one screen cell. Anything falling off an
  * edge is clipped rather than wrapped.
  */
+/**
+ * The sprite with columns dropped until it is no wider than `cols`.
+ *
+ * For the title on a narrow grid. Nothing else needs it: a billboard is sized
+ * in the world and a status panel is laid out in text, so this is the one place
+ * where a fixed lump of baked characters meets a grid that may be smaller than
+ * it was baked for.
+ *
+ * Columns that carry a glyph are kept in preference to blank ones, because the
+ * blanks between letters are the cheapest thing to lose. That buys less than it
+ * sounds: the logo is 92 columns and only two of them are empty top to bottom,
+ * so fitting 80 spends the blanks and then thins ten inked columns as well.
+ * What survives is thinner letters rather than broken ones, but that is a claim
+ * about this one picture, judged by looking at it, not something the code can
+ * promise for another.
+ */
+export function squeezed(sprite: Sprite, cols: number): Sprite {
+  const wide = Math.max(...sprite.rows.map((row) => row.length))
+  if (wide <= cols) return sprite
+
+  const ink: number[] = []
+  const blank: number[] = []
+  for (let x = 0; x < wide; x++) {
+    ;(sprite.rows.some((row) => (row[x] ?? ' ') !== ' ') ? ink : blank).push(x)
+  }
+  // Thin whichever pile has to give: blanks first, and only then ink, spread
+  // evenly rather than taken off one side.
+  const keep = new Set<number>()
+  const thin = (from: number[], wanted: number) => {
+    if (wanted >= from.length) {
+      for (const x of from) keep.add(x)
+      return
+    }
+    for (let i = 0; i < wanted; i++) keep.add(from[Math.floor((i * from.length) / wanted)]!)
+  }
+  thin(ink, Math.min(ink.length, cols))
+  thin(blank, cols - Math.min(ink.length, cols))
+
+  const kept = [...keep].sort((a, b) => a - b)
+  const rows = sprite.rows.map((row) => kept.map((x) => row[x] ?? ' ').join(''))
+  // Spread rather than handed `colors: undefined`: a sprite that carries no
+  // colours has no such property, and giving it one holding undefined is a
+  // different thing that the tint fallback in the blitter would not survive.
+  const colors = sprite.colors
+  return colors === undefined
+    ? { ...sprite, rows }
+    : { ...sprite, rows, colors: colors.map((line) => kept.map((x) => line[x] ?? ([0, 0, 0] as const))) }
+}
+
 export function drawSprite(fb: Framebuffer, sprite: Sprite, col: number, row: number, bright = 1): void {
   const cols = fb.width
   for (let y = 0; y < sprite.rows.length; y++) {

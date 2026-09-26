@@ -20,6 +20,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { extname, join, normalize, resolve } from 'node:path'
 import { chromium, type Page } from 'playwright'
+import { NARROWEST } from '../src/game/statusbar.ts'
 import { tinyWad } from './wadfixture.ts'
 
 const DIST = resolve(process.cwd(), 'dist')
@@ -471,12 +472,18 @@ check('the controls do not sit on top of the picture', () => {
   // stick was resting on the status line, and the bottom-left of that line is
   // the health. A screenshot caught it; this is what would have.
   //
-  // The floors come from what the two layouts actually measure -- 49x47 and
-  // 73x28 -- set low enough to be about a regression rather than about the
-  // font. The landscape band before this was 107x14, which is what they catch.
+  // The column floors are the status bar's own threshold rather than a round
+  // number: under NARROWEST it drops to a single line, and a phone that reads
+  // the grid at 8px is exactly what buys the four panels. Measured at 80x77
+  // upright and 118x46 sideways, so both have room to shrink a little before
+  // this fires -- what it catches is the grid going back to a coarse font.
+  //
+  // The row floors come from what the layouts measure, low enough to be about
+  // a regression rather than about the font. The landscape band before this
+  // was 107x14, which is what they catch.
   const layouts = [
-    { name: 'portrait', band: upright, leastCols: 40, leastRows: 40 },
-    { name: 'landscape', band: lying, leastCols: 60, leastRows: 22 },
+    { name: 'portrait', band: upright, leastCols: NARROWEST, leastRows: 40 },
+    { name: 'landscape', band: lying, leastCols: NARROWEST, leastRows: 22 },
   ]
   for (const { name, band, leastCols, leastRows } of layouts) {
     assert(band !== null, `could not measure the ${name} screen against the controls`)
@@ -741,31 +748,15 @@ const installed = await browser.newContext({ viewport: { width: 1280, height: 72
 const app = await installed.newPage()
 await app.goto(base, { waitUntil: 'domcontentloaded' })
 
-const workerState = await app.evaluate(async () => {
-  if (!('serviceWorker' in navigator)) return 'unsupported'
-  const registration = await Promise.race([
-    navigator.serviceWorker.ready,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
-  ])
-  if (!registration) return 'never became ready'
-
-  // Waited for rather than read once. `ready` resolves as soon as there is an
-  // active registration, and that worker can still be inside its own activate
-  // handler at the time -- `clients.claim()` has not finished. Sampling at that
-  // instant is a race, and it is one this check quietly won until the bundle
-  // grew enough for installing to take a moment longer, at which point it
-  // reported the game broken because the worker was one tick behind.
-  //
-  // Nothing is weakened by waiting: a worker that is genuinely stuck returns
-  // the state it settled on, and "activating" after eight seconds still fails.
-  const state = () => (registration.active ? registration.active.state : 'ready with no active worker')
-  const deadline = Date.now() + 8000
-  while (state() !== 'activated' && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  return state()
+const leftovers = await app.evaluate(async () => {
+  // Nothing is installed any more, so this asks what is left rather than
+  // waiting for something to arrive. The old version waited eight seconds for
+  // `ready` and another eight for `activated`; with no worker coming, that was
+  // sixteen seconds of the gate spent proving an absence.
+  const workers = await navigator.serviceWorker.getRegistrations()
+  const names = await caches.keys()
+  return { workers: workers.length, caches: names }
 })
-
 const manifestResponse = await app.request.get(new URL('manifest.webmanifest', base).href)
 const manifestStatus = manifestResponse.status()
 const manifest = manifestStatus === 200 ? ((await manifestResponse.json()) as Record<string, unknown>) : null
@@ -804,11 +795,24 @@ check('the game is installable', () => {
   }
 })
 
-check('one visit is enough to play with the network off', () => {
-  assert(workerState === 'activated', `the service worker is "${workerState}"`)
-  assert(offline !== null, `the page would not load offline: ${offlineFailure}`)
-  assert(offline.cols > 20, `offline the grid came back ${offline.cols} columns wide`)
-  assert(offline.frames > 0, 'the page loaded offline but never drew a frame')
+check('nothing is cached between launches', () => {
+  // The reverse of what this used to assert, and pinned on purpose. A service
+  // worker was precaching the shell and every asset until an installed copy was
+  // reported showing an old build; the cache went rather than be guessed at.
+  // Somebody putting one back would quietly make the README a lie, and this is
+  // what would catch it.
+  assert(leftovers.workers === 0, `${leftovers.workers} service worker(s) are still registered`)
+  assert(
+    leftovers.caches.length === 0,
+    `caches survived the visit: ${leftovers.caches.join(', ')}`,
+  )
+  // And the consequence, stated rather than implied: with nothing cached, the
+  // page does not come up without a network.
+  assert(
+    offline === null || offline.frames === 0,
+    `the page drew ${offline?.frames} frames offline, so something is caching after all`,
+  )
+  void offlineFailure
 })
 
 // Ground that hurts, in the running game rather than in a fixture. The channel
@@ -1931,11 +1935,16 @@ check('nothing in the level moves until the title is dismissed', () => {
   }
 })
 
-check('a wide screen gets the bar and a phone keeps the line', () => {
+check('a screen with room for the bar gets it', () => {
   const desktop = fronts.find((f) => f.name === 'desktop')!
   const phone = fronts.find((f) => f.name === 'phone')!
   assert(desktop.playing.panels === 4, `a 163-column grid drew ${desktop.playing.panels} panels`)
-  assert(phone.playing.panels === 0, `a phone drew ${phone.playing.panels} panels instead of the single line`)
+  // A phone used to keep the single line because 49 columns cannot hold four
+  // panels. Its characters are smaller now and its grid is 80 wide, which is
+  // over the seventy-two the bar needs -- so it gets the bar too. The claim
+  // that a narrow grid keeps the line has not changed and is checked in Node,
+  // where a 49-column grid can still be asked for directly.
+  assert(phone.playing.panels === 4, `a phone drew ${phone.playing.panels} panels on an 80-column grid`)
   // The bar is opaque. Drawn straight over the world it came out as HEALTH and
   // 93 tangled into a wall of per-cent signs, so the foot is checked for the
   // words rather than for the flag that says they were placed.

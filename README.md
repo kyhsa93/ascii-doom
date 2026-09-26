@@ -155,17 +155,25 @@ not the same number while the address bar is up — the difference is about the
 height of the strip the controls sit in, which is why it was the controls that
 went missing.
 
-One visit is enough to play it with the network off. That takes a little doing,
-because the build hashes its asset names and the service worker is copied
-through the build untouched — so the only place those names exist is the page
-that refers to them. The worker reads them out of it while installing. Without
-that, a first visit caches a page whose scripts were fetched before the worker
-was in charge, and going offline serves you a shell pointing at files that are
-not there.
+**It does not work offline, and that is a deliberate trade.** There was a
+service worker that precached the shell and every hashed asset, so one visit was
+enough to play with the network off. It was taken out because an installed copy
+was reported showing an old build, and a cache you cannot inspect from the
+outside is a bad place to be wrong.
 
-The page itself is fetched from the network first and falls back to the cache,
-since it is the one file the build does not hash; everything else is
-content-addressed, so a cache hit is always the right bytes.
+Whether it really was the worker is not settled. Simulated here — build A
+installed, the server swapped to build B, reloaded — Chromium picked up the new
+build immediately, so nothing this machine can run reproduces the fault. The one
+place it might live is iOS in standalone, which cannot be run here at all. Given
+a choice between guessing at a cache nobody can observe and not having one, the
+page does not have one: every launch fetches it, which is a fraction of a second
+and no offline play.
+
+The characters are smaller on a touch screen than at a desk — eight pixels
+against thirteen. That is not about fitting more text in: a phone's grid was
+49 by 47 cells, which is too few to say what a creature is, and at eight it is
+80 by 77. Text stays legible because a handset draws three device pixels per
+CSS pixel, and the grid is then wide enough for the status bar as well.
 
 The icons are generated rather than drawn — `npm run icon` renders them from
 the game's own characters in the game's own colours. They are wider than they
@@ -183,8 +191,7 @@ one — and the first map in it is drawn by this renderer, with that file's own
 pictures. The page says which it did: how many things it drew from the file, or
 that the file had no pictures in it.
 Nothing is bundled: thirty megabytes of someone else's work has no business in
-a page that is thirty kilobytes and caches itself for offline use, and the file
-never leaves your machine.
+a page of fifty-eight kilobytes, and the file never leaves your machine.
 
 An exit in the original is a line rather than a room, and there are two kinds:
 one you walk across and one you press like a switch. Both come across, by two

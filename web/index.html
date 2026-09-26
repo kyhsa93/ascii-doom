@@ -182,6 +182,21 @@
         */
         #screen {
           margin-bottom: var(--band);
+          /*
+            Smaller than at a desk, and for the opposite of the obvious reason.
+            A phone's grid was 49 by 47, which is not enough cells to say what a
+            creature is -- it came out as a dozen characters of red. At eight
+            pixels it is 80 by 77, the creature has a shape, and the text is
+            still crisp because a handset draws three device pixels for each of
+            these and the earlier judgement against small text was read off a
+            screenshot at one.
+            Eight rather than six and a half: at six and a half the walls thin
+            out into a faint stipple and the room stops reading, which no amount
+            of extra detail on the creature makes up for. And eighty columns is
+            over the seventy-two the status bar needs, so a phone gets the bar
+            rather than the single line.
+          */
+          font-size: 8px;
         }
         /*
           Above the stick, on the left, where nothing else sits in either

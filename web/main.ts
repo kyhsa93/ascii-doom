@@ -16,7 +16,7 @@ import { drawAutomap } from '../src/columns/automap.ts'
 import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
-import { drawBillboards, drawSprite, type Billboard } from '../src/columns/sprite.ts'
+import { drawBillboards, drawSprite, squeezed, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, normalizeAngle, provoke, updateActors } from '../src/game/ai.ts'
 import {
   LEVELS,
@@ -31,6 +31,7 @@ import { deathLines, finishNow, reachExit, summaryLayout, summaryLines } from '.
 import { layoutHud } from '../src/game/hud.ts'
 import { LOGO } from '../src/game/freedoomart.ts'
 import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
+import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
@@ -43,6 +44,9 @@ import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/play
 import { WEAPONS, fire } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
+// Declared here rather than beside its listener: the menu opens it too, and a
+// `const` reached before its declaration is a mistake this project has made.
+const wadInput = document.getElementById('wad') as HTMLInputElement | null
 const keys = document.getElementById('keys')!
 const surface = new PreSurface(screen)
 
@@ -78,6 +82,30 @@ let mapOpen = false
  * timer, because the trigger is the one control every device has.
  */
 let titleUp = true
+
+/**
+ * The menu under the logo.
+ *
+ * Built once at boot rather than each frame: the cursor lives in it, so a menu
+ * rebuilt every frame would forget where you were.
+ */
+let menu: Menu = openMenu([
+  { label: 'begin', action: { kind: 'begin' } },
+  { label: 'the outpost', action: { kind: 'level', index: 0 } },
+  { label: 'the cistern', action: { kind: 'level', index: 1 } },
+  { label: 'open a WAD', action: { kind: 'openWad' } },
+])
+
+/**
+ * Whether the trigger and the stick were already held last step.
+ *
+ * A menu moves one line per press, and every input here is a level rather than
+ * an edge: holding the stick up would run the cursor round the ring several
+ * times a second, and holding fire would choose the first item the instant the
+ * menu appeared. The automap key learned this the same way.
+ */
+let choosing = false
+let leaning = 0
 /** The map key as it was last frame, so holding it does not strobe the map. */
 let mapAsked = false
 /** Map units to a grid row. Close enough in to read a room, wide enough to place it. */
@@ -419,10 +447,29 @@ function step(): void {
     // Nothing moves behind it. A creature that had been walking while the title
     // was up would be somewhere else by the time anybody saw the room.
     const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
-    if (asked.fire || asked.use) {
-      titleUp = false
-      say(state.def.name)
+
+    // Up is up on both: the arrow keys give `look`, and on a phone the stick
+    // that walks you forward is the one that moves the cursor.
+    const lean = asked.look !== 0 ? Math.sign(asked.look) : Math.sign(asked.forward)
+    if (lean !== 0 && lean !== leaning) menu = moveCursor(menu, -lean)
+    leaning = lean
+
+    const pressing = asked.fire || asked.use
+    if (pressing && !choosing) {
+      const action = chosen(menu)
+      if (action?.kind === 'begin') {
+        titleUp = false
+        say(state.def.name)
+      } else if (action?.kind === 'level') {
+        titleUp = false
+        startLevel(action.index)
+      } else if (action?.kind === 'openWad') {
+        // The picker is a real file input; clicking its label is what a player
+        // does, and the change handler already knows what to do with the bytes.
+        wadInput?.click()
+      }
     }
+    choosing = pressing
     return
   }
 
@@ -841,13 +888,19 @@ function frame(now: number): void {
     // The logo is the one piece of Freedoom's interface that survives becoming
     // characters: the title painting and the status bar are a fog of colons at
     // any size that fits, which is why neither is here.
-    const left = Math.floor((fb.width - LOGO.rows[0]!.length) / 2)
-    const topOf = Math.max(0, Math.floor((fb.height - LOGO.rows.length) / 2) - 2)
-    drawSprite(fb, LOGO, left, topOf)
-    drawText(fb, Math.floor(fb.width / 2), Math.min(fb.height - 2, topOf + LOGO.rows.length + 2), 'fire to begin', {
-      color: vec3(0.9, 0.85, 0.7),
-      align: 'center',
-    })
+    //
+    // Squeezed to the grid rather than drawn at the size it was baked: at 94
+    // characters across it does not fit a phone held upright, and centring it
+    // there cut the first stroke of the D and the last of the M off the edges.
+    const logo = squeezed(LOGO, fb.width)
+    const left = Math.floor((fb.width - logo.rows[0]!.length) / 2)
+    const topOf = Math.max(0, Math.floor((fb.height - logo.rows.length) / 2) - 2)
+    drawSprite(fb, logo, left, topOf)
+    for (const line of menuLayout(fb.width, fb.height, menu, topOf + logo.rows.length + 2)) {
+      drawText(fb, line.col, line.row, line.text, {
+        color: line.under ? vec3(1.15, 0.9, 0.5) : vec3(0.6, 0.58, 0.54),
+      })
+    }
   }
 
   surface.present(fb)
@@ -1052,14 +1105,40 @@ if (new URLSearchParams(location.search).has('probe')) {
  * built page from 127.0.0.1, so a host test would switch the worker off in the
  * one place anything looks at it.
  */
-if ('serviceWorker' in navigator && !import.meta.url.endsWith('.ts')) {
-  window.addEventListener('load', () => {
-    // Relative to the page, so the worker's scope is the game's directory and
-    // nothing else on the domain.
-    void navigator.serviceWorker.register('./sw.js').catch(() => {
-      // A worker that will not install is a game that still runs, online.
+/*
+ * Nothing is kept between launches.
+ *
+ * This used to install a service worker that precached the shell and every
+ * hashed asset, so one visit was enough to play with the network off. That is
+ * gone on purpose: the report was that an installed copy kept showing an old
+ * build, and a cache nobody can inspect from the outside is a bad place to be
+ * wrong. Simulated here -- build A installed, the server swapped to build B,
+ * reloaded -- Chromium picked up B immediately, so the worker was not the
+ * culprit anywhere this machine can see. The one place it might have been is
+ * iOS in standalone, which cannot run here at all.
+ *
+ * So rather than guess at a cache that cannot be observed, there is no cache.
+ * Every launch fetches the page. What that costs is the offline play the README
+ * used to promise, and the README says so now.
+ *
+ * Both of these clean up after the worker that used to be here, for copies
+ * already installed on somebody's home screen. There is no reload: the page has
+ * just been fetched, and reloading after clearing a cache the worker then
+ * refills is how you write a loop.
+ */
+if ('serviceWorker' in navigator) {
+  void navigator.serviceWorker
+    .getRegistrations()
+    .then((workers) => Promise.all(workers.map((worker) => worker.unregister())))
+    .catch(() => {
+      // An old worker that will not go is a game that still runs, online.
     })
-  })
+}
+if ('caches' in globalThis) {
+  void caches
+    .keys()
+    .then((names) => Promise.all(names.map((name) => caches.delete(name))))
+    .catch(() => {})
 }
 
 /**
@@ -1070,7 +1149,6 @@ if ('serviceWorker' in navigator && !import.meta.url.endsWith('.ts')) {
  * the game the wrong file is an ordinary thing to do, and the game carrying on
  * with the level it already had is the right answer to it.
  */
-const wadInput = document.getElementById('wad') as HTMLInputElement | null
 wadInput?.addEventListener('change', () => {
   const file = wadInput.files?.[0]
   if (!file) return
