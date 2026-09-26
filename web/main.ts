@@ -47,13 +47,15 @@ import {
   SCATTERGUN_HELD,
   SIDEARM_FIRING,
   SIDEARM_HELD,
+  TROOPER,
 } from '../src/game/freedoomart.ts'
 import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
 import { intentAt, record, remember, sealed, seeded, type Demo, type Tape } from '../src/game/demo.ts'
-import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
+import { forget, hear, intentsAt, lockstep, ready as tickReady, speak, type Lockstep } from '../src/game/netplay.ts'
+import { keyboardIntent, mergeIntents, touchIntent, type Intent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState, type Skill } from '../src/game/wadlevel.ts'
@@ -61,7 +63,7 @@ import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
 import { blast, sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
-import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/player.ts'
+import { EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody, type Body } from '../src/game/player.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
@@ -69,6 +71,16 @@ const screen = document.getElementById('screen')!
 // `const` reached before its declaration is a mistake this project has made.
 const wadInput = document.getElementById('wad') as HTMLInputElement | null
 const keys = document.getElementById('keys')!
+/*
+ * The panel two people meet through, held here rather than beside the code
+ * that uses it. That code runs inside the frame loop, and this file has three
+ * times had a `const` read before its declaration and spent a while reading
+ * the `undefined` as a result.
+ */
+const meetPanel = document.getElementById('meet')
+const meetMine = document.getElementById('meetmine') as HTMLTextAreaElement | null
+const meetTheirs = document.getElementById('meettheirs') as HTMLTextAreaElement | null
+const meetSaid = document.getElementById('meetsaid')
 const surface = new PreSurface(screen)
 
 /**
@@ -266,6 +278,8 @@ function titleMenu(cursor?: number): Menu {
     { label: 'the cistern', action: { kind: 'level', index: 1 } },
     // One line rather than sixty-eight, and disabled until the list arrives.
     { label: 'the maps that ship', action: { kind: 'shipped' }, enabled: shipped.length > 0 },
+    // Needs the maps for the same reason: both sides play one that ships.
+    { label: 'play somebody', action: { kind: 'meet' }, enabled: shipped.length > 0 },
     { label: `difficulty: ${skill}`, action: { kind: 'skill' } },
     { label: `sound: ${audible ? 'on' : 'off'}`, action: { kind: 'sound' } },
   ])
@@ -578,6 +592,36 @@ let ghostly = false
  * `tick` counts steps rather than frames: a frame can take several steps or
  * none, and a demo is indexed by the thing the rules actually advance on.
  */
+/*
+ * The other player, when there is one.
+ *
+ * A body like any other -- the same cylinder the player and every creature are
+ * -- carrying the angle it faces so it can be drawn looking somewhere. Not a
+ * creature: nothing shoots at it yet, because being shootable means being in
+ * the list a shot is traced against and that list is creatures. Putting a
+ * player in it would have every count in the game call them a monster.
+ */
+let mate: (Body & { angle: number }) | null = null
+/** The agreement about ticks, while two people are playing. */
+let net: Lockstep | null = null
+let wire: RTCPeerConnection | null = null
+let channel: RTCDataChannel | null = null
+/** The last tick this side put its own asking on the wire for. */
+let spokenFor = -1
+/** Which of the two this side is, which decides where each of you stands. */
+let hosting = false
+/** What the loop decided this tick runs with, for `step` to pick up. */
+let runMine: Intent | null = null
+let runTheirs: Intent | null = null
+/**
+ * How many ticks ahead input is addressed.
+ *
+ * The same at both ends or the two games are not the same game. Three at a
+ * sixtieth is fifty milliseconds of lead, which absorbs a connection between
+ * two people in one country and is short enough that nobody feels it.
+ */
+const LEAD = 3
+
 let rolls = seeded(Date.now() >>> 0)
 let taping: Tape | null = null
 let playing: Demo | null = null
@@ -962,6 +1006,12 @@ function step(): void {
       } else if (action?.kind === 'level') {
         titleUp = false
         startLevel(action.index)
+      } else if (action?.kind === 'meet') {
+        // The title stays up behind it: the panel is a step on the way into a
+        // game rather than a game, and closing it should leave you where you
+        // were rather than in a room on your own.
+        meetPanel?.classList.add('up')
+        say('one string each way')
       } else if (action?.kind === 'shipped') {
         // The same shape the file picker produces, so picking a map that ships
         // and picking one out of a file you opened look and behave alike.
@@ -1074,7 +1124,7 @@ function step(): void {
    * recording runs out, which `intentAt` says by answering null rather than by
    * repeating its last frame forever.
    */
-  let intent = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+  let intent = runMine ?? mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
   if (playing !== null) {
     const written = intentAt(playing, tick)
     if (written === null) {
@@ -1133,6 +1183,27 @@ function step(): void {
         player.floor = level.sectors[landed]!.floor + (player.hover ?? 0)
       }
     } else moveBody(level, player, dx * speed, dy * speed)
+  }
+
+  /*
+   * And the other player, by what they asked for on this same tick.
+   *
+   * The same arithmetic and deliberately not the same code path: what follows
+   * the player's own step is doors opening, teleports firing and secrets being
+   * counted, and that is this machine's business rather than a remote body's.
+   * Two people tripping one line is a door that opens and opens again.
+   */
+  if (mate !== null && runTheirs !== null) {
+    const asked = runTheirs
+    mate.angle += asked.turn * TURN_SPEED * STEP
+    const theirSpeed = (asked.run ? RUN_SPEED : WALK_SPEED) * STEP
+    const tfx = Math.cos(mate.angle)
+    const tfy = Math.sin(mate.angle)
+    const tsx = Math.cos(mate.angle + Math.PI / 2)
+    const tsy = Math.sin(mate.angle + Math.PI / 2)
+    const tdx = tfx * asked.forward + tsx * asked.strafe
+    const tdy = tfy * asked.forward + tsy * asked.strafe
+    if (tdx !== 0 || tdy !== 0) moveBody(level, mate, tdx * theirSpeed, tdy * theirSpeed)
   }
 
   /*
@@ -1405,7 +1476,34 @@ function frame(now: number): void {
   // Clamped above, so a backgrounded tab returning after a minute takes a few
   // steps rather than several thousand.
   while (accumulator >= STEP) {
+    if (net !== null) {
+      /*
+       * Say what this side wants, then run the tick only if both sides have.
+       *
+       * Said once per tick rather than on every pass, because a tick that has
+       * to wait comes round again and re-sending would put the same asking on
+       * the wire a hundred times while one packet is late.
+       *
+       * Breaking rather than dropping the time: the accumulator keeps what it
+       * has, so a side that fell behind runs the ticks it owes when the other
+       * catches up. Skipping them is how two games stop being one.
+       */
+      if (spokenFor < tick) {
+        const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+        const packet = speak(net, tick, asked)
+        spokenFor = tick
+        if (channel !== null && channel.readyState === 'open') channel.send(JSON.stringify(packet))
+      }
+      const both = tickReady(net, tick) ? intentsAt(net, tick) : null
+      if (both === null) break
+      runMine = both.mine
+      runTheirs = both.theirs
+      // Ticks already played are no use to anybody.
+      forget(net, tick - 8)
+    }
     step()
+    runMine = null
+    runTheirs = null
     accumulator -= STEP
   }
 
@@ -1446,6 +1544,16 @@ function frame(now: number): void {
   for (const actor of actors) {
     // Lit by the sector it stands in, the way the original lights a thing.
     visible.push(billboardOf(actor, level.sectors[actor.sector]?.light ?? 0.5))
+  }
+  if (mate !== null) {
+    visible.push({
+      x: mate.x,
+      y: mate.y,
+      z: mate.floor,
+      light: level.sectors[mate.sector]?.light ?? 0.5,
+      // The trooper, which is the human shape this game already has baked.
+      sprite: TROOPER,
+    })
   }
   for (const shot of projectiles) {
     if (!shot.alive) continue
@@ -1768,6 +1876,11 @@ function frame(now: number): void {
     menuLabel: titleUp ? (menu.items[menu.cursor]?.label ?? '') : '',
     /** Whether a run is on offer, which is what enables the first menu item. */
     offering: offered !== null,
+    /** Whether another player is on the other end, and where they are standing. */
+    linked: channel !== null && channel.readyState === 'open',
+    mateAt: mate === null ? null : { x: mate.x, y: mate.y },
+    netTick: tick,
+    hosting,
     statusBar: bar === null ? 0 : bar.panels.length,
     /**
      * What the first creature in the level is actually drawn with.
@@ -1983,6 +2096,176 @@ wadInput?.addEventListener('change', () => {
       say(`${names.length} maps — pick one`)
     })
     .catch((error: unknown) => say((error as Error).message))
+})
+
+/*
+ * Two people, over one string each way.
+ *
+ * The handshake is carried by a person because there is no server to carry it:
+ * host makes a line, the other pastes it and presses join, and the line that
+ * comes back is pasted into host's box and accepted. Every candidate is
+ * gathered into the description before it is shown, so what is copied is the
+ * whole of it and there is nothing to exchange afterwards.
+ */
+function meetSay(text: string): void {
+  if (meetSaid !== null) meetSaid.textContent = text
+}
+
+/** Waits for the candidates, so one string is the whole offer or answer. */
+async function settled(pc: RTCPeerConnection): Promise<string> {
+  if (pc.iceGatheringState !== 'complete') {
+    await new Promise<void>((done) => {
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') done()
+      }
+    })
+  }
+  return JSON.stringify(pc.localDescription)
+}
+
+/**
+ * Starts the same map on both sides, from the same seed.
+ *
+ * A map that ships, because both ends already have all sixty-eight and a file
+ * one of you opened is a file the other has never seen. The campaign's own
+ * levels are out for a plainer reason: they are written for one person and
+ * place nowhere for a second to stand.
+ */
+async function pairUp(seed: number, mapName: string, first: boolean): Promise<void> {
+  const entry = shipped.find((one) => one.name === mapName)
+  if (entry === undefined) {
+    meetSay(`no map called ${mapName} on this side`)
+    return
+  }
+  const answer = await fetch(new URL(`maps/${entry.file}`, document.baseURI))
+  if (!answer.ok) {
+    meetSay(`${mapName} answered ${answer.status}`)
+    return
+  }
+  rolls = seeded(seed)
+  titleUp = false
+  enterWad(new Uint8Array(await answer.arrayBuffer()), mapName)
+  net = lockstep(LEAD)
+  spokenFor = -1
+  tick = 0
+  /*
+   * One of you stands where the map starts and the other where it says a
+   * second player goes, and the two sides have to disagree about which is
+   * which or they are not in the same world.
+   *
+   * This was very nearly wrong in a way no obvious check would have caught.
+   * Both sides ran the same code, so both put *themselves* at the start and
+   * the other at the deathmatch spot -- and everything still looked right: the
+   * connection was up, the other player was drawn, and walking moved them on
+   * the far screen. Two people would have been playing two games that agreed
+   * about everything except where anybody was.
+   *
+   * The deathmatch starts come first in the list, which is what puts the two
+   * of you rooms apart rather than in the same doorway.
+   */
+  const away = state.otherStarts[0] ?? {
+    x: state.player.x + 1.5,
+    y: state.player.y,
+    angle: 0,
+    sector: state.player.sector,
+  }
+  const home = { x: state.player.x, y: state.player.y, angle: state.player.angle, sector: state.player.sector }
+  const mine = first ? home : away
+  const theirs = first ? away : home
+  state.player.x = mine.x
+  state.player.y = mine.y
+  state.player.angle = mine.angle
+  state.player.sector = mine.sector
+  state.player.floor = state.level.sectors[mine.sector]?.floor ?? state.player.floor
+  mate = {
+    x: theirs.x,
+    y: theirs.y,
+    angle: theirs.angle,
+    sector: theirs.sector,
+    floor: state.level.sectors[theirs.sector]?.floor ?? 0,
+    radius: PLAYER_RADIUS,
+    height: PLAYER_HEIGHT,
+  }
+  hosting = first
+  meetPanel?.classList.remove('up')
+  say(`${mapName} · two players`)
+}
+
+function listen(open: RTCDataChannel): void {
+  channel = open
+  open.onmessage = (event: MessageEvent) => {
+    const message = JSON.parse(String(event.data)) as {
+      start?: { seed: number; map: string }
+      tick?: number
+      intent?: Intent
+    }
+    if (message.start !== undefined) {
+      // Whoever sent the invitation stands at the map's own start.
+      void pairUp(message.start.seed, message.start.map, false)
+      return
+    }
+    if (net !== null && message.tick !== undefined && message.intent !== undefined) {
+      hear(net, { tick: message.tick, intent: message.intent })
+    }
+  }
+}
+
+meetPanel?.addEventListener('click', (event) => {
+  const pressed = (event.target as HTMLElement | null)?.id
+  if (pressed === 'meetshut') meetPanel.classList.remove('up')
+})
+
+document.getElementById('meethost')?.addEventListener('click', () => {
+  void (async () => {
+    const pc = new RTCPeerConnection()
+    wire = pc
+    const open = pc.createDataChannel('play')
+    listen(open)
+    open.onopen = () => {
+      const map = shipped[0]?.name
+      if (map === undefined) {
+        meetSay('no maps to play on')
+        return
+      }
+      const seed = Date.now() >>> 0
+      open.send(JSON.stringify({ start: { seed, map } }))
+      void pairUp(seed, map, true)
+    }
+    await pc.setLocalDescription(await pc.createOffer())
+    const text = await settled(pc)
+    if (meetMine !== null) meetMine.value = text
+    meetSay('copy that to the other player')
+  })()
+})
+
+document.getElementById('meetjoin')?.addEventListener('click', () => {
+  void (async () => {
+    const theirs = meetTheirs?.value.trim()
+    if (!theirs) {
+      meetSay('paste what they sent you first')
+      return
+    }
+    const pc = new RTCPeerConnection()
+    wire = pc
+    pc.ondatachannel = (event: RTCDataChannelEvent) => listen(event.channel)
+    await pc.setRemoteDescription(JSON.parse(theirs) as RTCSessionDescriptionInit)
+    await pc.setLocalDescription(await pc.createAnswer())
+    const text = await settled(pc)
+    if (meetMine !== null) meetMine.value = text
+    meetSay('send that back to them')
+  })()
+})
+
+document.getElementById('meetaccept')?.addEventListener('click', () => {
+  void (async () => {
+    const theirs = meetTheirs?.value.trim()
+    if (!theirs || wire === null) {
+      meetSay('host first, then paste their answer')
+      return
+    }
+    await wire.setRemoteDescription(JSON.parse(theirs) as RTCSessionDescriptionInit)
+    meetSay('joined')
+  })()
 })
 
 keys.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'

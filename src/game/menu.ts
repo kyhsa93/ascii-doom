@@ -45,6 +45,15 @@ export type MenuAction =
    * that cycles.
    */
   | { readonly kind: 'shipped' }
+  /**
+   * Play somebody else, which needs a string carried between two browsers.
+   *
+   * On the title because that is where you choose what to play. It was very
+   * nearly not reachable at all: the panel it opens is hidden until a class is
+   * put on it, and for a while nothing put one there -- a whole feature behind
+   * a door with no handle, which this project has built once before.
+   */
+  | { readonly kind: 'meet' }
   /** One of those, by name, fetched when it is chosen. */
   | { readonly kind: 'pick'; readonly name: string }
   /**

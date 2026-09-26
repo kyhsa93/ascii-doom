@@ -296,6 +296,15 @@ export function wadLevelState(
      */
     shotLines: machines.shot,
     /**
+     * Where a second person can stand, which the file says and this carries.
+     *
+     * The deathmatch starts first because that is what they are for: a map
+     * scatters four to a dozen of them far apart, where the other players'
+     * starts sit beside the first one and would put two people in the same
+     * doorway. The other starts are the fallback for a map with neither.
+     */
+    otherStarts: [...map.duels, ...map.others],
+    /**
      * Still empty, and now for a reason rather than for want of an importer.
      * A lift here is a floor that carries you when you stand on it; a lift in a
      * file starts raised and is called from a wall, and putting one in this

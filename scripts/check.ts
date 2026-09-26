@@ -90,6 +90,7 @@ import { loadLevel } from '../src/game/levels.ts'
 import { fits, restore, snapshot } from '../src/game/save.ts'
 import { cheatWords, effectOf, fresh, typeLetter } from '../src/game/cheats.ts'
 import { intentAt, record, remember, sealed, seeded } from '../src/game/demo.ts'
+import { earliestHeld, forget, hear, held, intentsAt, lockstep, ready, speak } from '../src/game/netplay.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -3744,7 +3745,7 @@ test('every way of choosing something from the title is a distinct action', () =
    * so an action quietly disappearing is a feature quietly becoming
    * unreachable -- which has happened twice in this project already.
    */
-  const EXPECTED = ['continue', 'begin', 'level', 'map', 'shipped', 'pick', 'skill', 'sound']
+  const EXPECTED = ['continue', 'begin', 'level', 'map', 'shipped', 'pick', 'meet', 'skill', 'sound']
   const built: MenuItem[] = [
     { label: 'continue', action: { kind: 'continue' } },
     { label: 'begin', action: { kind: 'begin' } },
@@ -3752,6 +3753,7 @@ test('every way of choosing something from the title is a distinct action', () =
     { label: 'a file map', action: { kind: 'map', name: 'E1M1' } },
     { label: 'the maps that ship', action: { kind: 'shipped' } },
     { label: 'one of them', action: { kind: 'pick', name: 'E1M1' } },
+    { label: 'play somebody', action: { kind: 'meet' } },
     { label: 'difficulty', action: { kind: 'skill' } },
     { label: 'sound', action: { kind: 'sound' } },
   ]
@@ -3794,6 +3796,116 @@ test('every map that ships opens, and stands up as a level', () => {
   }
   // Every one of them is a real map rather than a stub that happens to parse.
   assert(smallest > 4, `the smallest map that ships has ${smallest} rooms`)
+})
+
+console.log('\ntwo players')
+
+test('every map that ships has somewhere for a second person to stand', () => {
+  /*
+   * Measured before it was built: all sixty-eight place the second, third and
+   * fourth starts, and between them 519 deathmatch starts -- never fewer than
+   * four on a map. The importer dropped every one of them, because type 1 was
+   * taken as the spawn and the rest fell through to a table that has no idea
+   * what a player is.
+   *
+   * Checked against the maps that ship rather than against a fixture, since
+   * the claim is about those maps and a fixture would only repeat what the
+   * fixture was written to say.
+   */
+  const listed = JSON.parse(readFileSync('web/public/maps/maps.json', 'utf8')) as {
+    name: string
+    file: string
+  }[]
+  let fewestDuels = Infinity
+  for (const entry of listed) {
+    const map = readMap(new Uint8Array(readFileSync(`web/public/maps/${entry.file}`)), entry.name)
+    assert(map.spawn !== null, `${entry.name} has nowhere for the first player to stand`)
+    assert(map.others.length >= 1, `${entry.name} has nowhere for a second player to stand`)
+    assert(map.duels.length >= 2, `${entry.name} has ${map.duels.length} deathmatch starts`)
+    // A start nobody can stand in is not a start.
+    for (const where of [...map.others, ...map.duels]) {
+      assert(where.sector >= 0, `${entry.name} puts a start outside its own map`)
+    }
+    fewestDuels = Math.min(fewestDuels, map.duels.length)
+  }
+  assert(fewestDuels >= 4, `the barest map offers ${fewestDuels} deathmatch starts`)
+})
+
+test('a tick waits until both sides have said what they are doing', () => {
+  /*
+   * Lockstep, which is the only way two browsers with no server between them
+   * can agree about a game: neither advances a tick until it holds the input
+   * both players gave for it. The demo round already built everything this
+   * needs -- a fixed step, one seeded generator, and an intent per tick -- so
+   * what is left is the bookkeeping of who has said what.
+   *
+   * Input is sent for a tick a few ahead of the one being played, which is
+   * what stops every tick waiting a round trip. The first few ticks have no
+   * input from anyone and both sides agree they are idle; that agreement is
+   * the delay, and it has to be the same number on both sides or the two games
+   * are not the same game.
+   */
+  const net = lockstep(2)
+  // The opening ticks belong to nobody and are settled in advance.
+  assert(ready(net, 0), 'the first tick was not ready to run')
+  assert(intentsAt(net, 0)?.mine.forward === 0, 'the first tick was not idle')
+
+  // Tick 2 is the first one anybody can have spoken for.
+  assert(!ready(net, 2), 'a tick nobody has spoken for was ready')
+  const packet = speak(net, 0, { ...IDLE, forward: 1 })
+  assert(packet.tick === 2, `input given at tick 0 was addressed to tick ${packet.tick}`)
+  assert(!ready(net, 2), 'a tick ran with only one side in')
+  hear(net, { tick: 2, intent: { ...IDLE, strafe: 1 } })
+  assert(ready(net, 2), 'both sides are in and the tick still will not run')
+
+  const pair = intentsAt(net, 2)
+  assert(pair?.mine.forward === 1, 'my own input came back wrong')
+  assert(pair?.theirs.strafe === 1, 'their input came back wrong')
+})
+
+test('input that arrives late or out of order still finds its tick', () => {
+  // A data channel is not a queue: two packets can cross, and one can be held
+  // up. Each carries the tick it belongs to, so neither case needs handling
+  // beyond putting it where it says.
+  const net = lockstep(1)
+  speak(net, 4, { ...IDLE, forward: 1 })
+  speak(net, 3, { ...IDLE, forward: -1 })
+  hear(net, { tick: 5, intent: { ...IDLE, fire: true } })
+  hear(net, { tick: 4, intent: { ...IDLE, use: true } })
+
+  assert(ready(net, 4) && ready(net, 5), 'a tick with both sides in was not ready')
+  assert(intentsAt(net, 4)?.theirs.use === true, 'the later packet overwrote the earlier one')
+  assert(intentsAt(net, 5)?.theirs.fire === true, 'the earlier packet overwrote the later one')
+  assert(intentsAt(net, 4)?.mine.forward === -1, 'my own input landed on the wrong tick')
+})
+
+test('ticks already played are forgotten rather than kept for ever', () => {
+  // An hour of play at a sixtieth is two hundred thousand ticks, and a game
+  // that keeps them all is a game that runs out of memory rather than ending.
+  const net = lockstep(2)
+  for (let at = 0; at < 500; at++) {
+    speak(net, at, IDLE)
+    hear(net, { tick: at + 2, intent: IDLE })
+  }
+  forget(net, 480)
+  /*
+   * Said as the rule rather than as a number.
+   *
+   * The first version asserted "fewer than forty are held", which is a figure
+   * with nothing behind it -- the honest answer here is forty-four, and
+   * changing the forty to a forty-four would have been fitting the check to
+   * the result. What the rule actually promises is that nothing earlier than
+   * the line survives, and that what does survive is only the stretch that has
+   * not been played yet. Both of those stay true whether the run is five
+   * hundred ticks or five hundred thousand.
+   */
+  assert(earliestHeld(net) >= 480, `a tick from ${earliestHeld(net)} survived a sweep at 480`)
+  // Two sides, and the lead means input reaches `lead` ticks past the last one
+  // spoken for -- so that stretch, twice, is the whole of what may remain.
+  const stretch = (501 - 480 + 1) * 2
+  assert(held(net) <= stretch, `${held(net)} ticks are held against the ${stretch} unplayed`)
+  // And what is still wanted survives the tidying.
+  assert(ready(net, 490), 'forgetting took a tick that had not been played yet')
 })
 
 console.log('\ndemos')

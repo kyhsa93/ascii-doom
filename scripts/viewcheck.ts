@@ -1956,6 +1956,131 @@ check('the maps that ship can be reached and played', () => {
   assert(playingAShippedMap.lines > 100, `${playingAShippedMap.level} came up with ${playingAShippedMap.lines} walls`)
 })
 
+/*
+ * Two people, in one world, with nothing between the two browsers.
+ *
+ * Its own browser, with background throttling off. Two pages in one browser
+ * means one of them is behind the other, and a page in the background has its
+ * frames throttled -- which in lockstep does not slow one side down, it stops
+ * both, because neither may advance a tick the other has not spoken for.
+ */
+const pairBrowser = await chromium.launch({
+  args: [
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+  ],
+})
+const pairContext = await pairBrowser.newContext({ viewport: { width: 1280, height: 720 } })
+const hostPage = await pairContext.newPage()
+const guestPage = await pairContext.newPage()
+for (const page of [hostPage, guestPage]) {
+  page.on('pageerror', (error) => problems.push(`two players: ${error.message}`))
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+}
+// Long enough for the list of maps to arrive, which is what turns the line on.
+await hostPage.waitForTimeout(1400)
+await guestPage.waitForTimeout(200)
+
+const openMeeting = async (page: Page): Promise<boolean> => {
+  for (let i = 0; i < 12; i++) {
+    if ((await readOpened(page)).menuLabel === 'play somebody') break
+    await hold(page, 'ArrowDown', 150)
+  }
+  const found = (await readOpened(page)).menuLabel === 'play somebody'
+  await hold(page, ' ', 150)
+  return found
+}
+const hostFoundIt = await openMeeting(hostPage)
+const guestFoundIt = await openMeeting(guestPage)
+
+const waitForLine = (page: Page) =>
+  page.waitForFunction(
+    () => ((document.getElementById('meetmine') as HTMLTextAreaElement | null)?.value.length ?? 0) > 0,
+    undefined,
+    { timeout: 15000 },
+  )
+
+await hostPage.click('#meethost')
+await waitForLine(hostPage)
+const invitation = await hostPage.inputValue('#meetmine')
+await guestPage.fill('#meettheirs', invitation)
+await guestPage.click('#meetjoin')
+await waitForLine(guestPage)
+const reply = await guestPage.inputValue('#meetmine')
+await hostPage.fill('#meettheirs', reply)
+await hostPage.click('#meetaccept')
+
+const standing = (page: Page) =>
+  page.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      linked: d.linked === true,
+      hosting: d.hosting === true,
+      level: (d.level as string) ?? '',
+      tick: (d.netTick as number) ?? -1,
+      x: (d.x as number) ?? NaN,
+      y: (d.y as number) ?? NaN,
+      mate: (d.mateAt as { x: number; y: number } | null) ?? null,
+    }
+  })
+
+// The handshake, the fetch of a map on both sides, and a few seconds of play.
+await hostPage.waitForTimeout(6000)
+const hostJoined = await standing(hostPage)
+const guestJoined = await standing(guestPage)
+
+// One of them walks, and the question is whether the other sees it.
+await hostPage.keyboard.down('w')
+await hostPage.waitForTimeout(1200)
+await hostPage.keyboard.up('w')
+await hostPage.waitForTimeout(800)
+const hostWalked = await standing(hostPage)
+const guestWatching = await standing(guestPage)
+await pairBrowser.close()
+
+check('two browsers meet with no server and play the same world', () => {
+  assert(hostFoundIt && guestFoundIt, 'the title has no line offering to play somebody')
+  assert(hostJoined.linked && guestJoined.linked, 'the two pages never connected')
+  assert(hostJoined.hosting && !guestJoined.hosting, 'both sides think they are the same one')
+  assert(
+    hostJoined.level === guestJoined.level && hostJoined.level !== '',
+    `one is in ${hostJoined.level} and the other in ${guestJoined.level}`,
+  )
+  assert(hostJoined.tick > 0 && guestJoined.tick > 0, 'the clock never started on one of them')
+
+  /*
+   * The assertion this round was really written for.
+   *
+   * Both sides ran the same code at first, so both put themselves at the map's
+   * start and the other at the deathmatch spot -- connected, drawn, and moving
+   * on each other's screens while disagreeing about where anybody was. Asking
+   * "are you connected" and "did they move" both passed.
+   */
+  assert(hostJoined.mate !== null && guestJoined.mate !== null, 'one of them cannot see the other')
+  const hostSeesGuest = Math.hypot(hostJoined.mate!.x - guestJoined.x, hostJoined.mate!.y - guestJoined.y)
+  const guestSeesHost = Math.hypot(guestJoined.mate!.x - hostJoined.x, guestJoined.mate!.y - hostJoined.y)
+  assert(hostSeesGuest < 0.5, `the host draws the guest ${hostSeesGuest.toFixed(1)} m from where the guest is`)
+  assert(guestSeesHost < 0.5, `the guest draws the host ${guestSeesHost.toFixed(1)} m from where the host is`)
+  // And they are not standing in the same doorway, which the file decides.
+  const apart = Math.hypot(hostJoined.x - guestJoined.x, hostJoined.y - guestJoined.y)
+  assert(apart > 2, `the two of them started ${apart.toFixed(1)} m apart`)
+})
+
+check('what one player does reaches the other', () => {
+  const moved = Math.hypot(hostWalked.x - hostJoined.x, hostWalked.y - hostJoined.y)
+  assert(moved > 0.5, `the host walked ${moved.toFixed(2)} m, so there is nothing to carry`)
+  assert(guestWatching.mate !== null, 'the guest lost sight of the host')
+  const carried = Math.hypot(
+    guestWatching.mate!.x - guestJoined.mate!.x,
+    guestWatching.mate!.y - guestJoined.mate!.y,
+  )
+  assert(carried > 0.5, `the host moved ${moved.toFixed(2)} m and the guest saw them move ${carried.toFixed(2)} m`)
+  // And the far screen agrees about where they ended up, not merely that they moved.
+  const agree = Math.hypot(guestWatching.mate!.x - hostWalked.x, guestWatching.mate!.y - hostWalked.y)
+  assert(agree < 0.5, `after walking, the two sides are ${agree.toFixed(1)} m apart about where the host is`)
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

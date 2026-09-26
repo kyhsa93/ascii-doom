@@ -217,6 +217,15 @@ export interface WadMap {
   /** Where the first player starts, or null if the map has no start at all. */
   readonly spawn: Spawn | null
   /**
+   * Where the second, third and fourth players start.
+   *
+   * Every map in the two files this was built against places all three, which
+   * is what makes a second person possible without inventing a spot.
+   */
+  readonly others: readonly Spawn[]
+  /** The deathmatch starts, which a map scatters far more of than it has players. */
+  readonly duels: readonly Spawn[]
+  /**
    * Everything the file places except two kinds: the player starts, and the
    * things marked for deathmatch only.
    *
@@ -414,6 +423,8 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
 
   let spawn: Spawn | null = null
   const placed: WadThing[] = []
+  const others: Spawn[] = []
+  const duels: Spawn[] = []
   for (let i = 0; i < things.size / 10; i++) {
     const at = things.at + i * 10
     const type = view.getUint16(at + 6, true)
@@ -432,6 +443,28 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
       spawn ??= { x, y, angle, sector: sectorAt(level, x, y) }
       continue
     }
+    /*
+     * Somewhere for a second person to stand.
+     *
+     * Types 2 to 4 are the other players' starts and 11 is a deathmatch start,
+     * and every one of the sixty-eight maps this was built against carries
+     * both -- 519 deathmatch starts between them, never fewer than four on a
+     * map. They were dropped until two people could play: type 1 was taken as
+     * the spawn and the rest fell through to a table that has no idea what a
+     * player is.
+     *
+     * Reported separately from `things` rather than mixed in, for the reason
+     * the first start is: a list of what the map places should not quietly
+     * contain places rather than things.
+     */
+    if (type >= 2 && type <= 4) {
+      others.push({ x, y, angle, sector: sectorAt(level, x, y) })
+      continue
+    }
+    if (type === 11) {
+      duels.push({ x, y, angle, sector: sectorAt(level, x, y) })
+      continue
+    }
     // Bit four is "this exists only in a deathmatch".
     if ((flags & 0x10) !== 0) continue
     // Bits 0 to 2 are the skills this thing shows up on. Kept raw: the mapping
@@ -440,5 +473,5 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
     placed.push({ type, x, y, angle, sector: sectorAt(level, x, y), skills: flags & 0x07 })
   }
 
-  return { name, level, spawn, things: placed, specials, tagged }
+  return { name, level, spawn, others, duels, things: placed, specials, tagged }
 }

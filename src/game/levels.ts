@@ -114,6 +114,14 @@ export interface LevelState {
    * pellet arrives somewhere you may be nowhere near.
    */
   readonly shotLines: ReadonlyMap<Line, readonly Mover[]>
+  /**
+   * Places a second player can start, best first.
+   *
+   * Empty for every level written here, which were built for one person. A map
+   * from a file has them in abundance -- 519 deathmatch starts across the
+   * sixty-eight that ship, never fewer than four on a map.
+   */
+  readonly otherStarts: readonly { readonly x: number; readonly y: number; readonly angle: number; readonly sector: number }[]
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
   /**
@@ -191,6 +199,7 @@ export function loadLevel(def: LevelDef): LevelState {
     crossedLines: new Map<Line, readonly Mover[]>(),
     switchLines: new Map<Line, readonly Mover[]>(),
     shotLines: new Map<Line, readonly Mover[]>(),
+    otherStarts: [],
     fromFile: 0,
   }
 }

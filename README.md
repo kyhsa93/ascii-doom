@@ -626,6 +626,56 @@ exactly as they do to a switch: shooting a lock is not a way past it. Thirteen
 maps get twenty-two doors out of it, which is the same twenty-two the file
 promised before any of this was wired.
 
+Two people can play, with nothing in between them. There is no server behind
+this page and there is not going to be one, so the two browsers talk directly:
+one presses host, copies the line that appears, and the other pastes it and
+sends a line back. Three copies between two people, and the game is joined.
+
+What keeps the two games the same game is lockstep, and the demo round had
+already built all of it without meaning to. Neither side advances a tick until
+it holds what both players asked for on that tick; the input is addressed a few
+ticks ahead so the wait is absorbed rather than felt; and the reason any of
+that produces the same world twice is the same reason a recording does -- a
+fixed step, one seeded generator behind every roll, and an intent per tick. A
+demo and a remote player are the same mechanism pointed in different
+directions.
+
+A tick that cannot run stops the clock rather than being skipped. Skipping is
+how two games quietly stop being one, and the accumulator keeping its time
+means a side that fell behind runs the ticks it owes when the other catches up.
+
+What this does not do yet is let the two of you shoot each other, and the
+reason is worth writing down rather than hiding. Being shootable means being in
+the list a shot is traced against, and that list is creatures -- so a player put
+into it becomes a monster to every count in the game: the tally at the end of a
+level, what the creatures decide to fight, what a barrel's blast catches. That
+is a change to what a creature is, and it belongs in its own round rather than
+smuggled into this one. For now the other player is somebody you can see
+walking the same rooms.
+
+It is played on the maps that ship, and that follows from what the two sides
+can both have. A file one of you opened is a file the other has never seen; the
+campaign's own two levels are written for one person and place nowhere for a
+second to stand. The sixty-eight do both -- they are already on both machines,
+and every one of them carries deathmatch starts, four at the barest and 519
+between them. The host sends a name and a seed, both sides fetch the same map,
+and the other player appears where the file says a second player goes, which is
+rooms away rather than in your doorway.
+
+One of you stands where the map starts and the other where it says a second
+player goes, and getting that wrong was the near miss of the round. Both sides
+run the same code, so the first version had each of them put *themselves* at
+the start and the other at the deathmatch spot -- and everything looked right.
+The connection was up, the other player was drawn, walking moved them on the
+far screen. Two people would have been playing two games that agreed about
+everything except where anybody was.
+
+No check I had written would have caught it, because "are you connected" and
+"did they move" were both true. What catches it is asking the two sides to
+agree about each other: where the host says it is standing has to be where the
+guest is drawing it, and the other way round. That assertion is in the gate,
+and taking the split back out makes it fire.
+
 A run can be recorded and played back. Type idrec and the game starts writing
 down what you ask for; type idplay and it does it again by itself, from the
 same level and the same seed.
