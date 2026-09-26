@@ -2475,6 +2475,60 @@ test('a lift arrives under the table that matches how it is worked', () => {
   }
 })
 
+test('every tagged special arrives, under the table that matches how it works', () => {
+  /*
+   * A table of numbers is the easiest thing in this importer to break by
+   * omission: drop one and nothing fails, the maps just quietly lose a door.
+   * Seven were added in one go -- five doors and two floors -- which took the
+   * tagged machines from eight hundred and seventy-two to twelve hundred and
+   * eighteen across the two files, so this walks the whole table rather than
+   * naming the new ones.
+   */
+  const shutRoom = () => {
+    const level = plainLevel([0, 0], [[0, 1]])
+    level.sectors[1]!.ceiling = 0
+    return level
+  }
+  const raisedRoom = () => plainLevel([0, 3], [[0, 1]])
+
+  /*
+   * Written out here rather than read from the table being checked.
+   *
+   * The first version walked `taggedSpecials()` itself, which cannot notice a
+   * deletion: remove a number and it leaves the list of things to try at the
+   * same moment. Deleting special 2 -- a hundred and sixteen lines across
+   * thirty maps -- changed nothing and the falsifier sat silent. A check that
+   * derives its expectations from the thing under test is not a check.
+   */
+  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 2, 109, 38, 37, 19, 36]
+  const table = taggedSpecials()
+  for (const special of EXPECTED) {
+    assert(table.includes(special), `special ${special} has gone out of the tagged table`)
+  }
+  assert(
+    table.length === EXPECTED.length,
+    `the table holds ${table.length} specials against the ${EXPECTED.length} written down here`,
+  )
+
+  for (const special of EXPECTED) {
+    // A door needs a shut room to open and a floor needs somewhere to go, and
+    // which of the two this is cannot be read off the number. Try both; one of
+    // them must produce exactly one machine.
+    const asDoor = taggedFrom(shutRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
+    const asFloor = taggedFrom(raisedRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
+    const made = asDoor.movers.length === 1 ? asDoor : asFloor
+    assert(
+      made.movers.length === 1,
+      `special ${special} is in the table and makes no machine in either shape`,
+    )
+    // And it is filed under exactly one of the two ways of working it, because
+    // the page asks two different questions -- what am I facing, and what did
+    // my step cross.
+    const worked = made.pressed.size + made.crossed.size
+    assert(worked === 1, `special ${special} arrived under ${worked} ways of working it`)
+  }
+})
+
 test('a switch opens the door its tag names', () => {
   // The room a 103 names is shut the way a door is shut -- ceiling on the
   // floor -- and opens to under the lowest ceiling around it. Two hundred and

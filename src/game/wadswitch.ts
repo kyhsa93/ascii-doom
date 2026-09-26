@@ -50,19 +50,61 @@ const TAGGED = new Map<
   number,
   { surface: 'floor' | 'ceiling'; target: 'lowestCeiling' | 'lowestFloor' | 'highestFloor'; fast: boolean }
 >([
-  // Switches.
+  /*
+   * A door held open where the original would shut it again.
+   *
+   * 63 is the repeatable switch whose door closes itself, and this machine has
+   * one wait for every special it makes: zero, meaning stay put. Eighty-two
+   * lines on seventeen maps are affected and none of them becomes unplayable --
+   * a door that stays open is a door you can always get back through -- but it
+   * is a difference from the original rather than a decision, and the next
+   * person to wonder should find it written down instead of in the maps.
+   */
+  // Switches that open a door somewhere else.
   [103, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
+  [112, { surface: 'ceiling', target: 'lowestCeiling', fast: true }],
+  [61, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
+  [63, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
+  // Switches that move a floor.
   [23, { surface: 'floor', target: 'lowestFloor', fast: false }],
   [102, { surface: 'floor', target: 'highestFloor', fast: false }],
+  [71, { surface: 'floor', target: 'lowestFloor', fast: true }],
   // Walked across. The same rooms, reached the other way, now that a crossing
   // is something this engine can see.
+  //
+  // 2 and 109 are the commonest of all of these -- thirty and twenty-five maps
+  // -- and both are doors you open by walking through the line rather than by
+  // pressing anything. Measured: of the rooms they name, a hundred and
+  // thirty-five each are shut the way a door is shut, and not one of them is
+  // without a neighbour to measure an opening against.
+  [2, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
+  [109, { surface: 'ceiling', target: 'lowestCeiling', fast: true }],
   [38, { surface: 'floor', target: 'lowestFloor', fast: false }],
+  [37, { surface: 'floor', target: 'lowestFloor', fast: false }],
   [19, { surface: 'floor', target: 'highestFloor', fast: false }],
   [36, { surface: 'floor', target: 'highestFloor', fast: true }],
 ])
 
+/*
+ * What is deliberately still out, so the next reader does not take the gaps for
+ * oversights. Each was measured rather than guessed:
+ *
+ *   133 (fifty lines) is a locked door, and all fifty-three rooms it names are
+ *   already at their lowest floor -- it moves a ceiling, and the lock needs the
+ *   key table, so it belongs with the doors rather than here.
+ *
+ *   18 and 20 (thirty-nine lines between them) raise a floor to the *next*
+ *   height above it, which is a fourth kind of target this does not have; only
+ *   half their rooms even have somewhere lower, so folding them into
+ *   "highestFloor" would move most of them the wrong way.
+ *
+ *   46 (twenty-six lines) has twenty-eight of its thirty-two rooms already at
+ *   the bottom, which is what a gun-triggered door looks like from here: the
+ *   trigger is the missing half, not the geometry.
+ */
+
 /** Which of these are worked by pressing, rather than by walking across. */
-const PRESSED = new Set([103, 23, 102])
+const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71])
 
 export interface TaggedMachines {
   /** The movers to add to the level, in the order they were made. */

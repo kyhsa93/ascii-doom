@@ -368,6 +368,28 @@ creatures and twenty-five of them are armed.
 Numbers this game has no answer for put nothing there at all, which is why a
 map arrives without its lamps rather than with them swinging at you.
 
+Seven more line specials joined that third family after counting what was still
+being ignored: five kinds of door and two kinds of floor, all of them tagged.
+Two of the five are the commonest unhandled numbers in either file -- special 2
+on thirty maps and 109 on twenty-five -- and both are doors you open by walking
+through the line rather than by pressing anything, which only became possible
+once a crossing was something the engine could see. Together they take the
+tagged machines from eight hundred and seventy-two to twelve hundred and
+eighteen, the doors among them from two hundred and twenty-seven to four hundred
+and fifty-eight, and the lines you work by crossing from three hundred and
+seventy-nine to seven hundred and thirty-one.
+
+Four numbers are still out, and each for a measured reason rather than an
+oversight: 133 is a locked door whose fifty-three rooms are all already at their
+lowest floor, so it needs the key table rather than this one; 18 and 20 raise a
+floor to the *next* height above it, a fourth kind of target this does not have,
+and only half their rooms even have somewhere lower to be measured against; 46
+has twenty-eight of its thirty-two rooms already at the bottom, because the
+missing half of it is a trigger rather than a shape. One difference is
+deliberate: special 63's door shuts itself again in the original and stays open
+here, which is eighty-two lines on seventeen maps and makes none of them
+unplayable.
+
 A map is built for one difficulty rather than all of them at once. Doom's five
 settings are three sets of flags -- the two easy ones share a bit and the two
 hard ones share another -- and the importer was reading none of them, so every
