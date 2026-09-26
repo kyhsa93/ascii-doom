@@ -552,6 +552,30 @@ The title screen carries it as a line that cycles rather than three that sit
 there, because a file's map list already fills the rows under the logo. Normal
 to begin with, which is where the original starts you.
 
+The commonest thing this importer does not read turns out not to matter, and
+it took a measurement to believe it. Six hundred and forty-eight lines across
+thirty-five maps carry special 48 -- more than any other number it ignores --
+and not one of them names a tag. Five hundred and sixteen have nothing behind
+them at all, and their textures are ordinary walls: circuit, stone, plain. A
+line that names no room and has no far side cannot move anything, so what it
+marks is a property of that piece of wall rather than a machine, and a map full
+of them plays through untouched.
+
+The second commonest is 334 lines on forty-one maps, which is nearly every map
+in both files, and that one I chased through four guesses before the file said
+no. Every one of those lines is tagged and two-sided, four fifths of them stand
+alone on their tag, and their textures are plain walls. But the rooms they name
+scatter: of two hundred and twenty-eight, some can only move a ceiling, some
+only a floor, and thirty-eight are already where every target this importer
+knows would put them. One special does one thing, and that is not the shape of
+one thing. It is written here unread rather than implemented on a hunch.
+
+What is worth reading next is much smaller and much clearer. Twenty-six lines
+on thirteen maps name twenty-two rooms, and eighteen of those rooms are shut
+the way a door is shut, with the ceiling resting on the floor. The trigger is
+the missing half: this one opens when it is shot, and a bullet stopping on a
+wall is not yet something the level can hear.
+
 The things that fly do. Seven hundred and forty-three of the bodies a normal run
 of the two files puts in front of you float in the original -- the big one that
 throws, the skull that charges, the one that spawns them -- and every one of
