@@ -29,6 +29,7 @@ import { atHeight, atWidth } from '../columns/bakedart.ts'
 import type { Sprite } from '../columns/sprite.ts'
 import type { ActorKind } from './ai.ts'
 import {
+  BARREL,
   BLUE_KEY,
   CLIP,
   GUNNER,
@@ -70,6 +71,7 @@ export const CRAWLER: Sprite = atHeight(TROOPER, 1.3)
 export const CRAWLER_DOWN: Sprite = atWidth(TROOPER_DOWN, CRAWLER.width)
 export const SENTRY: Sprite = atHeight(HOUND, 2.1)
 export const SENTRY_DOWN: Sprite = atWidth(HOUND_DOWN, SENTRY.width)
+export const BARREL_ART: Sprite = atHeight(BARREL, 1.0)
 export const GUNMAN: Sprite = atHeight(GUNNER, 1.4)
 export const GUNMAN_DOWN: Sprite = atWidth(GUNNER_DOWN, GUNMAN.width)
 export const DRIFTER: Sprite = atHeight(IMP, 1.6)
@@ -269,6 +271,40 @@ export const GUNMAN_KIND: ActorKind = {
   painChance: 0.45,
   deathTime: 0.6,
   hitscan: { range: 28, shots: 3, damage: 5, spread: 0.22 },
+}
+
+/**
+ * A barrel: a body that stands still until something kills it.
+ *
+ * Not a creature in any sense that matters -- no speed, no sight, no reach --
+ * but a body with health, which is exactly what a barrel is. Modelling it as
+ * one costs a table entry and nothing else, and the alternative is a second
+ * kind of thing that the renderer, the tracer and the mover would all have to
+ * learn about.
+ *
+ * Twenty health, so anything kills it; the blast is the rocket's, which is what
+ * the original does and the reason a room with barrels in it is a room you
+ * fight differently.
+ */
+export const BARREL_KIND: ActorKind = {
+  name: 'barrel',
+  sprite: BARREL_ART,
+  corpse: BARREL_ART,
+  radius: 0.35,
+  height: 1,
+  eye: 0.5,
+  health: 20,
+  speed: 0,
+  sightRange: 0,
+  reach: 0,
+  damage: 0,
+  windUp: 0.1,
+  recovery: 10,
+  painTime: 0,
+  painChance: 0,
+  deathTime: 0.2,
+
+  explodes: { radius: 4.5, damage: 55 },
 }
 
 export const SENTRY_KIND: ActorKind = {

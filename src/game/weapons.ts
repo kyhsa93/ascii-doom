@@ -89,7 +89,27 @@ export const LAUNCHER: Weapon = {
   range: 0,
   interval: 1.2,
   cost: 1,
-  projectile: { sprite: SLUG, speed: 14, damage: 48, life: 5 },
+  /*
+   * Most of it is the blast rather than the impact, which is what makes a
+   * launcher a different weapon rather than a slow rifle.
+   *
+   * Forty-eight on the body was the whole of it before, and a rocket that only
+   * hurts what it touches is worth less than the scattergun at every range. The
+   * total against a single body standing still is now higher -- twenty on
+   * impact and up to fifty-five from the blast -- and the cost is that the
+   * blast does not ask who fired it. Four and a half metres is a hundred and
+   * eighteen map units, near enough the original's radius, and at this scale it
+   * is about the width of a corridor: fire it at a wall you are standing
+   * against and you will feel it.
+   */
+  projectile: {
+    sprite: SLUG,
+    speed: 14,
+    damage: 20,
+    life: 5,
+    blastRadius: 4.5,
+    blastDamage: 55,
+  },
 }
 
 export const WEAPONS: readonly Weapon[] = [SIDEARM, SCATTERGUN, LAUNCHER]
@@ -100,6 +120,16 @@ export interface FireResult {
   readonly hits: number
   /** Creatures that died from this shot. */
   readonly kills: number
+  /**
+   * Which ones died, as indices into the actors handed in.
+   *
+   * The count alone was enough while every death was just a death. It stopped
+   * being enough when a barrel became a body: whoever fired has to know *what*
+   * it killed to set off what the thing leaves behind, and a pistol shot that
+   * failed to burst a barrel a rocket would have burst is the kind of
+   * inconsistency nobody reports and everybody feels.
+   */
+  readonly killed: number[]
   /** Where each pellet ended, for drawing a spark. Empty for a thrown weapon. */
   readonly ends: { x: number; y: number }[]
   /** Anything now in flight, for the caller to add to what it is tracking. */
@@ -138,6 +168,7 @@ export function fire(
   let kills = 0
   const ends: { x: number; y: number }[] = []
   const shots: Projectile[] = []
+  const killed: number[] = []
 
   for (let pellet = 0; pellet < weapon.pellets; pellet++) {
     const angle = (aim ?? shooter.angle) + (random() * 2 - 1) * weapon.spread
@@ -165,8 +196,11 @@ export function fire(
     ends.push({ x: shot.x, y: shot.y })
     if (!shot.hit) continue
     hits++
-    if (damageActor(actors[shot.hit.index]!, weapon.damage, random)) kills++
+    if (damageActor(actors[shot.hit.index]!, weapon.damage, random)) {
+      kills++
+      killed.push(shot.hit.index)
+    }
   }
 
-  return { hits, kills, ends, shots }
+  return { hits, kills, killed, ends, shots }
 }

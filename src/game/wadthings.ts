@@ -20,7 +20,14 @@
  */
 
 import type { ActorKind } from './ai.ts'
-import { CRAWLER_KIND, DRIFTER_KIND, GUNMAN_KIND, SENTRY_KIND, SHOOTER_KIND } from './things.ts'
+import {
+  BARREL_KIND,
+  CRAWLER_KIND,
+  DRIFTER_KIND,
+  GUNMAN_KIND,
+  SENTRY_KIND,
+  SHOOTER_KIND,
+} from './things.ts'
 
 /**
  * The commonest small ones -- the things a map puts in the way rather than in
@@ -87,6 +94,7 @@ const HEAVY = [
  * exactly like the campaign does.
  */
 const PICTURE = new Map<number, string>([
+  [2035, 'BAR1'],
   [3004, 'POSS'],
   [3006, 'SKUL'],
   [9, 'SPOS'],
@@ -112,7 +120,19 @@ export function creaturePictureFor(type: number): string | null {
   return PICTURE.get(type) ?? null
 }
 
+/**
+ * The barrel, which is a body rather than a creature.
+ *
+ * Five hundred and ninety-seven across the two files on thirty-eight maps, and
+ * half of those stand within three metres of another -- the chain is what the
+ * maps are built around rather than a flourish. It arrives through the creature
+ * table because a barrel is a body with health as far as everything here is
+ * concerned; what makes it a barrel is that it goes off when it dies.
+ */
+const BARRELS = [2035]
+
 const BY_TYPE = new Map<number, ActorKind>([
+  ...BARRELS.map((type) => [type, BARREL_KIND] as const),
   ...LIGHT.map((type) => [type, CRAWLER_KIND] as const),
   ...RIFLES.map((type) => [type, SHOOTER_KIND] as const),
   ...SHOTGUNS.map((type) => [type, GUNMAN_KIND] as const),

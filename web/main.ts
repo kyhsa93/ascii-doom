@@ -18,7 +18,15 @@ import { insideSector, lineInFront, type Line, type Sector } from '../src/column
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
 import { crossings } from '../src/columns/crossing.ts'
 import { drawBillboards, drawSprite, squeezed, type Billboard } from '../src/columns/sprite.ts'
-import { billboardOf, damageActor, isAlive, normalizeAngle, provoke, updateActors } from '../src/game/ai.ts'
+import {
+  billboardOf,
+  damageActor,
+  isAlive,
+  normalizeAngle,
+  provoke,
+  updateActors,
+  type Actor,
+} from '../src/game/ai.ts'
 import {
   LEVELS,
   freshCarrier,
@@ -40,7 +48,7 @@ import { wadLevelState } from '../src/game/wadlevel.ts'
 import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
-import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
+import { blast, sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
 import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/player.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
 
@@ -459,6 +467,64 @@ button(
 /** One simulation step. Fixed, so movement does not depend on frame rate. */
 const STEP = 1 / 60
 
+/**
+ * Kills a creature and sets off whatever it leaves behind.
+ *
+ * Every place that can hurt a creature goes through here. There are four of
+ * them -- a traced pellet, a creature's gun, a projectile arriving, a blast
+ * catching something -- and a barrel that only exploded when shot by one of
+ * them would be a barrel that behaves differently depending on what killed it.
+ *
+ * Chains, because a blast that kills another barrel calls this again. The depth
+ * is bounded by the barrels actually standing in the blast, and the dying flag
+ * is set before the blast goes off, so a barrel cannot set itself off.
+ */
+/**
+ * Whether a body is something you fought rather than something you burst.
+ *
+ * Barrels arrive through the creature table because a barrel is a body with
+ * health, and that is the cheapest true thing to do -- but a level summary
+ * reading "creatures 4 / 138" when nine of those are barrels is a summary that
+ * lies, and bursting one counted as a kill. Counted in one place so the two
+ * halves of that fraction cannot drift apart.
+ */
+function isCreature(actor: Actor): boolean {
+  return actor.kind.explodes === undefined
+}
+
+function hurtActor(index: number, amount: number, by: number): void {
+  const { level, actors, player } = state
+  const actor = actors[index]
+  if (actor === undefined || !isAlive(actor)) return
+
+  const died = damageActor(actor, amount)
+  if (by >= 0 && by < actors.length && by !== index) provoke(actor, by)
+  if (!died) return
+  // Counted here rather than only where a pellet lands, or a creature killed by
+  // a rocket -- or by a barrel it was standing beside -- would finish the level
+  // uncounted.
+  if (isCreature(actor)) kills++
+
+  const goes = actor.kind.explodes
+  if (goes === undefined) return
+  for (const caught of blast(
+    level,
+    actor.x,
+    actor.y,
+    actor.floor + actor.kind.height / 2,
+    goes.radius,
+    goes.damage,
+    [...actors, player],
+  )) {
+    if (caught.body === actors.length) {
+      takeDamage(carrier, caught.damage)
+      continue
+    }
+    // Recurses into the next barrel, which is the chain the maps are built on.
+    hurtActor(caught.body, caught.damage, by)
+  }
+}
+
 function step(): void {
   const { level, player, actors, movers, pickups, goal } = state
 
@@ -641,8 +707,39 @@ function step(): void {
     // fired it, by the same rule that keeps a creature from shooting itself.
     const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length, Math.random, locked?.angle)
     pelletsLanded += result.hits
-    kills += result.kills
+    // Only the ones that were creatures. `fire` reports every body it killed,
+    // and a barrel is a body.
+    kills += result.killed.filter((index) => {
+      const dead = actors[index]
+      return dead !== undefined && isCreature(dead)
+    }).length
     for (const shot of result.shots) projectiles.push(shot)
+    /*
+     * And anything a pellet killed sets off whatever it leaves behind.
+     *
+     * `fire` damages creatures itself -- it has to, since it traces the pellets
+     * -- so the deaths it causes do not pass through `hurtActor`. Without this,
+     * a barrel burst by a rocket exploded and the same barrel shot with a
+     * pistol quietly fell over, which is the sort of inconsistency nobody
+     * reports and everybody feels.
+     */
+    for (const index of result.killed) {
+      const dead = actors[index]
+      const goes = dead?.kind.explodes
+      if (dead === undefined || goes === undefined) continue
+      for (const caught of blast(
+        level,
+        dead.x,
+        dead.y,
+        dead.floor + dead.kind.height / 2,
+        goes.radius,
+        goes.damage,
+        [...actors, player],
+      )) {
+        if (caught.body === actors.length) takeDamage(carrier, caught.damage)
+        else hurtActor(caught.body, caught.damage, actors.length)
+      }
+    }
   }
 
   // Use: opens whatever you are facing, if you are carrying what it asks for.
@@ -693,17 +790,40 @@ function step(): void {
     const actor = actors[index]
     return actor === undefined || isAlive(actor)
   })) {
+    const kind = impact.projectile.kind
+    const owner = impact.projectile.owner
     if (impact.body === actors.length) {
-      takeDamage(carrier, impact.projectile.kind.damage)
+      takeDamage(carrier, kind.damage)
     } else if (impact.body >= 0) {
-      const struck = actors[impact.body]
-      if (struck) {
-        damageActor(struck, impact.projectile.kind.damage)
-        // Whoever fired it just made an enemy. Only the impact knows both ends
-        // of that, which is why the grudge is set here rather than inside the
-        // creature rules.
-        const owner = impact.projectile.owner
-        if (owner >= 0 && owner < actors.length && owner !== impact.body) provoke(struck, owner)
+      // Through the one function that knows what a death sets off, so a
+      // barrel shot by a rocket and a barrel shot by a pistol behave the same.
+      hurtActor(impact.body, kind.damage, owner)
+    }
+
+    /*
+     * And the blast, if it was something that has one.
+     *
+     * After the direct hit and separately from it: whatever the rocket landed
+     * on takes both, which is the original's arrangement and the reason a
+     * direct hit is worth aiming for. The blast does not ask who fired it, so
+     * the player is in the list and firing at a wall in front of you costs you
+     * health -- which is most of what makes a launcher a decision.
+     */
+    if (kind.blastRadius !== undefined && kind.blastDamage !== undefined) {
+      for (const caught of blast(
+        level,
+        impact.x,
+        impact.y,
+        impact.projectile.z,
+        kind.blastRadius,
+        kind.blastDamage,
+        [...actors, player],
+      )) {
+        if (caught.body === actors.length) {
+          takeDamage(carrier, caught.damage)
+          continue
+        }
+        hurtActor(caught.body, caught.damage, owner)
       }
     }
   }
@@ -843,7 +963,7 @@ function frame(now: number): void {
     const lines = summaryLines({
       seconds: goal.elapsed,
       kills,
-      creatures: actors.length,
+      creatures: actors.filter(isCreature).length,
       collected: pickups.filter((pickup) => pickup.taken).length,
       supplies: pickups.length,
     })
@@ -998,8 +1118,8 @@ function frame(now: number): void {
     levelIndex,
     levelCount: LEVELS.length,
     health: carrier.health,
-    awake: actors.filter((actor) => actor.awake).length,
-    alive: actors.filter((actor) => isAlive(actor)).length,
+    awake: actors.filter((actor) => actor.awake && isCreature(actor)).length,
+    alive: actors.filter((actor) => isAlive(actor) && isCreature(actor)).length,
     weapon: weapon.name,
     ammo: carrier.ammo[weaponIndex],
     shotsFired,

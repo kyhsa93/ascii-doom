@@ -293,6 +293,21 @@ there instead. Health, ammunition, keys, armour and weapons all arrive now;
 scenery does not, and that half matters as much, because a floor lamp that
 heals you is worse than a floor lamp that is missing.
 
+The launcher throws a blast rather than a heavy dart. Most of what it does is
+the explosion -- twenty on impact and up to fifty-five over four and a half
+metres, falling off linearly to nothing at the edge -- and the blast does not
+ask who fired it. Firing into the wall you are standing against costs about
+forty-six health, which was measured by doing it. That is the whole reason a
+launcher is a decision rather than a slow rifle: it is the only weapon here you
+can lose to.
+
+It stops at walls, which needed saying out loud. The check for that spent a
+round being useless: the body it put behind a wall was sixteen metres from the
+blast, so it was excluded for being out of range and the sight test was never
+reached. Deleting the sight test changed nothing and the falsifier sat silent.
+The pair it uses now is four metres apart with a wall between them, which is the
+only shape that can tell "the wall stopped it" from "it was too far away".
+
 Armour was the largest thing being thrown away: it stands on sixty-five of the
 sixty-eight maps and there was nothing here to put in its place. There is now,
 and it is a pool that drains rather than a percentage that lasts — the light
@@ -351,9 +366,24 @@ walls and bodies a player's shot is, so a creature standing in the way takes it
 and a corner stops it. The first map of the first file holds fifty-three
 creatures and twenty-five of them are armed.
 Numbers this game has no answer for put nothing there at all, which is why a
-map arrives without its lamps and barrels rather than with them swinging at
-you. The first map of the set this was built against places fifty-three of
-them.
+map arrives without its lamps rather than with them swinging at you.
+
+The barrels do arrive, and they are the one piece of scenery that is a body:
+five hundred and ninety-seven of them across the two files, standing on
+thirty-eight maps, and three hundred and thirty-three of those are within one
+blast radius of another. They go through the same table the creatures do,
+because a barrel is a body with health as far as the renderer, the tracer and
+the mover are concerned; what makes it a barrel is that killing it sets off the
+rocket's blast, and that blast can kill the next one. Nothing else was needed
+for the chain.
+
+What was needed was one place to die in. Four different things can hurt a
+creature here -- a traced pellet, a creature's own gun, a projectile arriving, a
+blast catching something -- and a barrel that only burst when a rocket killed it
+would behave differently depending on what shot it. The counts had to learn the
+difference too: a barrel is not a creature, so bursting one is not a kill and a
+level summary reading "creatures 4 / 138" on a map with nine barrels in it is a
+summary that lies in both halves.
 
 What else comes across is the geometry, the lighting, the outdoor rooms — drawn as open air rather
 than as a ceiling twenty metres up — and the damaging floors, which land on the

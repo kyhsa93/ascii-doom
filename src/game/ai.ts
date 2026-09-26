@@ -84,6 +84,23 @@ export interface ActorKind {
     readonly damage: number
     readonly spread: number
   }
+  /**
+   * What it leaves behind when it dies, for the things that go off.
+   *
+   * A barrel is not a creature and giving it one anyway is the cheapest true
+   * thing to do here: it is a body with health that stands still, and what
+   * makes it a barrel is this field. Five hundred and ninety-seven of them
+   * stand across these files and half of those are within three metres of
+   * another, so the chain is not a flourish -- it is what the maps are built
+   * around.
+   *
+   * The caller sets it off, because `damageActor` already says whether a blow
+   * was the killing one and the blast belongs to whoever owns the body list.
+   */
+  readonly explodes?: {
+    readonly radius: number
+    readonly damage: number
+  }
 }
 
 export interface Actor extends Body {

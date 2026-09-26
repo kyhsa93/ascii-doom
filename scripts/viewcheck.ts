@@ -496,6 +496,77 @@ check('the controls do not sit on top of the picture', () => {
 // Asked of the page loaded without the flag, which is the one people play.
 const doorShut = await page.evaluate(() => (window as unknown as { __probe?: unknown }).__probe === undefined)
 
+/*
+ * Firing a launcher at the wall you are standing against.
+ *
+ * The blast is a pure function and three Node checks cover what it computes.
+ * None of them says the page ever calls it, which is the failure this
+ * repository keeps meeting -- every piece correct and nothing happening. So
+ * this walks into a wall, fires, and reads the health.
+ */
+const rocketPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+rocketPage.on('pageerror', (error) => problems.push(`rocket: ${error.message}`))
+await rocketPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await rocketPage.waitForTimeout(900)
+await begin(rocketPage)
+await rocketPage.keyboard.press('3')
+await rocketPage.keyboard.down('w')
+await rocketPage.waitForTimeout(1200)
+await rocketPage.keyboard.up('w')
+await rocketPage.waitForTimeout(200)
+const beforeRocket = await readOpened(rocketPage)
+await rocketPage.keyboard.down(' ')
+await rocketPage.waitForTimeout(200)
+await rocketPage.keyboard.up(' ')
+await rocketPage.waitForTimeout(1200)
+const afterRocket = await readOpened(rocketPage)
+await rocketPage.close()
+
+/*
+ * A map holding a barrel, to see what the page calls a creature.
+ *
+ * Barrels arrive through the same table the monsters do, so every count that
+ * says "creatures" had to learn the difference. Nine of E1M2's hundred and
+ * thirty-eight bodies are barrels; a summary reading "4 / 138" would be wrong
+ * in both halves, since bursting one also counted as a kill.
+ */
+const barrelWad = [...tinyWad('E1M1', true, '', [[160, 32, 0, 2035], [100, 64, 0, 3004]], 0, false, 0)]
+const barrelPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+barrelPage.on('pageerror', (error) => problems.push(`barrel: ${error.message}`))
+await barrelPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await barrelPage.waitForTimeout(900)
+await begin(barrelPage)
+await barrelPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [barrelWad, 'E1M1'] as [number[], string],
+)
+await barrelPage.waitForTimeout(600)
+const withBarrel = await readOpened(barrelPage)
+await barrelPage.close()
+
+check('a barrel is a body but not a creature', () => {
+  // One creature and one barrel were placed. The page must report one.
+  assert(
+    withBarrel.alive === 1,
+    `a map with one creature and one barrel reports ${withBarrel.alive} alive`,
+  )
+})
+
+check('a rocket fired at your feet costs you health', () => {
+  assert(beforeRocket.health === 100, `the walk to the wall already cost health (${beforeRocket.health})`)
+  assert(
+    afterRocket.health < beforeRocket.health,
+    `firing a launcher into a wall left health at ${afterRocket.health}`,
+  )
+  // Not death, either: a blast that killed you outright would pass the line
+  // above while making the weapon unusable.
+  assert(afterRocket.health > 0, 'firing a launcher into a wall killed the player outright')
+})
+
 check('the probe door is shut unless it is asked for', () => {
   // The check below is handed a way to finish a level. That is a cheat sitting
   // in the shipped bundle, and "it is behind a query flag" is a claim about

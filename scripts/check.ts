@@ -106,7 +106,7 @@ import {
   updateActors,
 } from '../src/game/ai.ts'
 import { collect, isUseful, takeDamage, type Carrier, type Pickup } from '../src/game/pickups.ts'
-import {
+import { blast,
   spawnProjectile,
   sweep,
   updateProjectiles,
@@ -123,6 +123,7 @@ import {
 } from '../src/game/player.ts'
 import {
   ALL_SPRITES,
+  BARREL_KIND,
   CRAWLER_KIND,
   GUNMAN_KIND,
   SHOOTER_KIND,
@@ -2795,7 +2796,16 @@ test('only the numbers this game has a creature for put anything there', () => {
   assert(creatureFor(3001) !== null, 'the commonest monster in both files stands nothing up')
   assert(creatureFor(3002) !== null, 'a heavy monster stands nothing up')
   assert(creatureFor(2014) === null, 'a health bonus was given a creature')
-  assert(creatureFor(2035) === null, 'a barrel was given a creature')
+  // The barrel is the one piece of scenery that is a body: it stands still,
+  // it has health, and killing it sets off a blast. Everything else on this
+  // list must stay nothing, because a lamp that heals you is worse than a lamp
+  // that is missing -- that half of this check is the half that matters.
+  const barrel = creatureFor(2035)
+  assert(barrel !== null, 'a barrel stands nothing up')
+  assert(barrel.explodes !== undefined, 'a barrel arrived without anything to go off')
+  assert(barrel.speed === 0 && barrel.reach === 0, 'the barrel can walk or swing')
+  assert(creatureFor(2028) === null, 'a floor lamp was given a creature')
+  assert(creatureFor(2015) === null, 'a scrap of armour was given a creature')
   assert(creatureFor(1) === null, "the player's own start was given a creature")
   assert(creatureFor(11) === null, 'a deathmatch start was given a creature')
 
@@ -2805,8 +2815,14 @@ test('only the numbers this game has a creature for put anything there', () => {
     assert(creatureFor(type) !== null, `type ${type} is in the table and maps to nothing`)
   }
 
-  const scenery = wadLevelState(tinyWad('E1M1', true, '', [[160, 32, 0, 2035]]), 'E1M1')
-  assert(scenery.actors.length === 0, `a barrel put ${scenery.actors.length} creatures on the map`)
+  // A barrel on a map arrives as a body that does nothing until it is shot.
+  const withBarrel = wadLevelState(tinyWad('E1M1', true, '', [[160, 32, 0, 2035]]), 'E1M1')
+  assert(withBarrel.actors.length === 1, `a barrel put ${withBarrel.actors.length} bodies on the map`)
+  assert(withBarrel.actors[0]!.kind.explodes !== undefined, 'the barrel on the map does not go off')
+
+  // And a lamp still arrives as nothing at all.
+  const lamp = wadLevelState(tinyWad('E1M1', true, '', [[160, 32, 0, 2028]]), 'E1M1')
+  assert(lamp.actors.length === 0, `a floor lamp put ${lamp.actors.length} bodies on the map`)
 })
 
 test('asking for a map the file does not have says so', () => {
@@ -4323,6 +4339,101 @@ test('a weapon you already hold is still worth its rounds', () => {
   const full = carrier({ ammo: [10, 24], ammoMax: [60, 24], weapons: new Set([0, 1, 2]) })
   assert(!isUseful(pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 8 }), full),
     'a weapon held with full ammunition was still worth taking')
+})
+
+console.log('\nblasts')
+
+test('a blast falls off with distance and stops at a wall', () => {
+  // Twenty metres of open room in LEVEL_1 runs from x=14 to x=24, which is
+  // where these stand; the pair across the level is the one measured earlier to
+  // have no sight line between them.
+  const here = bodyAt(20, 4)
+  const near = bodyAt(21, 4)
+  const far = bodyAt(23, 4)
+  /*
+   * Behind a wall and *inside* the radius, which is the whole difficulty.
+   *
+   * The first version put this body sixteen metres away across the level. It
+   * was excluded for being out of range, so the sight test was never reached:
+   * deleting that test changed nothing and the falsifier sat silent. This pair
+   * -- measured, four metres apart with a wall between -- is the only shape
+   * that can tell "the wall stopped it" from "it was too far away".
+   */
+  const hidden = bodyAt(14, 8)
+  const centre = bodyAt(14, 4)
+  assert(Math.hypot(hidden.x - centre.x, hidden.y - centre.y) < 4.5, 'the hidden body is not inside the blast')
+
+  const behindWall = blast(LEVEL_1, centre.x, centre.y, 1.0, 4.5, 55, [hidden])
+  assert(behindWall.length === 0, `a blast four metres away reached through a wall for ${behindWall[0]?.damage}`)
+
+  const caught = blast(LEVEL_1, here.x, here.y, 1.0, 4.5, 55, [near, far])
+  const damages = new Map(caught.map((one) => [one.body, one.damage]))
+
+  assert(damages.get(0) !== undefined, 'a body one metre from the blast took nothing')
+  assert(damages.get(1) !== undefined, 'a body three metres from the blast took nothing')
+  assert(
+    damages.get(0)! > damages.get(1)!,
+    `one metre away took ${damages.get(0)} and three metres took ${damages.get(1)}`,
+  )
+  // Linear to nothing at the edge: at one of four and a half metres, the body
+  // keeps most of it.
+  close(damages.get(0)!, 55 * (1 - 1 / 4.5), 1e-9, 'damage one metre from the centre')
+  // And nothing beyond the edge, which the pair above cannot say on its own.
+  assert(damages.get(2) === undefined, 'a third body appeared in a blast of two')
+})
+
+test('a blast does not ask who fired it', () => {
+  // The whole reason a launcher is a decision rather than a better rifle.
+  // Nothing in `blast` takes an owner, so this is a check that the shape of the
+  // thing cannot grow one by accident.
+  const middle = bodyAt(20, 4)
+  const shooter = bodyAt(20.5, 4)
+  const caught = blast(LEVEL_1, middle.x, middle.y, 1.0, 4.5, 55, [shooter])
+  assert(caught.length === 1, 'the body beside the blast was skipped')
+  assert(caught[0]!.damage > 0, 'the body beside the blast took nothing')
+})
+
+test('nothing outside the radius is touched, and a radius of nothing catches nobody', () => {
+  const centre = bodyAt(20, 4)
+  const outside = bodyAt(24, 4)
+  assert(
+    blast(LEVEL_1, centre.x, centre.y, 1.0, 3, 55, [outside]).length === 0,
+    'a body four metres away was caught by a three-metre blast',
+  )
+  assert(blast(LEVEL_1, centre.x, centre.y, 1.0, 0, 55, [outside]).length === 0, 'a blast of no size caught something')
+  assert(blast(LEVEL_1, centre.x, centre.y, 1.0, 4.5, 0, [outside]).length === 0, 'a blast of no force caught something')
+})
+
+test('a barrel stands still, dies easily, and takes the room with it', () => {
+  // Not a creature in any sense that matters: no speed, no sight, no reach.
+  // Modelling it as one costs a table entry, and the alternative is a second
+  // kind of body that the renderer, the tracer and the movers would all have to
+  // learn about.
+  assert(BARREL_KIND.speed === 0, `a barrel walks at ${BARREL_KIND.speed}`)
+  assert(BARREL_KIND.sightRange === 0, 'a barrel can see')
+  assert(BARREL_KIND.reach === 0 && BARREL_KIND.damage === 0, 'a barrel swings at you')
+  assert(BARREL_KIND.explodes !== undefined, 'a barrel has nothing to go off')
+
+  // It stays put when left alone, which is the half a reader would assume and
+  // the half that would break silently if it were given a speed.
+  const barrel = actorAt(20, 4, 0, BARREL_KIND)
+  const player = bodyAt(16, 4)
+  const hurt = simulate([barrel], player, 5)
+  assert(hurt === 0, `a barrel did ${hurt} damage to somebody standing four metres away`)
+  close(barrel.x, 20, 1e-9, 'the barrel moved')
+  assert(stateOf(barrel) === 'dormant', `the barrel woke up by itself (${stateOf(barrel)})`)
+})
+
+test('what a barrel sets off reaches as far as a rocket', () => {
+  // The blast is the rocket's, which is what the original does and why a room
+  // with barrels in it is a room you fight differently. Checked against the
+  // launcher rather than against a number written twice.
+  const goes = BARREL_KIND.explodes
+  assert(goes !== undefined, 'a barrel has nothing to go off')
+  const rocket = LAUNCHER.projectile
+  assert(rocket !== undefined, 'the launcher throws nothing')
+  close(goes.radius, rocket.blastRadius ?? 0, 1e-9, "a barrel's reach against a rocket's")
+  close(goes.damage, rocket.blastDamage ?? 0, 1e-9, "a barrel's force against a rocket's")
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

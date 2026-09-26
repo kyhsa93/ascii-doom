@@ -20,10 +20,20 @@
  */
 
 import { traceShot, type ShotBody } from '../columns/hitscan.ts'
-import { sectorAt, type Level } from '../columns/level.ts'
+import { lineOfSight, sectorAt, type Level } from '../columns/level.ts'
 import type { Sprite } from '../columns/sprite.ts'
 
 export interface ProjectileKind {
+  /**
+   * How far the blast reaches when it lands, or nothing for one that does not.
+   *
+   * On the projectile rather than the weapon because a barrel's blast and a
+   * rocket's are the same event, and because a creature that throws something
+   * explosive should be describable the same way.
+   */
+  readonly blastRadius?: number
+  /** What the blast does at the centre. The direct hit is separate and lands too. */
+  readonly blastDamage?: number
   readonly sprite: Sprite
   /** Map units per second. */
   readonly speed: number
@@ -60,6 +70,64 @@ export interface Projectile {
  * large enough that a step can never finish sitting on a wall.
  */
 const SKIN = 0.05
+
+/**
+ * Everything within a blast, and how much of it each one takes.
+ *
+ * Separate from the projectile that caused it because two very different things
+ * cause blasts -- a rocket arriving and a barrel dying -- and neither should
+ * have to know about the other. The caller applies the damage, because what a
+ * body is and how it is hurt is not this module's business: a creature takes it
+ * through `damageActor` and the player through `takeDamage`, and those live in
+ * two other files.
+ *
+ * Damage falls off linearly to nothing at the edge, which is not the original's
+ * curve but is the one you can reason about while playing: half way out, half
+ * the damage. What is reproduced exactly is the part that matters -- the blast
+ * does not care who fired it, so standing next to your own rocket hurts.
+ *
+ * Sight is asked of every candidate rather than assumed. A blast that goes
+ * through a wall would make the launcher a weapon for shooting floors with.
+ */
+export interface Blast {
+  /** Index into the bodies array handed in. */
+  readonly body: number
+  readonly damage: number
+}
+
+export function blast(
+  level: Level,
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  damage: number,
+  bodies: readonly BlastBody[],
+): Blast[] {
+  const caught: Blast[] = []
+  if (radius <= 0 || damage <= 0) return caught
+
+  for (let index = 0; index < bodies.length; index++) {
+    const body = bodies[index]!
+    const distance = Math.hypot(body.x - x, body.y - y)
+    if (distance >= radius) continue
+    // From the middle of the body rather than its feet: a blast on the floor
+    // beside something should still reach it.
+    const eye = body.floor + body.height / 2
+    if (!lineOfSight(level, body.sector, body.x, body.y, eye, x, y, z)) continue
+    caught.push({ body: index, damage: damage * (1 - distance / radius) })
+  }
+  return caught
+}
+
+/** What a blast needs to know about something it might catch. */
+export interface BlastBody {
+  readonly x: number
+  readonly y: number
+  readonly sector: number
+  readonly floor: number
+  readonly height: number
+}
 
 /** Where a projectile stopped, and on what. */
 export interface Impact {
