@@ -315,8 +315,12 @@ function drawColumn(
     const floorRow = rowOfHeight(sector.floor, distance, view.z, projScale, horizon)
 
     // Ceiling and floor of the sector the ray is crossing, out to this wall.
-    top = paintPlane(fb, col, top, Math.min(bottom, firstRow(ceilingRow) - 1), sector.ceiling, sector.light, view.z, projScale, horizon, 'ceiling', maxDistance)
-    bottom = paintPlane(fb, col, Math.max(top, firstRow(floorRow)), bottom, sector.floor, sector.light, view.z, projScale, horizon, 'floor', maxDistance, true)
+    // The sector's own surfaces, not the defaults. These were literals until a
+    // detour through someone else's map showed that a floor asking to be drawn
+    // as sludge was drawn as ordinary ground -- the fields had been stored on
+    // every sector since they were introduced and read by nothing.
+    top = paintPlane(fb, col, top, Math.min(bottom, firstRow(ceilingRow) - 1), sector.ceiling, sector.light, view.z, projScale, horizon, sector.ceilingMaterial, maxDistance)
+    bottom = paintPlane(fb, col, Math.max(top, firstRow(floorRow)), bottom, sector.floor, sector.light, view.z, projScale, horizon, sector.floorMaterial, maxDistance, true)
 
     const next = acrossFrom(hit.line, current)
     if (next < 0) {

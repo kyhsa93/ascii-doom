@@ -1505,6 +1505,68 @@ test('ordinary ground never costs anything, however long you stand on it', () =>
   assert(bite(level, dry, makeHazard(), 600) === 0, 'standing on a floor hurt')
 })
 
+test('a floor asking for a material is drawn in that material', () => {
+  // The check below this one reads the level definition and asks what it says.
+  // It passed for a day while the renderer ignored the field entirely: the
+  // material was stored on every sector and read by nothing, so a channel of
+  // sludge came out drawn as ordinary ground. Breaking the definition made
+  // that check fail, which proved only that it reads definitions.
+  //
+  // So this one renders. Standing in the wet room, glyphs from the sludge ramp
+  // have to actually be on the screen -- and glyphs from the floor ramp have to
+  // be there too, from the dry room next door, or a frame of nothing but sludge
+  // would satisfy it just as well.
+  // Where you stand matters, and the obvious spot is the wrong one. From the
+  // middle of the wet room the portal is two metres away, and the floor you
+  // are standing on projects below the bottom of the frame -- every floor cell
+  // on screen then belongs to the dry room beyond, so the view contains no
+  // sludge however correctly it is drawn. Standing back from the portal brings
+  // your own floor into shot. This cost three rounds of chasing the renderer
+  // for a fault that was in the viewpoint.
+  const level = buildLevel(SLUDGE_ROOM)
+  const wet = sectorAt(level, 7.5, 2)
+  const fb = new Framebuffer(120, 40)
+  fb.clear(0, 0, 0, 0)
+  renderView(fb, level, { x: 7.5, y: 2, z: 1.6, angle: Math.PI, sector: wet, fovY: DEFAULT_FOV_Y }, 0.574, {})
+
+  const sludgeRamp = MATERIALS.sludge!.ramp
+  const floorRamp = MATERIALS.floor!.ramp
+  let sludgeCells = 0
+  let floorCells = 0
+  for (let i = 0; i < fb.width * fb.height; i++) {
+    const glyph = String.fromCharCode(fb.chars[i] ?? 32)
+    if (glyph === ' ') continue
+    if (sludgeRamp.includes(glyph)) sludgeCells++
+    if (floorRamp.includes(glyph)) floorCells++
+  }
+
+  // Both counts in both messages. The first version of this check reported
+  // only the one that failed, and separating "the floor was drawn in the wrong
+  // material" from "no floor was drawn at all" then cost a round of guessing.
+  assert(
+    floorCells > 0,
+    `no ordinary floor was drawn at all (sludge ${sludgeCells}, floor ${floorCells}), so this view proves nothing`,
+  )
+  assert(
+    sludgeCells > 0,
+    `standing in sludge, none of it drew as sludge (sludge ${sludgeCells}, floor ${floorCells})`,
+  )
+})
+
+test('every material a level names actually exists', () => {
+  // The names reach the renderer now, and it looks them up without a fallback,
+  // so a typo in a level definition is a blank screen rather than a wrong tint.
+  const missing: string[] = []
+  for (const def of LEVELS) {
+    for (const sector of loadLevel(def).level.sectors) {
+      for (const name of [sector.floorMaterial, sector.ceilingMaterial]) {
+        if (!(name in MATERIALS)) missing.push(`${def.name} names a surface "${name}" that does not exist`)
+      }
+    }
+  }
+  assert(missing.length === 0, missing.join('; '))
+})
+
 test('ground that hurts is ground you can see is different', () => {
   // An invisible hazard is not a difficulty setting, it is a bug: the player
   // has one channel for "this is a different kind of thing", and it is the
