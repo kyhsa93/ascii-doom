@@ -97,19 +97,23 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 5px 10px;
+        /* Room on the right for the button that now floats over this row. */
+        padding: 5px 120px 5px 10px;
         font-size: 12px;
         color: #6a6460;
         border-top: 1px solid #191922;
       }
       /*
-        Pushed to the far end. Sitting at the end of the legend it read as part
-        of the sentence -- "E use open a WAD" -- because every other item in
-        that line is separated by a middot and this one was not.
+        Its own fixed corner rather than the end of the legend. It read as part
+        of the sentence there -- "E use open a WAD" -- and, worse, it went with
+        the legend when the legend was hidden for touch, which left a phone no
+        way to reach it.
       */
       #pick {
-        margin-left: auto;
-        flex: none;
+        position: fixed;
+        right: max(10px, env(safe-area-inset-right));
+        bottom: max(6px, env(safe-area-inset-bottom));
+        z-index: 2;
         padding: 3px 9px;
         border: 1px solid #2c2c38;
         border-radius: 6px;
@@ -178,6 +182,17 @@
         */
         #screen {
           margin-bottom: var(--band);
+        }
+        /*
+          Above the stick, on the left, where nothing else sits in either
+          orientation -- the stick is 132 tall from the bottom inset, and the
+          buttons are all on the right. Opening a file is a thing you do once,
+          so it must not take a corner a thumb needs during a fight.
+        */
+        #pick {
+          right: auto;
+          left: max(16px, env(safe-area-inset-left));
+          bottom: calc(max(18px, env(safe-area-inset-bottom)) + 140px);
         }
       }
 
@@ -322,11 +337,25 @@
     -->
     <div id="hint">
       <span id="keys">booting…</span>
-      <label id="pick">
-        open a WAD
-        <input id="wad" type="file" accept=".wad,application/octet-stream" />
-      </label>
     </div>
+
+    <!--
+      Opening a file, and deliberately not inside the legend any more.
+
+      The legend is hidden on a touch screen, and this was inside it, so on a
+      phone there was no way to open a WAD at all -- the whole importer was
+      unreachable on the one device most people would be holding.
+
+      What puts it above the controls, which cover the whole screen, is the
+      `z-index` in its rule and not where it sits here. That was worth finding
+      out: this comment said the order was doing it, and moving it back in front
+      of the controls changed nothing at all. The two together are belt and
+      braces, and the check only fails when both are gone.
+    -->
+    <label id="pick">
+      open a WAD
+      <input id="wad" type="file" accept=".wad,application/octet-stream" />
+    </label>
 
     <!--
       Touch controls. Left thumb walks, the right side of the screen turns and

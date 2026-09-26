@@ -165,6 +165,20 @@ function enterWad(bytes: Uint8Array, mapName: string): void {
   levelIndex = -1
   refillCarrier(carrier)
   enterLevel(next)
+
+  /*
+   * Say what came of it, because otherwise nothing does.
+   *
+   * A file whose pictures this can read looks different and a file without any
+   * looks exactly as it always did, and from the outside those two are the same
+   * event: a map appeared. The first report of this feature was "I can't tell
+   * what changed", which is a fair thing to say about a change that announces
+   * itself by looking slightly different in a dark room.
+   */
+  const drawn =
+    next.actors.filter((actor) => actor.kind.sprite.colors !== undefined).length +
+    next.pickups.filter((pickup) => pickup.sprite.colors !== undefined).length
+  say(drawn === 0 ? `${mapName} · no pictures in that file` : `${mapName} · ${drawn} drawn from the file`)
 }
 
 let weaponIndex = 0

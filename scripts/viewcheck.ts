@@ -1005,7 +1005,19 @@ await picker.waitForTimeout(900)
 
 const beforePick = await readOpened(picker)
 await picker.setInputFiles('#wad', goodWad)
-await picker.waitForTimeout(600)
+// Waited on rather than budgeted for. Choosing a file is asynchronous twice
+// over -- the bytes arrive from a promise and the level is built after that --
+// and a fixed six hundred milliseconds is a guess about a machine. This failed
+// once here on a loaded machine, passed twice straight after, and could not be
+// reproduced; the assertions below are unchanged, so a feature that is actually
+// broken still fails them, only now it fails them for being broken.
+await picker
+  .waitForFunction(
+    () => ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.level as string) === 'E1M1',
+    undefined,
+    { timeout: 5000 },
+  )
+  .catch(() => undefined)
 const afterPick = await readOpened(picker)
 await picker.waitForTimeout(400)
 const stillDrawing = await readOpened(picker)
@@ -1520,6 +1532,14 @@ check('a shot from a thumb lands where a shot from a key would not', () => {
  * A check that only counted characters could not tell a creature painted from
  * its own picture from one painted in a single tint, and did not.
  */
+/** The row a notice is drawn on, trimmed. */
+function topLine(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const rows = (document.getElementById('screen')?.textContent ?? '').split('\n')
+    return (rows[1] ?? '').trim()
+  })
+}
+
 function glyphsOnScreen(page: Page): Promise<{ distinct: string; painted: number; colours: number }> {
   return page.evaluate(() => {
     const screen = document.getElementById('screen')
@@ -1569,6 +1589,7 @@ const tookPlain = await shown.evaluate(
 )
 await shown.waitForTimeout(600)
 const drawnByHand = await glyphsOnScreen(shown)
+const noticedPlain = await topLine(shown)
 
 // The same map again, to find out whether this measurement holds still. A
 // comparison that drifts on its own says nothing about what changed it, and
@@ -1595,6 +1616,7 @@ const tookPainted = await shown.evaluate(
 )
 await shown.waitForTimeout(600)
 const drawnFromFile = await glyphsOnScreen(shown)
+const noticedArt = await topLine(shown)
 await shown.screenshot({ path: join(SHOTS, 'imported-art.png') })
 
 console.log(
@@ -1629,6 +1651,20 @@ check('a creature from a file is drawn with the file\u2019s own picture', () => 
   )
 })
 
+check('opening a file says what came of it', () => {
+  // Reading the top row, which is where a notice is drawn. Without this the
+  // page announces a map the same way whether or not it found any pictures,
+  // and those two are the same event from outside.
+  assert(
+    noticedArt.includes('drawn from the file'),
+    `opening a file with pictures said "${noticedArt}"`,
+  )
+  assert(
+    noticedPlain.includes('no pictures in that file'),
+    `opening a file without pictures said "${noticedPlain}"`,
+  )
+})
+
 check('a creature from a file is drawn in more than one colour', () => {
   // Three colours in the picture against one tint for a whole hand-drawn
   // creature. Counted off the spans the presenter writes, which is the only
@@ -1638,6 +1674,74 @@ check('a creature from a file is drawn in more than one colour', () => {
     `${drawnFromFile.colours} colours from the file against ${drawnByHand.colours} by hand -- ` +
       'a colour per cell is not reaching the screen',
   )
+})
+
+// --- can a player get at the importer at all? -------------------------------
+//
+// The whole of the WAD work was reachable only from a button inside the legend,
+// and the legend is hidden on a touch screen. So on a phone there was no way to
+// open a file, and every check written for the importer passed while the
+// feature was unreachable on the commonest device there is -- they all handed
+// the bytes in through the probe, which is a door no player has.
+
+const reachable: { name: string; pick: unknown }[] = []
+for (const [label, options] of [
+  ['desktop', { viewport: { width: 1280, height: 720 } }],
+  ['upright', { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }],
+  ['sideways', { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }],
+] as const) {
+  const ctx = await browser.newContext(options)
+  const page = await ctx.newPage()
+  page.on('pageerror', (error) => problems.push(`${label}: ${error.message}`))
+  await page.goto(base, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(800)
+  reachable.push({
+    name: label,
+    pick: await page.evaluate(() => {
+      const el = document.getElementById('pick')
+      if (!el) return null
+      const box = el.getBoundingClientRect()
+      if (box.width === 0 || box.height === 0) return { width: 0, height: 0, topmost: 'nothing', overPicture: 0 }
+      const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      const screen = document.getElementById('screen')!.getBoundingClientRect()
+      const across = Math.max(0, Math.min(screen.right, box.right) - Math.max(screen.left, box.left))
+      const down = Math.max(0, Math.min(screen.bottom, box.bottom) - Math.max(screen.top, box.top))
+      return {
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+        // What a finger landing there would actually hit, which on a touch
+        // screen is the question: the controls cover the whole viewport.
+        topmost: top === null ? 'nothing' : `${top.tagName.toLowerCase()}#${top.id}`,
+        overPicture: Math.round(across * down),
+      }
+    }),
+  })
+  await ctx.close()
+}
+
+check('a player can reach the file picker on any screen', () => {
+  for (const { name, pick } of reachable) {
+    const seen = pick as { width: number; height: number; topmost: string; overPicture: number } | null
+    assert(seen !== null, `${name}: there is no file picker in the page at all`)
+    assert(
+      seen.width > 0 && seen.height > 0,
+      `${name}: the file picker is ${seen.width} by ${seen.height}, so there is no way to open a WAD`,
+    )
+    assert(
+      seen.topmost === 'label#pick',
+      `${name}: a tap in the middle of the file picker lands on ${seen.topmost} instead`,
+    )
+  }
+})
+
+check('the file picker keeps off the picture on a phone', () => {
+  // A desktop has a row at the foot of the page for this and the overlap there
+  // is that row. A touch screen has no such row, and a button sitting over the
+  // view would be covering the game to offer something you use once.
+  for (const { name, pick } of reachable.filter((entry) => entry.name !== 'desktop')) {
+    const seen = pick as { overPicture: number }
+    assert(seen.overPicture === 0, `${name}: the file picker covers ${seen.overPicture} square pixels of the view`)
+  }
 })
 
 await browser.close()

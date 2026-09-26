@@ -148,8 +148,13 @@ rectangle.
 
 ## Opening a map from a WAD
 
-There is a file picker on the page. Give it a WAD — [Freedoom](https://freedoom.github.io/)
-is the freely licensed one — and the first map in it is drawn by this renderer.
+There is a file picker on the page — bottom right at a desk, above the stick on
+a phone. **Nothing here happens until you give it a file**: the campaign is this
+project's own levels drawn with this project's own art, and it stays that way.
+Give it a WAD — [Freedoom](https://freedoom.github.io/) is the freely licensed
+one — and the first map in it is drawn by this renderer, with that file's own
+pictures. The page says which it did: how many things it drew from the file, or
+that the file had no pictures in it.
 Nothing is bundled: thirty megabytes of someone else's work has no business in
 a page that is thirty kilobytes and caches itself for offline use, and the file
 never leaves your machine.
