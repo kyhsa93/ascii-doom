@@ -16,7 +16,7 @@
  */
 
 /** What a finished word asks for. */
-export type Cheat = 'god' | 'kit' | 'ghost' | 'chart'
+export type Cheat = 'god' | 'kit' | 'ghost' | 'chart' | 'record' | 'replay'
 
 /*
  * No word may be the tail of another.
@@ -30,6 +30,14 @@ const WORDS = new Map<string, Cheat>([
   ['idkfa', 'kit'],
   ['idclip', 'ghost'],
   ['iddt', 'chart'],
+  /*
+   * Recording and playing back, which are typed for the same reason the rest
+   * are: this game's only screen is its title, and a demo is not something to
+   * put a menu in front of. The original's own demos were recorded from the
+   * command line, which is the same idea in the place that era had for it.
+   */
+  ['idrec', 'record'],
+  ['idplay', 'replay'],
 ])
 
 /** Every word this game knows, for a check to count against. */

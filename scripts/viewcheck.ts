@@ -1827,6 +1827,69 @@ check('a typed word reaches the game', () => {
   )
 })
 
+/*
+ * A recording, and then the game playing it back to itself.
+ *
+ * The one claim about demos that Node cannot make: the rules being replayed
+ * into live in the page. Recording and replay both start the level from the
+ * top -- a replay has only the input, not the room -- so the test is simply
+ * whether the same input lands the body in the same place.
+ */
+const tapePage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+tapePage.on('pageerror', (error) => problems.push(`demo: ${error.message}`))
+await tapePage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await tapePage.waitForTimeout(900)
+await begin(tapePage)
+const whereIs = () =>
+  tapePage.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return { x: (d.x as number) ?? NaN, y: (d.y as number) ?? NaN, health: (d.health as number) ?? -1 }
+  })
+
+for (const letter of 'idrec') await tapePage.keyboard.press(letter)
+await tapePage.waitForTimeout(300)
+// A run with some turning in it, so the check is not just "walked forwards".
+await tapePage.keyboard.down('w')
+await tapePage.waitForTimeout(700)
+await tapePage.keyboard.down('ArrowLeft')
+await tapePage.waitForTimeout(500)
+await tapePage.keyboard.up('ArrowLeft')
+await tapePage.waitForTimeout(400)
+await tapePage.keyboard.up('w')
+await tapePage.waitForTimeout(200)
+for (const letter of 'idrec') await tapePage.keyboard.press(letter)
+await tapePage.waitForTimeout(300)
+const whereRecordingEnded = await whereIs()
+
+for (const letter of 'idplay') await tapePage.keyboard.press(letter)
+// Long enough for the whole recording plus the margin its own keystrokes cost.
+await tapePage.waitForTimeout(4000)
+const whereReplayEnded = await whereIs()
+await tapePage.close()
+
+check('a recorded run plays itself back to the same place', () => {
+  assert(
+    Number.isFinite(whereRecordingEnded.x) && Number.isFinite(whereReplayEnded.x),
+    'the page never reported where the body was',
+  )
+  const drift = Math.hypot(
+    whereReplayEnded.x - whereRecordingEnded.x,
+    whereReplayEnded.y - whereRecordingEnded.y,
+  )
+  assert(
+    drift < 1,
+    `the replay ended ${drift.toFixed(2)} m from where the recording did ` +
+      `(${whereRecordingEnded.x.toFixed(2)}, ${whereRecordingEnded.y.toFixed(2)}) ` +
+      `vs (${whereReplayEnded.x.toFixed(2)}, ${whereReplayEnded.y.toFixed(2)})`,
+  )
+  // And it went somewhere: a replay that never moved would pass a drift test
+  // against a recording that never moved either.
+  assert(
+    Math.hypot(whereRecordingEnded.x - 2, whereRecordingEnded.y - 3) > 1,
+    'the recording never left the spawn, so matching it proves nothing',
+  )
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

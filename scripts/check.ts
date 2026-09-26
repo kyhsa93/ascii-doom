@@ -84,10 +84,11 @@ import {
 } from '../src/game/campaign.ts'
 import { finishNow, makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { HURT_INTERVAL, bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
-import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
+import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent, type Intent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
 import { fits, restore, snapshot } from '../src/game/save.ts'
 import { cheatWords, effectOf, fresh, typeLetter } from '../src/game/cheats.ts'
+import { intentAt, record, remember, sealed, seeded } from '../src/game/demo.ts'
 import { layoutHud, type HudSegment } from '../src/game/hud.ts'
 import {
   activate,
@@ -3732,6 +3733,100 @@ test('the summary reads as a clock and a pair of counts', () => {
   assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
 })
 
+console.log('\ndemos')
+
+test('the same seed gives the same numbers, and a different one does not', () => {
+  /*
+   * A demo is only a recording if the game it plays back into is the same game
+   * twice. Everything here is already fixed -- one step of a sixtieth, no
+   * clocks in the rules -- except the rolls, so a demo carries the seed its
+   * rolls came from and the page runs on that instead of `Math.random`.
+   */
+  const first = seeded(12345)
+  const again = seeded(12345)
+  const other = seeded(999)
+  const a: number[] = []
+  const b: number[] = []
+  const c: number[] = []
+  for (let i = 0; i < 50; i++) {
+    a.push(first())
+    b.push(again())
+    c.push(other())
+  }
+  assert(a.join() === b.join(), 'two generators on the same seed drifted apart')
+  assert(a.join() !== c.join(), 'two generators on different seeds gave the same numbers')
+  // And the numbers are usable: inside [0, 1) and not all the same.
+  assert(a.every((n) => n >= 0 && n < 1), 'a roll landed outside [0, 1)')
+  assert(new Set(a).size > 40, `fifty rolls gave only ${new Set(a).size} distinct numbers`)
+
+  /*
+   * And the sequence itself, pinned to numbers worked out away from the module.
+   *
+   * Comparing two generators built a line apart does not check what a demo
+   * needs. It was the first version of this and it passed against a generator
+   * that had the clock mixed into its seed -- both were made in the same
+   * millisecond, so both were poisoned identically. What a demo needs is the
+   * same numbers next week in another process, and the only way to say that
+   * here is to write down what they are.
+   *
+   * These three were computed by hand from the definition rather than printed
+   * out of the implementation, which is the difference between a check and a
+   * photograph of whatever the code did once.
+   */
+  const GOLDEN = [0.6551540484651923, 0.30481432331725955, 0.6749606337398291]
+  const pinned = seeded(12345)
+  for (const [at, want] of GOLDEN.entries()) {
+    const got = pinned()
+    assert(got === want, `roll ${at} of seed 12345 was ${got} rather than ${want}`)
+  }
+})
+
+test('a recording plays back the input it was given, tick for tick', () => {
+  const still: Intent = IDLE
+  const forward: Intent = { ...IDLE, forward: 1 }
+  const firing: Intent = { ...IDLE, forward: 1, fire: true }
+
+  let tape = record(7)
+  for (let i = 0; i < 100; i++) tape = remember(tape, still)
+  for (let i = 0; i < 50; i++) tape = remember(tape, forward)
+  tape = remember(tape, firing)
+
+  const demo = sealed(tape, 3)
+  assert(demo.seed === 7, `the demo carries seed ${demo.seed}`)
+  assert(demo.levelIndex === 3, `the demo carries level ${demo.levelIndex}`)
+  assert(demo.ticks === 151, `the demo says it is ${demo.ticks} ticks long`)
+
+  for (let at = 0; at < 100; at++) {
+    assert(intentAt(demo, at)?.forward === 0, `tick ${at} was walking when it was still`)
+  }
+  for (let at = 100; at < 150; at++) {
+    assert(intentAt(demo, at)?.forward === 1, `tick ${at} was still when it was walking`)
+  }
+  assert(intentAt(demo, 150)?.fire === true, 'the last tick was not firing')
+  // Past the end is the end, rather than the last frame repeating forever.
+  assert(intentAt(demo, 151) === null, 'a demo kept playing after it ran out')
+})
+
+test('a recording of a run that holds still is far shorter than the run', () => {
+  /*
+   * The reason a demo is worth keeping at all. Input barely changes between
+   * one sixtieth and the next -- a player holds forward for a second at a time
+   * -- so runs of identical intents are stored once with a count. Without it a
+   * minute of play is three and a half thousand copies of the same object.
+   */
+  let tape = record(1)
+  for (let i = 0; i < 3600; i++) tape = remember(tape, IDLE)
+  const demo = sealed(tape, 0)
+  assert(demo.ticks === 3600, 'the demo lost track of how long it was')
+  assert(demo.runs.length === 1, `a minute of standing still took ${demo.runs.length} entries`)
+
+  // And alternating input is stored honestly rather than being lost.
+  let busy = record(1)
+  for (let i = 0; i < 10; i++) busy = remember(busy, i % 2 === 0 ? IDLE : { ...IDLE, fire: true })
+  const alternating = sealed(busy, 0)
+  assert(alternating.runs.length === 10, `ten changes took ${alternating.runs.length} entries`)
+})
+
 console.log('\ncheats')
 
 test('a cheat is only recognised when its whole word is typed', () => {
@@ -3790,6 +3885,8 @@ test('every cheat this game has is a word of its own', () => {
     ['idkfa', 'kit'],
     ['idclip', 'ghost'],
     ['iddt', 'chart'],
+    ['idrec', 'record'],
+    ['idplay', 'replay'],
   ]
   for (const [word, effect] of EXPECTED) {
     let typed = fresh()

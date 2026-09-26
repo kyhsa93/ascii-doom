@@ -146,9 +146,12 @@ notice the licence asks to travel with the work is in `docs/freedoom/`, with
 the contributors it names.
 
 That costs something and it is worth saying which: the page was seventeen
-kilobytes gzipped and is about forty-nine now. Thirty-one of that is the art
+kilobytes gzipped and is about seventy-eight now. Thirty-one of that is the art
 itself; the first figure written here was thirty-one, which was the generated
-file measured on its own rather than the page it ends up inside.
+file measured on its own rather than the page it ends up inside. The rest of
+the climb is rules rather than pictures -- the WAD importer, saving, the typed
+words and demos -- and the number is restated here whenever it moves, because
+this file keeps using it to argue that something was worth its weight.
 
 ## Installing it
 
@@ -601,6 +604,26 @@ same door and reopening a door that is already opening does nothing. Keys apply
 exactly as they do to a switch: shooting a lock is not a way past it. Thirteen
 maps get twenty-two doors out of it, which is the same twenty-two the file
 promised before any of this was wired.
+
+A run can be recorded and played back. Type idrec and the game starts writing
+down what you ask for; type idplay and it does it again by itself, from the
+same level and the same seed.
+
+Almost nothing had to change for that, which was the surprise. A recording is
+only a recording if the game it plays into behaves the same way twice, and this
+one already did: the step is a fixed sixtieth, no rule reads a clock, and the
+only things that vary are two rolls -- a shot's spread and a creature's aim.
+Both already took their randomness as an argument, because checks needed to pin
+them long before demos existed, so the whole of determinism was passing a
+seeded generator to two calls that were being handed `Math.random` by habit.
+
+What is stored is the intent rather than the keys. There are two devices here
+and they press different things; the intent is what both turn into and what the
+rules actually read, so a run recorded with thumbs plays back on a keyboard.
+Identical ticks are stored once with a count, which matters more than it
+sounds: input barely changes between one sixtieth and the next, and a minute of
+standing still is one entry instead of three and a half thousand copies of the
+same object.
 
 The words work. Typing iddqd, idkfa, idclip or iddt does what it has always
 done -- nothing can hurt you, you are handed the keys and a full kit, walls

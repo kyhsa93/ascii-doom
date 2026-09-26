@@ -52,6 +52,7 @@ import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
+import { intentAt, record, remember, sealed, seeded, type Demo, type Tape } from '../src/game/demo.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
 import { mapNames } from '../src/columns/wad.ts'
@@ -530,6 +531,23 @@ let typed = noLetters()
 let godly = false
 let ghostly = false
 
+/*
+ * Recording and playing back.
+ *
+ * `rolls` is what every roll in the rules goes through, and it is reseeded
+ * whenever a recording starts so that the run being written down is the run a
+ * replay will reproduce. Outside a demo it is seeded from the clock, which is
+ * as random as this game needs and keeps one code path rather than two.
+ *
+ * `tick` counts steps rather than frames: a frame can take several steps or
+ * none, and a demo is indexed by the thing the rules actually advance on.
+ */
+let rolls = seeded(Date.now() >>> 0)
+let taping: Tape | null = null
+let playing: Demo | null = null
+let kept: Demo | null = null
+let tick = 0
+
 const held = new Set<string>()
 const down = (event: KeyboardEvent) => {
   // Arrows and space scroll the page otherwise, which fights the game for the
@@ -753,6 +771,50 @@ function applyCheat(asked: Cheat): void {
     for (let i = 0; i < WEAPONS.length; i++) carrier.weapons.add(i)
     for (const colour of ['cobalt', 'crimson', 'amber']) carrier.keys.add(colour)
     say('every key and a full kit')
+  } else if (asked === 'record') {
+    if (taping === null) {
+      /*
+       * From the top of the level, which is not a nicety.
+       *
+       * A replay starts the level fresh -- it has to, since it has only the
+       * input and not the room -- so a recording that began wherever somebody
+       * happened to be standing could never be reproduced. Typing the word
+       * itself proves the point: "idrec" contains a "d", which strafes, so the
+       * body has already moved by the time the word lands.
+       *
+       * A map opened from a file is refused rather than recorded badly: it has
+       * no campaign index to start again from, and the file it came out of is
+       * not something a demo can carry.
+       */
+      if (wadSource !== null || levelIndex < 0) {
+        say('a map from a file cannot be recorded')
+        noise('switch')
+        return
+      }
+      const seed = Date.now() >>> 0
+      rolls = seeded(seed)
+      startLevel(levelIndex)
+      taping = record(seed)
+      tick = 0
+      say('recording')
+    } else {
+      kept = sealed(taping, levelIndex)
+      taping = null
+      say(`recorded ${kept.ticks} ticks`)
+    }
+  } else if (asked === 'replay') {
+    if (kept === null) {
+      say('nothing recorded to play back')
+    } else {
+      // From the top of the level it was recorded in, or the run would be
+      // played into a room that has already been walked through.
+      playing = kept
+      taping = null
+      rolls = seeded(kept.seed)
+      tick = 0
+      startLevel(kept.levelIndex)
+      say('playing back')
+    }
   } else {
     // The whole map at once, which is the set the renderer fills in as you go.
     for (const line of state.level.lines) seen.add(line)
@@ -944,7 +1006,24 @@ function step(): void {
     return
   }
 
-  const intent = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+  /*
+   * What is being asked for this step, from the devices or from a recording.
+   *
+   * A replay ignores the devices entirely rather than merging with them --
+   * half a replay is not a replay -- and hands control back the moment the
+   * recording runs out, which `intentAt` says by answering null rather than by
+   * repeating its last frame forever.
+   */
+  let intent = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+  if (playing !== null) {
+    const written = intentAt(playing, tick)
+    if (written === null) {
+      playing = null
+      say('the recording ends')
+    } else intent = written
+  }
+  if (taping !== null) remember(taping, intent)
+  tick++
   // A weapon request is a one-shot: consumed here so holding the button does
   // not keep re-selecting, and cleared whether or not it changed anything.
   if (intent.weapon >= 0 && intent.weapon < WEAPONS.length) weaponIndex = intent.weapon
@@ -1093,7 +1172,7 @@ function step(): void {
     // is `[...actors, player]` — so a slug cannot detonate on the person who
     // fired it, by the same rule that keeps a creature from shooting itself.
     noise(weaponIndex === 0 ? 'sidearm' : weaponIndex === 1 ? 'scattergun' : 'launcher')
-    const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length, Math.random, locked?.angle)
+    const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length, rolls, locked?.angle)
     pelletsLanded += result.hits
     // Only the ones that were creatures. `fire` reports every body it killed,
     // and a barrel is a body.
@@ -1192,7 +1271,7 @@ function step(): void {
   // either. The rule is about height, not about what kind of thing is under it.
   updateMovers(level, movers, [player, ...actors], STEP)
 
-  const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP)
+  const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP, { random: rolls })
   if (outcome.damage > 0) hurtPlayer(outcome.damage)
   for (const shot of outcome.shots) projectiles.push(shot)
 
