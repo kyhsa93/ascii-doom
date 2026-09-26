@@ -3582,7 +3582,7 @@ test('the summary fits the screen it is shown on', () => {
   // this screen has never been looked at. The risk is not the wide grid but the
   // narrow one — at 49 columns the longest of these lines is most of the width,
   // and centring it carelessly starts it off the left edge.
-  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3 })
+  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3, secrets: 0, found: 0 })
 
   for (const [width, height] of [
     [163, 50],
@@ -3607,15 +3607,29 @@ test('the summary fits the screen it is shown on', () => {
 })
 
 test('the summary reads as a clock and a pair of counts', () => {
-  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3 })
+  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3, secrets: 0, found: 0 })
   assert(lines.length === 4, `expected four lines, got ${lines.length}`)
   assert(lines[1]!.includes('1:35'), `ninety-five seconds rendered as ${JSON.stringify(lines[1])}`)
   assert(lines[2]!.includes('3 / 5'), `kills rendered as ${JSON.stringify(lines[2])}`)
   assert(lines[3]!.includes('2 / 3'), `supplies rendered as ${JSON.stringify(lines[3])}`)
 
   // Under a minute still reads as a clock rather than as a bare number.
-  const quick = summaryLines({ seconds: 7, kills: 0, creatures: 1, collected: 0, supplies: 1 })
+  const quick = summaryLines({ seconds: 7, kills: 0, creatures: 1, collected: 0, supplies: 1, secrets: 0, found: 0 })
   assert(quick[1]!.includes('0:07'), `seven seconds rendered as ${JSON.stringify(quick[1])}`)
+
+  /*
+   * And a fifth line where the map had something hidden in it.
+   *
+   * The pair matters more than either half. A level written here has no secret
+   * sectors, so printing "secrets 0 / 0" would tell you that you failed at
+   * something the map never offered; the four-line assertion above is what
+   * keeps that out. This is the other side: sixty-six of the sixty-eight maps
+   * in the files do have them, and leaving the line out there would hide the
+   * one count the original is best known for.
+   */
+  const hidden = summaryLines({ seconds: 30, kills: 1, creatures: 2, collected: 1, supplies: 2, secrets: 3, found: 1 })
+  assert(hidden.length === 5, `a map with secrets in it produced ${hidden.length} lines`)
+  assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
 })
 
 console.log('\npickups')
@@ -4659,6 +4673,32 @@ test('the renderer paints a wall with the material the line carries', () => {
     !wallGlyphs.some((glyph) => drawn.has(glyph)),
     'a room walled in stone drew the plain wall material as well',
   )
+})
+
+test('a hidden room arrives marked, and an ordinary one does not', () => {
+  /*
+   * Three hundred and twenty-five sectors across the two files are marked
+   * secret -- special 9, on sixty-six of the sixty-eight maps -- and the
+   * importer was reading that word to find damaging floors and then dropping
+   * it, so nothing downstream could tell a hidden room from any other.
+   *
+   * Both halves, because "the number is nine" would pass on an importer that
+   * wrote nine onto every sector.
+   */
+  const hidden = wadLevelState(tinyWad('E1M1', true, '', [], 0, false, 90, 0, 0, false, '', 9), 'E1M1')
+  const marked = hidden.level.sectors.filter((sector) => sector.special === 9)
+  assert(marked.length === 1, `a map with one hidden room reported ${marked.length}`)
+
+  // The same fixture as everything else uses: nukage in the eastern room, and
+  // nothing hidden anywhere.
+  const plain = wadLevelState(tinyWad('E1M1'), 'E1M1')
+  assert(
+    plain.level.sectors.every((sector) => sector.special !== 9),
+    'an ordinary map arrived with a hidden room in it',
+  )
+  // And the damaging floor still works, which is what that seven is for -- the
+  // two specials share one field and swapping them would be silent.
+  assert(plain.level.sectors.some((sector) => sector.hurt > 0), 'the nukage stopped being nukage')
 })
 
 test('a wall arrives made of what the file says it is', () => {

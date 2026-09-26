@@ -74,6 +74,14 @@ let state: LevelState = loadLevel(LEVELS[0]!)
 /** Everything in flight, emptied whenever a level is. */
 let projectiles: Projectile[] = []
 /**
+ * Hidden rooms walked into so far, by sector.
+ *
+ * A set rather than a count, because walking back out and in again is not a
+ * second discovery -- and cleared in `enterLevel` with everything else of this
+ * shape, which is the lesson the kill counters taught.
+ */
+let foundSecrets = new Set<number>()
+/**
  * Teleport lines that have been used up.
  *
  * Special 39 works once and 97 repeats, and the difference has to be kept
@@ -216,6 +224,7 @@ function enterLevel(next: LevelState): void {
   doors = next.movers.filter((mover) => mover.kind.surface === 'ceiling')
   projectiles = []
   usedTeleports = new Set<Line>()
+  foundSecrets = new Set<number>()
   advanceIn = 0
   deadFor = 0
   seen = new Set<Line>()
@@ -771,6 +780,21 @@ function step(): void {
     }
   }
 
+  /*
+   * A hidden room, the moment you are standing in one.
+   *
+   * The original's secret sectors, which are most of why anybody walks into a
+   * wall twice: three hundred and twenty-five of them across the two files this
+   * was built against, on sixty-six of the sixty-eight maps. Counted on arrival
+   * rather than on leaving, and remembered by sector, so pacing in and out of
+   * one does not find it twice.
+   */
+  if (level.sectors[player.sector]?.special === 9 && !foundSecrets.has(player.sector)) {
+    foundSecrets.add(player.sector)
+    noise('pickup')
+    say('a hidden room')
+  }
+
   // The ground underfoot, after the move rather than before it: a step out of a
   // channel is a step out of it, and the clock starts again on the way back in.
   const burn = bite(level, player.sector, hazard, STEP)
@@ -1077,6 +1101,8 @@ function frame(now: number): void {
       creatures: actors.filter(isCreature).length,
       collected: pickups.filter((pickup) => pickup.taken).length,
       supplies: pickups.length,
+      secrets: level.sectors.filter((sector) => sector.special === 9).length,
+      found: foundSecrets.size,
     })
     summaryLayout(fb.width, fb.height, lines).forEach((piece, index) => {
       drawText(fb, piece.col, piece.row, piece.text, {
@@ -1246,6 +1272,15 @@ function frame(now: number): void {
      */
     noisesPlayed,
     audible,
+    /**
+     * Hidden rooms in this map, and how many have been walked into.
+     *
+     * Finding one says so on screen for a moment and then leaves no trace, so
+     * this is the only way a check can ask whether it happened -- the same
+     * shape the noises needed, for the same reason.
+     */
+    secrets: state.level.sectors.filter((sector) => sector.special === 9).length,
+    found: foundSecrets.size,
     keys: [...carrier.keys],
     pickupsLeft: pickups.filter((pickup) => !pickup.taken).length,
     inFlight: projectiles.length,

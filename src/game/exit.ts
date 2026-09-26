@@ -72,6 +72,17 @@ export interface Tally {
   readonly creatures: number
   readonly collected: number
   readonly supplies: number
+  /**
+   * Hidden rooms found, and how many there were.
+   *
+   * The original counts these and it is most of why anybody walks into a wall
+   * twice. Three hundred and twenty-five sectors across the two files this was
+   * built against are marked secret, on sixty-six of the sixty-eight maps --
+   * and a level written here has none, so the line is left out rather than
+   * printed as "0 / 0", which reads as a failure rather than as absence.
+   */
+  readonly secrets: number
+  readonly found: number
 }
 
 /** A summary line, already placed. */
@@ -136,10 +147,14 @@ export function summaryLines(tally: Tally): string[] {
   const minutes = Math.floor(tally.seconds / 60)
   const seconds = Math.floor(tally.seconds % 60)
   const clock = `${minutes}:${String(seconds).padStart(2, '0')}`
-  return [
+  const lines = [
     'LEVEL COMPLETE',
     `time      ${clock}`,
     `creatures ${tally.kills} / ${tally.creatures}`,
     `supplies  ${tally.collected} / ${tally.supplies}`,
   ]
+  // Only where there were any. A map with nothing hidden in it should not be
+  // told it found none.
+  if (tally.secrets > 0) lines.push(`secrets   ${tally.found} / ${tally.secrets}`)
+  return lines
 }

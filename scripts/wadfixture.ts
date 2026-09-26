@@ -18,7 +18,6 @@ export function tinyWad(
   mapName: string,
   withStart = true,
   ceilingFlat = '',
-  /** Extra things, as [x, y, angle, type] in map units, placed after the start. */
   /**
    * Extra things, as [x, y, angle, type] in map units, placed after the start.
    *
@@ -106,6 +105,16 @@ export function tinyWad(
    * before textures existed still means exactly what it meant.
    */
   wallTexture = '',
+  /**
+   * The eastern room's sector special.
+   *
+   * Seven -- Doom's nukage -- as it always was, because a check about damaging
+   * ground has depended on that since before this was a parameter. Nine is the
+   * one worth writing down next to it: that is the number the original marks a
+   * hidden room with, and three hundred and twenty-five sectors across the two
+   * files carry it.
+   */
+  backSpecial = 7,
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -148,7 +157,7 @@ export function tinyWad(
   // ask whether the way through is blocked before it is opened.
   const SECTORS: [number, number, number, number, number][] = [
     [32, 128, 200, 0, 0],
-    [backFloor, shutBack ? backFloor : 128, 200, 7, roomTag],
+    [backFloor, shutBack ? backFloor : 128, 200, backSpecial, roomTag],
   ]
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.

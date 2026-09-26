@@ -633,6 +633,53 @@ check('the game asks for a noise when you fire, and stops when told to', () => {
   )
 })
 
+/*
+ * Walking into a hidden room.
+ *
+ * Finding one says so on screen for a moment and then leaves nothing behind, so
+ * the page reports the count and this reads it -- and walks the other way in a
+ * second run, because a number that only goes up says nothing about whether
+ * walking into the room is what moved it.
+ *
+ * The eastern room of the fixture is marked secret and left open; the player
+ * starts in the western one facing east.
+ */
+const secretWad = [...tinyWad('E1M1', true, '', [], 0, false, 0, 0, 0, false, '', 9)]
+const secretPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+secretPage.on('pageerror', (error) => problems.push(`secret: ${error.message}`))
+await secretPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await secretPage.waitForTimeout(900)
+await begin(secretPage)
+await secretPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [secretWad, 'E1M1'] as [number[], string],
+)
+await secretPage.waitForTimeout(600)
+const beforeSecret = await readOpened(secretPage)
+
+// Standing still first: the count must not move on its own.
+await secretPage.waitForTimeout(600)
+const stillOutside = await readOpened(secretPage)
+
+// Then east, into it.
+await secretPage.keyboard.down('w')
+await secretPage.waitForTimeout(1600)
+await secretPage.keyboard.up('w')
+await secretPage.waitForTimeout(300)
+const afterWalking = await readOpened(secretPage)
+await secretPage.close()
+
+check('walking into a hidden room is noticed', () => {
+  assert(beforeSecret.secrets === 1, `the map reported ${beforeSecret.secrets} hidden rooms`)
+  assert(beforeSecret.found === 0, `${beforeSecret.found} were found before anybody moved`)
+  assert(stillOutside.found === 0, 'a hidden room was found by standing still')
+  assert(afterWalking.found === 1, `after walking east ${afterWalking.found} were found`)
+})
+
 check('a rocket fired at your feet costs you health', () => {
   assert(beforeRocket.health === 100, `the walk to the wall already cost health (${beforeRocket.health})`)
   assert(
@@ -1053,6 +1100,8 @@ function readOpened(page: Page) {
       titleUp: probe.titleUp === true,
       noisesPlayed: (probe.noisesPlayed as number) ?? -1,
       audible: probe.audible === true,
+      secrets: (probe.secrets as number) ?? -1,
+      found: (probe.found as number) ?? -1,
     }
   })
 }

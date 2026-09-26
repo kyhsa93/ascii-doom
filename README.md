@@ -390,6 +390,18 @@ deliberate: special 63's door shuts itself again in the original and stays open
 here, which is eighty-two lines on seventeen maps and makes none of them
 unplayable.
 
+The hidden rooms are counted. Three hundred and twenty-five sectors across the
+two files are marked secret -- on sixty-six of the sixty-eight maps -- and the
+importer had been reading that very word to find damaging floors and then
+throwing it away, so nothing downstream could tell a hidden room from any other.
+A sector carries the number the file gave it now, walking into one is noticed
+once and remembered by room, and the level summary grows a line for it.
+
+Only where there were any. A level written here has nothing hidden in it, and
+printing "secrets 0 / 0" would tell you that you failed at something the map
+never offered; both halves of that are asserted, because a rule with only one
+side tested is a rule that drifts.
+
 A map from a file is made of something now. Every imported wall was drawn as
 one material -- one colour, one family of glyphs -- so a rusted service corridor
 and a marble hall were the same room in different places, and the geometry being
