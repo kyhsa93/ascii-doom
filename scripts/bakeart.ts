@@ -51,6 +51,32 @@ const CREATURES: readonly (readonly [string, string])[] = [
 ]
 
 const SUPPLIES: readonly (readonly [string, string])[] = [
+  // Weapons, armour and the powerups, which the maps are full of and which
+  // nothing here could pick up until now: armour stands on sixty-four of the
+  // sixty-eight maps, the rocket launcher on fifty-eight, the shotgun on
+  // fifty-seven. Every lump below resolves in freedoom2; SGN2 and MEGA are
+  // Doom II's own and are absent from the first file, which the baker already
+  // handles by skipping what it cannot find.
+  ['SHOT', 'SHOTGUN'],
+  ['SGN2', 'DOUBLE_SHOTGUN'],
+  ['MGUN', 'CHAINGUN'],
+  ['LAUN', 'LAUNCHER_PICKUP'],
+  ['PLAS', 'PLASMA'],
+  ['BFUG', 'BFG'],
+  ['CSAW', 'CHAINSAW'],
+  ['BPAK', 'BACKPACK'],
+  ['ARM1', 'ARMOUR'],
+  ['ARM2', 'ARMOUR_HEAVY'],
+  ['BON2', 'ARMOUR_BIT'],
+  ['SOUL', 'SOULSPHERE'],
+  ['MEGA', 'MEGASPHERE'],
+  ['PSTR', 'BERSERK'],
+  ['PINV', 'INVULNERABILITY'],
+  ['PINS', 'BLUR'],
+  ['PMAP', 'COMPUTER_MAP'],
+  ['PVIS', 'LIGHT_AMP'],
+  ['BAR1', 'BARREL'],
+
   ['BON1', 'BONUS'],
   ['STIM', 'STIM'],
   ['MEDI', 'MEDIKIT'],

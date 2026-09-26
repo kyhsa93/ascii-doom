@@ -105,7 +105,7 @@ import {
   type ActorState,
   updateActors,
 } from '../src/game/ai.ts'
-import { collect, isUseful, type Carrier, type Pickup } from '../src/game/pickups.ts'
+import { collect, isUseful, takeDamage, type Carrier, type Pickup } from '../src/game/pickups.ts'
 import {
   spawnProjectile,
   sweep,
@@ -1219,6 +1219,9 @@ test('starting a level keeps what you earned and takes back the keys', () => {
     ammo: [17, 3, 1],
     ammoMax: [120, 48, 24],
     keys: new Set(['amber', 'cobalt']),
+    armour: 0,
+    armourShare: 0,
+    weapons: new Set([0, 1, 2]),
   }
 
   const state = startLevel(1, carrier)
@@ -1279,6 +1282,9 @@ test('dying hands back the starting kit; finishing a level does not', () => {
     ammo: [2, 0, 0],
     ammoMax: [120, 48, 24],
     keys: new Set(['cobalt']),
+    armour: 0,
+    armourShare: 0,
+    weapons: new Set([0, 1, 2]),
   }
   const again = restartLevel(1, died)
 
@@ -1297,6 +1303,9 @@ test('dying hands back the starting kit; finishing a level does not', () => {
     ammo: [2, 0, 0],
     ammoMax: [120, 48, 24],
     keys: new Set(['cobalt']),
+    armour: 0,
+    armourShare: 0,
+    weapons: new Set([0, 1, 2]),
   }
   startLevel(1, moved)
   assert(moved.health === 12, `walking into the next level healed to ${moved.health}`)
@@ -2629,6 +2638,9 @@ test('a supply from a file is taken by the same rule as one written here', () =>
     ammo: [0, 0, 0],
     ammoMax: [120, 48, 24],
     keys: new Set<string>(),
+    armour: 0,
+    armourShare: 0,
+    weapons: new Set([0, 1, 2]),
   }
 
   const taken = collect(state.pickups, supply.x, supply.y, PLAYER_RADIUS, carrier)
@@ -2641,11 +2653,25 @@ test('only the numbers this game has a supply for leave anything behind', () => 
   assert(supplyFor(2012) !== null, 'a medikit leaves nothing')
   assert(supplyFor(2008) !== null, 'a box of shells leaves nothing')
   assert(supplyFor(13) !== null, 'a key leaves nothing')
-  // No armour in this game, so armour is not quietly turned into something
-  // else -- it simply is not there.
-  assert(supplyFor(2018) === null, 'armour was turned into a supply this game has no notion of')
-  assert(supplyFor(2019) === null, 'the heavier armour was turned into something')
+  // Armour is a supply now, and the two jackets are not the same one: the
+  // heavy one sets you higher and soaks more. This used to assert that neither
+  // existed, which was true of the game as it was and stopped being true the
+  // moment sixty-five of the sixty-eight maps stopped being stripped of it.
+  const light = supplyFor(2018)
+  const heavy = supplyFor(2019)
+  assert(light?.grant.kind === 'armour', 'armour leaves nothing behind')
+  assert(heavy?.grant.kind === 'armour', 'the heavier armour leaves nothing behind')
+  assert(
+    light.grant.kind === 'armour' && heavy.grant.kind === 'armour' && heavy.grant.cap > light.grant.cap,
+    'the two jackets are worth the same, so one of them is the wrong one',
+  )
+
+  // And what is still nothing, which is the half of this check that was always
+  // the point: scenery must not quietly become something you walk over and
+  // gain by. A lamp that heals you is worse than a lamp that is missing.
   assert(supplyFor(2035) === null, 'a barrel was turned into a supply')
+  assert(supplyFor(2028) === null, 'a floor lamp was turned into a supply')
+  assert(supplyFor(2005) === null, 'the chainsaw became a supply, and there is nothing here to swing')
   assert(supplyFor(3001) === null, 'a monster was turned into a supply')
 
   for (const type of supplyTypes()) {
@@ -3178,6 +3204,9 @@ function explorer(def: (typeof LEVELS)[number]) {
     ammo: [60, 24, 8],
     ammoMax: [120, 48, 24],
     keys: new Set<string>(),
+    armour: 0,
+    armourShare: 0,
+    weapons: new Set([0, 1, 2]),
   }
 
   const dt = 1 / 60
@@ -3422,6 +3451,12 @@ function carrier(overrides: Partial<Carrier> = {}): Carrier {
     ammo: [10, 4],
     ammoMax: [60, 24],
     keys: new Set<string>(),
+    // Before the spread, not after: `Partial<Carrier>` makes every field
+    // optional, so a default written after it is a default that might not be
+    // there as far as the type is concerned.
+    armour: 0,
+    armourShare: 0,
+    weapons: new Set([0, 1, 2]),
     ...overrides,
   }
 }
@@ -4094,6 +4129,98 @@ test('a window bigger than the list, and one with no room at all', () => {
   const none = menuWindow(openMenu(MANY), 0)
   assert(none.count === 0, `${none.count} rows drawn in no space`)
   assert(!none.moreAbove && none.moreBelow, 'an empty window points at the wrong end of the list')
+})
+
+test('armour takes its share of a hit and wears out', () => {
+  // The light jacket soaks a third. A hit of thirty costs ten of the armour and
+  // twenty of the health, which is the arithmetic and also the reason armour is
+  // worth walking across a room for.
+  const worn = carrier({ armour: 100, armourShare: 1 / 3 })
+  takeDamage(worn, 30)
+  close(worn.health, 80, 1e-9, 'health after a hit through armour')
+  close(worn.armour, 90, 1e-9, 'armour left after soaking a third')
+
+  // With none on, everything lands. This is the half that would still pass if
+  // armour did nothing at all, so it is here to be paired with the one above.
+  const bare = carrier()
+  takeDamage(bare, 30)
+  close(bare.health, 70, 1e-9, 'health after a hit with no armour')
+})
+
+test('the last point of armour does not absorb a rocket', () => {
+  // A pool that drains, not a percentage that lasts: when the jacket runs out
+  // part-way through a hit, the rest of that hit lands.
+  const nearly = carrier({ armour: 5, armourShare: 1 / 2 })
+  takeDamage(nearly, 60)
+  close(nearly.armour, 0, 1e-9, 'armour left after it ran out')
+  // Thirty wanted, five available, so fifty-five lands.
+  close(nearly.health, 45, 1e-9, 'health after the armour ran out mid-hit')
+  assert(nearly.armourShare === 0, 'an empty jacket still claims a share')
+})
+
+const LIGHT = { kind: 'armour', amount: 100, cap: 100, share: 1 / 3, adds: false } as const
+const HEAVY = { kind: 'armour', amount: 200, cap: 200, share: 1 / 2, adds: false } as const
+const BIT = { kind: 'armour', amount: 1, cap: 200, share: 1 / 3, adds: true } as const
+
+test('a heavier jacket replaces a lighter one, and not the other way round', () => {
+  // Armour stands on sixty-five of the sixty-eight maps. Stacking it would end
+  // in a player who cannot be hurt, so a jacket sets you to its number -- and
+  // walking over a light one while wearing a heavy one must not undo it.
+  const one = carrier()
+  collect([pickupAt(0, 0, LIGHT)], 0, 0, 1, one)
+  close(one.armour, 100, 1e-9, 'the light jacket went on')
+
+  collect([pickupAt(0, 0, HEAVY)], 0, 0, 1, one)
+  close(one.armour, 200, 1e-9, 'the heavy jacket did not replace the light one')
+  close(one.armourShare, 1 / 2, 1e-9, 'the share did not come with the heavy jacket')
+
+  // Asked of the rule that actually decides rather than only through `collect`.
+  // The first version of this walked a light jacket over a heavy one and
+  // checked the result -- and passed no matter what `collect` did, because the
+  // pickup was refused before it got there. Deliberately breaking the rule
+  // changed nothing, which is how the dead copy was found.
+  assert(!isUseful(pickupAt(0, 0, LIGHT), one), 'a light jacket was worth taking over a heavy one')
+  collect([pickupAt(0, 0, LIGHT)], 0, 0, 1, one)
+  close(one.armour, 200, 1e-9, 'a light jacket stripped the heavy one')
+  close(one.armourShare, 1 / 2, 1e-9, 'a light jacket downgraded what was being worn')
+})
+
+test('the scattered armour adds rather than sets', () => {
+  // Seventeen hundred of these across the two files, on sixty-one of the
+  // sixty-eight maps -- the commonest armour there is. Modelled as "set to one"
+  // it was worth taking by one rule and worth nothing by the other: anyone
+  // wearing more than a single point walked over it and got nothing at all.
+  const wearing = carrier({ armour: 50, armourShare: 1 / 3 })
+  assert(isUseful(pickupAt(0, 0, BIT), wearing), 'a scrap of armour was called worthless at fifty')
+  collect([pickupAt(0, 0, BIT)], 0, 0, 1, wearing)
+  close(wearing.armour, 51, 1e-9, 'the scrap added nothing to what was being worn')
+
+  // With nothing on it starts a jacket of its own class rather than leaving a
+  // point of armour that soaks a share of zero.
+  const bare = carrier()
+  collect([pickupAt(0, 0, BIT)], 0, 0, 1, bare)
+  close(bare.armour, 1, 1e-9, 'the scrap went on nobody')
+  close(bare.armourShare, 1 / 3, 1e-9, 'a point of armour with no share soaks nothing')
+
+  // And it stops at the heavy jacket's ceiling rather than climbing for ever.
+  const full = carrier({ armour: 200, armourShare: 1 / 2 })
+  assert(!isUseful(pickupAt(0, 0, BIT), full), 'a scrap was worth taking at the ceiling')
+})
+
+test('a weapon you already hold is still worth its rounds', () => {
+  // Every one of the sixty-eight maps places a weapon, and this game starts
+  // with all three of them. If holding one made the pickup worthless, most of
+  // what a map leaves lying about would be scenery.
+  const armed = carrier({ ammo: [10, 4], weapons: new Set([0, 1, 2]) })
+  const shotgun = pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 8 })
+  assert(isUseful(shotgun, armed), 'a weapon already held was called useless while its rounds were short')
+  collect([shotgun], 0, 0, 1, armed)
+  close(armed.ammo[1] ?? 0, 12, 1e-9, 'rounds after taking a weapon already held')
+
+  // Full up on that ammunition, it is worth nothing and is left where it is.
+  const full = carrier({ ammo: [10, 24], ammoMax: [60, 24], weapons: new Set([0, 1, 2]) })
+  assert(!isUseful(pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 8 }), full),
+    'a weapon held with full ammunition was still worth taking')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

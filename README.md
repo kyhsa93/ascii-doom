@@ -289,10 +289,26 @@ when called.
 
 The supplies come across the same way the creatures do — the file says
 something of a certain class lay here, and one of this project's own is put
-there instead. Health, ammunition and keys have counterparts here and arrive;
-armour has none, so it is not quietly turned into something else, it simply is
-not there. The first map of the set this was built against leaves sixty-four
-things lying about, one of them a key.
+there instead. Health, ammunition, keys, armour and weapons all arrive now;
+scenery does not, and that half matters as much, because a floor lamp that
+heals you is worse than a floor lamp that is missing.
+
+Armour was the largest thing being thrown away: it stands on sixty-five of the
+sixty-eight maps and there was nothing here to put in its place. There is now,
+and it is a pool that drains rather than a percentage that lasts — the light
+jacket soaks a third of each hit and the heavy one a half, losing that much of
+itself as it goes, so the last point of armour cannot absorb a rocket. The
+jackets set you to a number rather than stacking; the scattered bits add one at
+a time up to the heavy jacket's ceiling. That difference is not pedantry: there
+are seventeen hundred of those bits across the two files, and modelling them as
+"set to one" made every one of them vanish on contact for anybody already
+wearing more than a single point.
+
+Weapons arrive as the rounds they carry. This game has three and the files
+place seven, so they go by what they are for — the two shotguns are the
+scattergun, the rapid-fire ones the sidearm, the launcher the launcher — and
+since you start holding all three, what a weapon on the floor is worth is its
+ammunition. The chainsaw has no answer here and is left where it stands.
 
 A file you open still brings its own pictures, which matters for a WAD whose
 art is not Freedoom's. A creature or a supply the file has a drawing for is

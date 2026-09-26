@@ -39,7 +39,7 @@ import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
-import { collect, type Carrier } from '../src/game/pickups.ts'
+import { collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
 import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
 import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/player.ts'
 import { WEAPONS, fire } from '../src/game/weapons.ts'
@@ -611,7 +611,7 @@ function step(): void {
   // channel is a step out of it, and the clock starts again on the way back in.
   const burn = bite(level, player.sector, hazard, STEP)
   if (burn > 0) {
-    carrier.health = Math.max(0, carrier.health - burn)
+    takeDamage(carrier, burn)
     say('burning')
   }
 
@@ -621,6 +621,8 @@ function step(): void {
     const grant = taken.grant
     if (grant.kind === 'health') say(`+${grant.amount} health`)
     else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
+    else if (grant.kind === 'armour') say(`armour ${carrier.armour}`)
+    else if (grant.kind === 'weapon') say(`${WEAPONS[grant.weapon]?.name ?? 'a weapon'} — ${carrier.ammo[grant.weapon] ?? 0} rounds`)
     else say(`${grant.key} key`)
   }
 
@@ -683,7 +685,7 @@ function step(): void {
   updateMovers(level, movers, [player, ...actors], STEP)
 
   const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP)
-  if (outcome.damage > 0) carrier.health = Math.max(0, carrier.health - outcome.damage)
+  if (outcome.damage > 0) takeDamage(carrier, outcome.damage)
   for (const shot of outcome.shots) projectiles.push(shot)
 
   const targets = [...actors, player]
@@ -692,7 +694,7 @@ function step(): void {
     return actor === undefined || isAlive(actor)
   })) {
     if (impact.body === actors.length) {
-      carrier.health = Math.max(0, carrier.health - impact.projectile.kind.damage)
+      takeDamage(carrier, impact.projectile.kind.damage)
     } else if (impact.body >= 0) {
       const struck = actors[impact.body]
       if (struck) {

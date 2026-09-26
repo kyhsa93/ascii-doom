@@ -61,6 +61,20 @@ export function freshCarrier(): Carrier {
     ammo: [...STARTING_AMMO],
     ammoMax: AMMO_CAPACITY,
     keys: new Set<string>(),
+    // No jacket to begin with, and the share is whatever the last one worn set.
+    // Zero points means the share is never consulted, so the number here is a
+    // starting value rather than a rule.
+    armour: 0,
+    armourShare: 0,
+    /**
+     * What is in hand at the start.
+     *
+     * All three, as they always were. The maps are full of weapons -- the
+     * launcher stands on fifty-eight of the sixty-eight and the scattergun on
+     * fifty-seven -- and picking one up now means something for the rounds it
+     * carries even where the weapon itself is already held.
+     */
+    weapons: new Set([0, 1, 2]),
   }
 }
 
@@ -104,6 +118,9 @@ export function refillCarrier(carrier: Carrier): void {
   carrier.health = STARTING_HEALTH
   carrier.ammo = [...STARTING_AMMO]
   carrier.keys.clear()
+  carrier.armour = 0
+  carrier.armourShare = 0
+  carrier.weapons = new Set([0, 1, 2])
 }
 
 function levelOrThrow(index: number): LevelDef {
