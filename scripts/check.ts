@@ -35,6 +35,7 @@ import {
   rowOfHeight,
   type View,
 } from '../src/columns/render.ts'
+import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
@@ -1254,6 +1255,182 @@ test('dying hands back the starting kit; finishing a level does not', () => {
   startLevel(1, moved)
   assert(moved.health === 12, `walking into the next level healed to ${moved.health}`)
   assert(moved.ammo.join(',') === '2,0,0', `walking into the next level restocked to ${moved.ammo.join(',')}`)
+})
+
+console.log('\nreading a map out of a WAD')
+
+/**
+ * A WAD, built here, a few hundred bytes of it.
+ *
+ * Written rather than committed: the real ones are thirty megabytes of someone
+ * else's work, and a parser can be held to account by a file small enough to
+ * read in one go. Two square rooms side by side, sharing the wall between them,
+ * with the eastern one full of something that hurts.
+ */
+function tinyWad(mapName: string): Uint8Array {
+  const VERTEXES: [number, number][] = [
+    [0, 0],
+    [128, 0],
+    [128, 128],
+    [0, 128],
+    [256, 0],
+    [256, 128],
+  ]
+  // v1, v2, flags, special, tag, right sidedef, left sidedef (0xffff for none).
+  const LINEDEFS: [number, number, number, number, number, number, number][] = [
+    [0, 1, 1, 0, 0, 0, 0xffff],
+    // The one that joins the rooms, and the only one with two sides.
+    [1, 2, 0, 0, 0, 1, 2],
+    [2, 3, 1, 0, 0, 3, 0xffff],
+    [3, 0, 1, 0, 0, 4, 0xffff],
+    [1, 4, 1, 0, 0, 5, 0xffff],
+    [4, 5, 1, 0, 0, 6, 0xffff],
+    [5, 2, 1, 0, 0, 7, 0xffff],
+  ]
+  const SIDEDEF_SECTOR = [0, 0, 1, 0, 0, 1, 1, 1]
+  // floor, ceiling, light, special. 7 is Doom's nukage.
+  const SECTORS: [number, number, number, number][] = [
+    [0, 128, 200, 0],
+    [0, 128, 200, 7],
+  ]
+  // x, y, angle, type. Type 1 is the first player's start.
+  const THINGS: [number, number, number, number][] = [[64, 64, 90, 1]]
+
+  const bytes = (size: number) => new Uint8Array(size)
+  const lump = (size: number, write: (view: DataView) => void) => {
+    const data = bytes(size)
+    write(new DataView(data.buffer))
+    return data
+  }
+
+  const things = lump(THINGS.length * 10, (view) => {
+    THINGS.forEach(([x, y, angle, type], i) => {
+      view.setInt16(i * 10, x, true)
+      view.setInt16(i * 10 + 2, y, true)
+      view.setInt16(i * 10 + 4, angle, true)
+      view.setUint16(i * 10 + 6, type, true)
+    })
+  })
+  const linedefs = lump(LINEDEFS.length * 14, (view) => {
+    LINEDEFS.forEach((line, i) => {
+      line.forEach((value, f) => view.setUint16(i * 14 + f * 2, value, true))
+    })
+  })
+  const sidedefs = lump(SIDEDEF_SECTOR.length * 30, (view) => {
+    SIDEDEF_SECTOR.forEach((sector, i) => view.setInt16(i * 30 + 28, sector, true))
+  })
+  const vertexes = lump(VERTEXES.length * 4, (view) => {
+    VERTEXES.forEach(([x, y], i) => {
+      view.setInt16(i * 4, x, true)
+      view.setInt16(i * 4 + 2, y, true)
+    })
+  })
+  const sectors = lump(SECTORS.length * 26, (view) => {
+    SECTORS.forEach(([floor, ceiling, light, special], i) => {
+      view.setInt16(i * 26, floor, true)
+      view.setInt16(i * 26 + 2, ceiling, true)
+      view.setInt16(i * 26 + 20, light, true)
+      view.setInt16(i * 26 + 22, special, true)
+    })
+  })
+
+  const entries: [string, Uint8Array][] = [
+    [mapName, bytes(0)],
+    ['THINGS', things],
+    ['LINEDEFS', linedefs],
+    ['SIDEDEFS', sidedefs],
+    ['VERTEXES', vertexes],
+    ['SECTORS', sectors],
+  ]
+
+  const body = entries.reduce((total, [, data]) => total + data.length, 0)
+  const file = bytes(12 + body + entries.length * 16)
+  const view = new DataView(file.buffer)
+  for (const [i, code] of [...'IWAD'].map((c) => c.charCodeAt(0)).entries()) view.setUint8(i, code)
+  view.setInt32(4, entries.length, true)
+  view.setInt32(8, 12 + body, true)
+
+  let at = 12
+  let entry = 12 + body
+  for (const [lumpName, data] of entries) {
+    file.set(data, at)
+    view.setInt32(entry, at, true)
+    view.setInt32(entry + 4, data.length, true)
+    for (let c = 0; c < lumpName.length; c++) view.setUint8(entry + 8 + c, lumpName.charCodeAt(c))
+    at += data.length
+    entry += 16
+  }
+  return file
+}
+
+test('a WAD says which maps it holds', () => {
+  // The marker is recognised by what follows it rather than by its name, so a
+  // file may call its maps anything.
+  assert(mapNames(tinyWad('E1M1')).join(',') === 'E1M1', 'did not find the map by its marker')
+  assert(mapNames(tinyWad('MAP07')).join(',') === 'MAP07', 'the name convention was assumed rather than read')
+})
+
+test('a map arrives as sectors, lines and a place to stand', () => {
+  const { level, spawn } = readMap(tinyWad('E1M1'), 'E1M1')
+
+  assert(level.sectors.length === 2, `built ${level.sectors.length} sectors from a two-sector map`)
+  assert(level.lines.length === 7, `built ${level.lines.length} lines from seven linedefs`)
+
+  // Doom units are not metres, and the light falloff in this renderer is tuned
+  // for metres. A ceiling 128 units up is about five of them.
+  // Pinned rather than derived from the constant: an expectation computed from
+  // the same number it is checking moves whenever that number does, and would
+  // have nothing to say about the scale changing.
+  close(level.sectors[0]!.ceiling, 4.9231, 1e-4, 'a 128-unit ceiling in metres')
+  close(level.sectors[0]!.light, 200 / 255, 1e-9, 'a light level of 200')
+
+  const twoSided = level.lines.filter((line) => line.back !== null)
+  assert(twoSided.length === 1, `${twoSided.length} lines have two sides; only the shared wall should`)
+  assert(
+    twoSided[0]!.front !== twoSided[0]!.back,
+    'the shared wall has the same sector on both sides, so it is not a way through',
+  )
+
+  assert(spawn !== null, 'the map has a player start and it was not found')
+  close(spawn.x, 2.4615, 1e-4, 'a start 64 units in, in metres')
+  close(spawn.angle, Math.PI / 2, 1e-9, 'an angle of 90 degrees')
+  assert(spawn.sector === 0, `the start resolved to sector ${spawn.sector}, not the room it stands in`)
+})
+
+test('a sector read from a file knows its own boundary', () => {
+  // The whole reason the engine stopped deciding this from an outline: a WAD
+  // has none to give. What it has is the edges, and those are enough.
+  const { level } = readMap(tinyWad('E1M1'), 'E1M1')
+  for (const [i, sector] of level.sectors.entries()) {
+    assert(sector.polygon.length === 0, `sector ${i} came back with an outline it cannot have`)
+    assert(sector.edges.length === 4, `sector ${i} has ${sector.edges.length} edges; a square room has four`)
+  }
+  assert(sectorAt(level, 64 / UNITS_PER_METRE, 64 / UNITS_PER_METRE) === 0, 'the western room is not where it should be')
+  assert(sectorAt(level, 192 / UNITS_PER_METRE, 64 / UNITS_PER_METRE) === 1, 'the eastern room is not where it should be')
+  assert(sectorAt(level, -5, -5) === -1, 'a point outside the map landed in a room')
+})
+
+test("the original's damaging floors arrive as this engine's hazard", () => {
+  // Sector special 7 is nukage. The rules for standing in it were written here
+  // a week before anything could read a WAD, and they need no translation.
+  const { level } = readMap(tinyWad('E1M1'), 'E1M1')
+  assert(level.sectors[0]!.hurt === 0, 'an ordinary room came back dangerous')
+  assert(level.sectors[1]!.hurt > 0, 'a nukage sector came back safe to stand in')
+  assert(
+    level.sectors[1]!.floorMaterial === 'sludge',
+    `the dangerous room is drawn as ${level.sectors[1]!.floorMaterial}, so nothing would look wrong about it`,
+  )
+})
+
+test('a file that is not a WAD is refused rather than misread', () => {
+  const nonsense = new Uint8Array(64)
+  let complained = ''
+  try {
+    mapNames(nonsense)
+  } catch (error) {
+    complained = (error as Error).message
+  }
+  assert(complained.includes('not a WAD'), `a file of zeroes gave "${complained}"`)
 })
 
 console.log('\nthe automap')
