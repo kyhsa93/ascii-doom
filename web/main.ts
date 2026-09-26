@@ -17,6 +17,7 @@ import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
 import { crossings } from '../src/columns/crossing.ts'
+import { SILENCE, speakerFor, type Noise, type Speaker } from '../src/game/sound.ts'
 import { drawBillboards, drawSprite, squeezed, type Billboard } from '../src/columns/sprite.ts'
 import {
   billboardOf,
@@ -119,6 +120,19 @@ let skill: Skill = 'normal'
 const SKILLS: readonly Skill[] = ['easy', 'normal', 'hard']
 
 /**
+ * The speaker, whether anybody wants it, and how many noises it was asked for.
+ *
+ * Declared here rather than beside the function that uses it, because the title
+ * menu is built during module initialisation and its label reads `audible` --
+ * declared below, the page threw "cannot access before initialization" and drew
+ * nothing at all. That is the second time in two rounds: the difficulty did it
+ * first. Anything the menu's labels read belongs above the menu.
+ */
+let speaker: Speaker = SILENCE
+let noisesPlayed = 0
+let audible = true
+
+/**
  * The title's own menu, rebuilt when the difficulty changes.
  *
  * Rebuilt rather than mutated because the label carries the setting -- there is
@@ -130,6 +144,7 @@ function titleMenu(cursor = 0): Menu {
     { label: 'the outpost', action: { kind: 'level', index: 0 } },
     { label: 'the cistern', action: { kind: 'level', index: 1 } },
     { label: `difficulty: ${skill}`, action: { kind: 'skill' } },
+    { label: `sound: ${audible ? 'on' : 'off'}`, action: { kind: 'sound' } },
   ])
   return { ...built, cursor }
 }
@@ -329,6 +344,33 @@ const COARSE = window.matchMedia('(pointer: coarse)')
  */
 let locked: AimTarget | null = null
 
+/**
+ * The speaker, and how many noises it has been asked for.
+ *
+ * Silent until somebody presses something, because every browser refuses to
+ * make a sound before a gesture -- built on the first key or tap rather than at
+ * boot, so the first shot is heard rather than swallowed.
+ *
+ * The count is the only way anything can check this. A noise leaves no mark on
+ * the screen, so the page says how many it has played and a browser check reads
+ * that; asserting on the audio graph itself would be asserting that Web Audio
+ * works.
+ */
+
+function wakeSpeaker(): void {
+  if (speaker !== SILENCE) return
+  const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (Ctor === undefined) return
+  speaker = speakerFor(new Ctor())
+}
+
+/** Makes a noise, if there is anything to make it with and anyone wants it. */
+function noise(which: Noise, loudness = 1): void {
+  if (!audible) return
+  noisesPlayed++
+  speaker.play(which, loudness)
+}
+
 function say(text: string): void {
   notice = text
   noticeTime = 2.5
@@ -345,6 +387,8 @@ const down = (event: KeyboardEvent) => {
 const up = (event: KeyboardEvent) => {
   held.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key)
 }
+window.addEventListener('keydown', wakeSpeaker, { once: true })
+window.addEventListener('pointerdown', wakeSpeaker, { once: true })
 window.addEventListener('keydown', down)
 window.addEventListener('keyup', up)
 // A window that loses focus mid-stride would otherwise keep walking forever.
@@ -516,6 +560,21 @@ function isCreature(actor: Actor): boolean {
   return actor.kind.explodes === undefined
 }
 
+/**
+ * Hurts the player and says so out loud.
+ *
+ * Every place that can hurt you goes through `takeDamage`; this wraps it so the
+ * noise cannot be forgotten at one of them -- the same argument the armour made
+ * for putting the subtraction in one place, applied one layer out.
+ */
+function hurtPlayer(amount: number): void {
+  if (amount <= 0) return
+  const before = carrier.health
+  takeDamage(carrier, amount)
+  if (carrier.health <= 0 && before > 0) noise('die')
+  else noise('hurt', Math.min(1, 0.4 + amount / 40))
+}
+
 function hurtActor(index: number, amount: number, by: number): void {
   const { level, actors, player } = state
   const actor = actors[index]
@@ -523,6 +582,8 @@ function hurtActor(index: number, amount: number, by: number): void {
 
   const died = damageActor(actor, amount)
   if (by >= 0 && by < actors.length && by !== index) provoke(actor, by)
+  // Quietly for a barrel: what a barrel has to say is the blast below.
+  if (isCreature(actor)) noise(died ? 'creatureDie' : 'creatureHurt', 0.5)
   if (!died) return
   // Counted here rather than only where a pellet lands, or a creature killed by
   // a rocket -- or by a barrel it was standing beside -- would finish the level
@@ -541,7 +602,7 @@ function hurtActor(index: number, amount: number, by: number): void {
     [...actors, player],
   )) {
     if (caught.body === actors.length) {
-      takeDamage(carrier, caught.damage)
+      hurtPlayer(caught.damage)
       continue
     }
     // Recurses into the next barrel, which is the chain the maps are built on.
@@ -575,6 +636,12 @@ function step(): void {
       } else if (action?.kind === 'map' && opened !== null) {
         titleUp = false
         enterWad(opened, action.name)
+      } else if (action?.kind === 'sound') {
+        audible = !audible
+        menu = titleMenu(menu.cursor)
+        // After the flip, so turning it on says so and turning it off is quiet.
+        noise('switch')
+        say(`sound: ${audible ? 'on' : 'off'}`)
       } else if (action?.kind === 'skill') {
         // Cycles in place, cursor and all: stepping the difficulty must not
         // move you off the line you are standing on.
@@ -681,6 +748,7 @@ function step(): void {
     player.sector = where.sector
     player.floor = level.sectors[where.sector]?.floor ?? player.floor
     say('teleported')
+    noise('teleport')
     // One a step. A pad standing on another teleport line would otherwise send
     // you on again in the same frame, and arriving is not crossing.
     break
@@ -707,14 +775,16 @@ function step(): void {
   // channel is a step out of it, and the clock starts again on the way back in.
   const burn = bite(level, player.sector, hazard, STEP)
   if (burn > 0) {
-    takeDamage(carrier, burn)
+    hurtPlayer(burn)
     say('burning')
+    noise('hurt', 0.5)
   }
 
   // Walked over. Nothing is taken that would give nothing, so crossing a room
   // at full health leaves the kit there for when it is worth something.
   for (const taken of collect(pickups, player.x, player.y, PLAYER_RADIUS, carrier)) {
     const grant = taken.grant
+    noise(grant.kind === 'weapon' ? 'weaponUp' : 'pickup')
     if (grant.kind === 'health') say(`+${grant.amount} health`)
     else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
     else if (grant.kind === 'armour') say(`armour ${carrier.armour}`)
@@ -735,6 +805,7 @@ function step(): void {
     // The player's index in the body list the flight is resolved against, which
     // is `[...actors, player]` — so a slug cannot detonate on the person who
     // fired it, by the same rule that keeps a creature from shooting itself.
+    noise(weaponIndex === 0 ? 'sidearm' : weaponIndex === 1 ? 'scattergun' : 'launcher')
     const result = fire(level, player, weapon, actors, EYE_HEIGHT, actors.length, Math.random, locked?.angle)
     pelletsLanded += result.hits
     // Only the ones that were creatures. `fire` reports every body it killed,
@@ -766,7 +837,7 @@ function step(): void {
         goes.damage,
         [...actors, player],
       )) {
-        if (caught.body === actors.length) takeDamage(carrier, caught.damage)
+        if (caught.body === actors.length) hurtPlayer(caught.damage)
         else hurtActor(caught.body, caught.damage, actors.length)
       }
     }
@@ -777,7 +848,11 @@ function step(): void {
   if (intent.use) {
     const target = moverInFront(level, doors, player.sector, player.x, player.y, player.angle)
     if (target) {
-      if (!activate(target, carrier.keys)) say(`locked — needs the ${target.kind.requiresKey} key`)
+      if (activate(target, carrier.keys)) noise('door')
+      else {
+        noise('noAmmo')
+        say(`locked — needs the ${target.kind.requiresKey} key`)
+      }
     } else {
       // One ray, then whatever that piece of wall turns out to be. A switch is
       // the wall itself rather than the room behind it -- most of them have
@@ -788,14 +863,19 @@ function step(): void {
       if (facing) {
         if (state.exitLines.has(facing) && finishNow(goal)) {
           advanceIn = 3.5
+          noise('switch')
           say('that was the last of them')
         }
         // A wall may call more than one platform: eighty-three of the lift
         // lines in the files this was built against name several rooms.
-        for (const platform of state.liftLines.get(facing) ?? []) activate(platform, carrier.keys)
+        for (const platform of state.liftLines.get(facing) ?? []) {
+          if (activate(platform, carrier.keys)) noise('switch')
+        }
         // And a switch may open a door in another room entirely, which is how
         // forty-eight of the sixty-eight maps are built.
-        for (const machine of state.switchLines.get(facing) ?? []) activate(machine, carrier.keys)
+        for (const machine of state.switchLines.get(facing) ?? []) {
+          if (activate(machine, carrier.keys)) noise('switch')
+        }
       }
     }
   }
@@ -812,7 +892,7 @@ function step(): void {
   updateMovers(level, movers, [player, ...actors], STEP)
 
   const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP)
-  if (outcome.damage > 0) takeDamage(carrier, outcome.damage)
+  if (outcome.damage > 0) hurtPlayer(outcome.damage)
   for (const shot of outcome.shots) projectiles.push(shot)
 
   const targets = [...actors, player]
@@ -823,7 +903,7 @@ function step(): void {
     const kind = impact.projectile.kind
     const owner = impact.projectile.owner
     if (impact.body === actors.length) {
-      takeDamage(carrier, kind.damage)
+      hurtPlayer(kind.damage)
     } else if (impact.body >= 0) {
       // Through the one function that knows what a death sets off, so a
       // barrel shot by a rocket and a barrel shot by a pistol behave the same.
@@ -840,6 +920,7 @@ function step(): void {
      * health -- which is most of what makes a launcher a decision.
      */
     if (kind.blastRadius !== undefined && kind.blastDamage !== undefined) {
+      noise('blast')
       for (const caught of blast(
         level,
         impact.x,
@@ -850,7 +931,7 @@ function step(): void {
         [...actors, player],
       )) {
         if (caught.body === actors.length) {
-          takeDamage(carrier, caught.damage)
+          hurtPlayer(caught.damage)
           continue
         }
         hurtActor(caught.body, caught.damage, owner)
@@ -1155,6 +1236,16 @@ function frame(now: number): void {
     shotsFired,
     pelletsLanded,
     kills,
+    /**
+     * How many noises have been asked for, and whether they are wanted.
+     *
+     * A noise leaves no mark on the screen, so this is the only way a check can
+     * say one happened. Counted where the game asks rather than inside the
+     * speaker, because what is being checked is that the game asks -- whether
+     * Web Audio then makes a sound is Web Audio's business.
+     */
+    noisesPlayed,
+    audible,
     keys: [...carrier.keys],
     pickupsLeft: pickups.filter((pickup) => !pickup.taken).length,
     inFlight: projectiles.length,

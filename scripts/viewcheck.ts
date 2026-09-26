@@ -556,6 +556,83 @@ check('a barrel is a body but not a creature', () => {
   )
 })
 
+/*
+ * Firing with the sound on, and then with it off.
+ *
+ * A noise leaves nothing on the screen, so what is asserted is that the game
+ * asked for one: the page counts what it asks for and this reads the count.
+ * Whether Web Audio then moves a speaker is Web Audio's problem, and asserting
+ * it here would be asserting that the browser works.
+ *
+ * Two runs rather than one, because a counter that only goes up proves nothing
+ * about the switch that is supposed to stop it.
+ */
+const noisyPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+noisyPage.on('pageerror', (error) => problems.push(`sound: ${error.message}`))
+await noisyPage.goto(base, { waitUntil: 'domcontentloaded' })
+await noisyPage.waitForTimeout(900)
+const beforeAnySound = await readOpened(noisyPage)
+await begin(noisyPage)
+await noisyPage.keyboard.down(' ')
+await noisyPage.waitForTimeout(200)
+await noisyPage.keyboard.up(' ')
+await noisyPage.waitForTimeout(400)
+const afterOneShot = await readOpened(noisyPage)
+
+// Walk to the sound line, switch it off, begin, and shoot again.
+await noisyPage.close()
+
+const quietPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+quietPage.on('pageerror', (error) => problems.push(`muted: ${error.message}`))
+await quietPage.goto(base, { waitUntil: 'domcontentloaded' })
+await quietPage.waitForTimeout(900)
+/*
+ * Held, not tapped.
+ *
+ * `press` puts the keyup in the same instant as the keydown, and the menu reads
+ * what is held once a frame -- so four taps moved the cursor one line, the `e`
+ * that followed chose a level instead of the sound switch, and the check
+ * reported that switching the sound off did not switch the sound off. Second
+ * time this has caught me; a human tap is a hundred milliseconds, which is six
+ * frames.
+ */
+const hold = async (key: string) => {
+  await quietPage.keyboard.down(key)
+  await quietPage.waitForTimeout(170)
+  await quietPage.keyboard.up(key)
+  await quietPage.waitForTimeout(90)
+}
+for (let i = 0; i < 4; i++) await hold('ArrowDown')
+await hold('e')
+await quietPage.waitForTimeout(300)
+const muted = await readOpened(quietPage)
+for (let i = 0; i < 4; i++) await hold('ArrowUp')
+await hold('e')
+await quietPage.waitForTimeout(600)
+const mutedStart = await readOpened(quietPage)
+await quietPage.keyboard.down(' ')
+await quietPage.waitForTimeout(200)
+await quietPage.keyboard.up(' ')
+await quietPage.waitForTimeout(400)
+const mutedAfter = await readOpened(quietPage)
+await quietPage.close()
+
+check('the game asks for a noise when you fire, and stops when told to', () => {
+  assert(beforeAnySound.noisesPlayed === 0, `${beforeAnySound.noisesPlayed} noises before anything happened`)
+  assert(beforeAnySound.audible, 'the page starts with the sound switched off')
+  assert(
+    afterOneShot.noisesPlayed > 0,
+    `firing left the count at ${afterOneShot.noisesPlayed}`,
+  )
+
+  // And the switch. Without this half, a count that only ever rises would pass.
+  assert(!muted.audible, 'choosing the sound line did not switch it off')
+  assert(
+    mutedAfter.noisesPlayed === mutedStart.noisesPlayed,
+    `muted, the count went from ${mutedStart.noisesPlayed} to ${mutedAfter.noisesPlayed}`,
+  )
+})
+
 check('a rocket fired at your feet costs you health', () => {
   assert(beforeRocket.health === 100, `the walk to the wall already cost health (${beforeRocket.health})`)
   assert(
@@ -974,6 +1051,8 @@ function readOpened(page: Page) {
       liftFloor: (probe.liftFloor as number | null) ?? null,
       complete: probe.complete === true,
       titleUp: probe.titleUp === true,
+      noisesPlayed: (probe.noisesPlayed as number) ?? -1,
+      audible: probe.audible === true,
     }
   })
 }

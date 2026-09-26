@@ -61,6 +61,7 @@ import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } 
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { crossings } from '../src/columns/crossing.ts'
+import { SILENCE, noises, shapeOf } from '../src/game/sound.ts'
 import { teleportsFrom, teleportSpecials } from '../src/game/wadteleport.ts'
 import { tinyWad } from './wadfixture.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
@@ -4539,6 +4540,49 @@ test('normal is what a map is built for unless asked otherwise', () => {
     wadLevelState(bytes, 'E1M1').actors.length === 1,
     'the default skill is not the one the normal-only creature stands on',
   )
+})
+
+console.log('\nnoises')
+
+test('every noise the game can ask for has a shape', () => {
+  // The table and the union are written separately, so a name added to one and
+  // not the other is a noise that either cannot be asked for or throws when it
+  // is. There is nothing on screen to notice either.
+  const named = noises()
+  assert(named.length >= 14, `only ${named.length} noises are defined`)
+  for (const noise of named) {
+    const shape = shapeOf(noise)
+    assert(shape !== undefined, `${noise} is named but has no shape`)
+    assert(shape.length > 0.02 && shape.length < 2, `${noise} lasts ${shape.length} seconds`)
+    assert(shape.level > 0 && shape.level <= 1, `${noise} peaks at ${shape.level}`)
+    assert(shape.grit >= 0 && shape.grit <= 1, `${noise} is ${shape.grit} noise`)
+    assert(shape.from > 0 && shape.to > 0, `${noise} runs from ${shape.from} to ${shape.to} hertz`)
+    assert(shape.cutoff >= 200, `${noise} is filtered down to ${shape.cutoff} hertz, which is nothing`)
+  }
+})
+
+test('the weapons do not all sound alike', () => {
+  // Three weapons that sounded the same would be three weapons you cannot tell
+  // apart with your eyes on the room, which is where they are.
+  const light = shapeOf('sidearm')
+  const heavy = shapeOf('scattergun')
+  const thrown = shapeOf('launcher')
+  assert(heavy.length > light.length, 'the scattergun is no longer than the sidearm')
+  assert(heavy.cutoff < light.cutoff, 'the scattergun is no darker than the sidearm')
+  assert(thrown.cutoff < light.cutoff, 'the launcher is no darker than the sidearm')
+  // And the blast that follows a rocket is the biggest thing here.
+  const blast = shapeOf('blast')
+  assert(blast.length > thrown.length, 'the explosion is shorter than the shot that caused it')
+  assert(blast.level >= thrown.level, 'the explosion is quieter than the shot that caused it')
+})
+
+test('silence makes no noise and no trouble', () => {
+  // What the page uses before anybody has pressed anything, and what a check
+  // uses instead of a speaker. It must be safe to call for a name that exists
+  // and must not throw for one that does not.
+  for (const noise of noises()) SILENCE.play(noise)
+  SILENCE.play('sidearm', 0)
+  assert(true, 'silence threw')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

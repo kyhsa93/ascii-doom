@@ -390,6 +390,32 @@ deliberate: special 63's door shuts itself again in the original and stays open
 here, which is eighty-two lines on seventeen maps and makes none of them
 unplayable.
 
+There is sound now, and it is synthesised rather than carried. That was a
+measurement rather than a preference: the eighteen noises a game like this needs
+are three hundred and fifty-six kilobytes inside a real file and two hundred and
+forty-six gzipped, because eight-bit PCM is close to incompressible, and the
+whole page is seventy-five. Carrying them would make the download four times
+what the game is, to say things that are a burst of filtered noise and a falling
+tone. An oscillator and a second of random numbers cost a few hundred bytes of
+code instead.
+
+That is the opposite of the decision made about the art, and the difference is
+the point. A creature's shape cannot be approximated -- it is the thing itself,
+and what it looks like is most of what it is. A shotgun is a transient with a
+bright attack and a fast decay, and an approximation of that reads as a shotgun.
+The three weapons are told apart by length and by how dark they are rather than
+by pitch, which is how you tell them apart with your eyes on the room.
+
+Nothing sounds until you press something, because every browser refuses to make
+a noise before a gesture; the speaker is built on the first key or tap rather
+than at boot, so the first shot is heard instead of swallowed. The title has a
+line to switch it off.
+
+Checking it needed a different shape from everything else here. A noise leaves
+no mark on the screen, so the page counts what it asks for and the browser check
+reads the count -- and turns the sound off and fires again, because a counter
+that only rises says nothing about the switch that is supposed to stop it.
+
 A map is built for one difficulty rather than all of them at once. Doom's five
 settings are three sets of flags -- the two easy ones share a bit and the two
 hard ones share another -- and the importer was reading none of them, so every

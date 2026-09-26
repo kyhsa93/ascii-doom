@@ -35,6 +35,8 @@ export type MenuAction =
    * of lines and a file's map list already fills them.
    */
   | { readonly kind: 'skill' }
+  /** Turn the noise off, for anyone who would rather it were quiet. */
+  | { readonly kind: 'sound' }
 
 export interface MenuItem {
   readonly label: string
