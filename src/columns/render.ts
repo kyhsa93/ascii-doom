@@ -135,6 +135,41 @@ export const MATERIALS: Record<string, Material> = {
   // brightness -- a colour alone would say "this floor is lit oddly" where the
   // point is "this is not the same kind of thing".
   sludge: { tint: tint(0.55, 0.78, 0.40), ramp: ' `!$' },
+
+  /*
+   * What a map from a file is made of.
+   *
+   * Every wall in an imported map was drawn as `wall` -- one colour, one ramp --
+   * so a rusted service corridor and a marble hall were the same room twice.
+   * The file does say which is which: the first of the two files uses five
+   * hundred and sixty-four distinct wall textures and two hundred and one
+   * flats, and sixty-nine per cent of wall surfaces and ninety-five per cent of
+   * floors fall under a couple of dozen name stems.
+   *
+   * How many of those can arrive is decided by the glyphs rather than by the
+   * names. Families may not overlap -- a floor and a wall at the same distance
+   * under the same lamp receive the same light, so if they shared glyphs the
+   * only thing telling them apart would be colour, and on a terminal with few
+   * colours that is nothing. Counting what reads at small sizes leaves about
+   * twenty-nine usable characters, which is seven families of four. Six were
+   * already spent, so this is the rest of the budget spent deliberately:
+   *
+   *   walls    stone, metal, rust, circuit   (94% of wall surfaces with `wall`)
+   *   floors   stoneFloor                    (58% on its own)
+   *   ceilings stoneCeiling                  (33%)
+   *
+   * Wood, bone and brick are one per cent each and fold into the nearest of
+   * those rather than eating a family. That is the trade this renderer can
+   * actually pay, and the alternative -- more materials sharing glyphs -- buys
+   * a longer table and no more legibility.
+   */
+  stone: { tint: tint(0.68, 0.68, 0.66), ramp: ' /\\Xx' },
+  metal: { tint: tint(0.60, 0.66, 0.74), ramp: ' |][}' },
+  rust: { tint: tint(0.80, 0.50, 0.32), ramp: ' cCQ0' },
+  circuit: { tint: tint(0.42, 0.74, 0.62), ramp: ' tTYV' },
+  stoneFloor: { tint: tint(0.60, 0.58, 0.54), ramp: ' izZ' },
+  stoneCeiling: { tint: tint(0.46, 0.48, 0.56), ramp: ' 1lI' },
+
 }
 
 /**
@@ -344,7 +379,21 @@ function drawColumn(
 
     const next = acrossFrom(hit.line, current)
     if (next < 0) {
-      paintWall(fb, col, top, bottom, distance, sector.light, 'wall')
+      /*
+       * What the line says it is made of, rather than "a wall".
+       *
+       * The importer had been deciding this from the file's texture names for a
+       * round before anything drew it: sixty-eight maps carried four or five
+       * wall materials each and every one of them came out as the same plain
+       * `wall`, because this call named the material as a literal. The data was
+       * right and the screen never saw it.
+       *
+       * The two steps below keep their own names on purpose. `upper` and
+       * `lower` say "above an opening" and "the face of a step", which is a
+       * different question from what the surface is made of -- and they are how
+       * you tell a doorway from a wall at a glance.
+       */
+      paintWall(fb, col, top, bottom, distance, sector.light, hit.line.material)
       return
     }
 

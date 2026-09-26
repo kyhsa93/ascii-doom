@@ -390,6 +390,39 @@ deliberate: special 63's door shuts itself again in the original and stays open
 here, which is eighty-two lines on seventeen maps and makes none of them
 unplayable.
 
+A map from a file is made of something now. Every imported wall was drawn as
+one material -- one colour, one family of glyphs -- so a rusted service corridor
+and a marble hall were the same room in different places, and the geometry being
+right only made that stranger. The file says which is which: the first of the
+two uses five hundred and sixty-four distinct wall textures and two hundred and
+one floor flats.
+
+Naming five hundred of anything is not on, and it turns out not to be necessary.
+Doom's texture names are stems with numbers after them, and sixty-nine per cent
+of wall surfaces and ninety-five per cent of floors fall under a couple of dozen
+stems -- BROWN, METAL, STONE, SUPPORT, COMP, and so on. Matching the stem,
+longest first, is the whole of it.
+
+What decides how many materials can exist is the glyphs rather than the names.
+Families may not overlap: a floor and a wall at the same distance under the same
+lamp receive exactly the same light, so if they shared characters the only thing
+telling them apart would be colour, and on a terminal with few colours that is
+nothing at all. About twenty-nine characters read at this size, which is seven
+families of four, and six were already spent. So four new wall materials and two
+new flats, chosen by what the files actually use: stone, metal, rust and circuit
+cover ninety-four per cent of wall surfaces alongside the original, and a stone
+floor covers fifty-eight per cent on its own. Wood, bone, brick and lit panels
+are one per cent each and fold into the nearest of those rather than eating a
+family — asserted in the checks, so the folding is on the record instead of
+looking like a missing case.
+
+Two mistakes on the way, both mine and both caught by checks that already
+existed. The first four families reached into glyphs the original six were
+using, which is exactly the overlap the rule forbids; the free list is computed
+now rather than remembered. And one family was written with a character twice,
+which leaves a step of its ramp that no light can produce — reported several
+screens away as a dead level, so there is a check for the typo itself now.
+
 There is sound now, and it is synthesised rather than carried. That was a
 measurement rather than a preference: the eighteen noises a game like this needs
 are three hundred and fifty-six kilobytes inside a real file and two hundred and

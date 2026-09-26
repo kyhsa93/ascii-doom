@@ -61,6 +61,7 @@ import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } 
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { crossings } from '../src/columns/crossing.ts'
+import { flatMaterial, surfaceMaterials, wallMaterial } from '../src/columns/wadsurface.ts'
 import { SILENCE, noises, shapeOf } from '../src/game/sound.ts'
 import { teleportsFrom, teleportSpecials } from '../src/game/wadteleport.ts'
 import { tinyWad } from './wadfixture.ts'
@@ -2355,6 +2356,7 @@ function plainLevel(floors: readonly number[], joins: readonly [number, number][
     floorMaterial: 'floor',
     ceilingMaterial: 'ceiling',
     hurt: 0,
+    special: 0,
     sky: false,
     tag: null,
     minX: 0,
@@ -3117,6 +3119,7 @@ test('a room with a pillar in it knows the pillar is not part of the room', () =
     floorMaterial: 'floor',
     ceilingMaterial: 'ceiling',
     hurt: 0,
+    special: 0,
     sky: false,
     tag: null,
     minX: 0,
@@ -3915,6 +3918,25 @@ test('surface classes are drawn with different glyphs', () => {
   assert(clashes.length === 0, clashes.join('; '))
 })
 
+test('no two materials share a glyph, and none repeats one within itself', () => {
+  /*
+   * The second half is new and is the one that caught me.
+   *
+   * A family written as " ..:z" has four entries and three distinct glyphs, so
+   * one step of the ramp can never be produced by any light -- which the
+   * reachability check below reports as a dead level, several screens away from
+   * the typo that caused it. Saying it here names the actual mistake.
+   */
+  for (const [name, material] of Object.entries(MATERIALS)) {
+    const glyphs = [...material.ramp].filter((c) => c !== ' ')
+    assert(
+      new Set(glyphs).size === glyphs.length,
+      `${name} repeats a glyph in ${JSON.stringify(material.ramp)}`,
+    )
+    assert(glyphs.length >= 3, `${name} has only ${glyphs.length} glyphs to spend on distance`)
+  }
+})
+
 test('within one class, distance shows as a change of glyph', () => {
   // The other half of the same idea. Separating the classes is worth nothing
   // if a wall two paces away and a wall twenty paces away look identical, so
@@ -4583,6 +4605,147 @@ test('silence makes no noise and no trouble', () => {
   for (const noise of noises()) SILENCE.play(noise)
   SILENCE.play('sidearm', 0)
   assert(true, 'silence threw')
+})
+
+console.log('\nwhat a map is made of')
+
+test('the renderer paints a wall with the material the line carries', () => {
+  /*
+   * The half that the importer's own checks cannot see, and the one that was
+   * missing while this went wrong.
+   *
+   * For a full round the parser gave every imported map four or five wall
+   * materials and every check agreed -- while the screen showed one, because
+   * `drawColumn` passed the string "wall" as a literal. Reverting that line
+   * changed nothing anywhere: the data was checked and the drawing was not.
+   *
+   * So this draws a frame and reads the glyphs. A material's family is its
+   * signature: no two families share a character, which is asserted a few
+   * checks below, so a glyph out of `stone` can only have come from a surface
+   * made of stone.
+   */
+  const room: SectorDef[] = [
+    {
+      polygon: [
+        [0, 0],
+        [16, 0],
+        [16, 8],
+        [0, 8],
+      ],
+      floor: 0,
+      ceiling: 4,
+      light: 1,
+    },
+  ]
+  const level = buildLevel(room)
+  // Every wall of the box, so whichever way the camera faces it sees one.
+  for (const line of level.lines) (line as { material: string }).material = 'stone'
+
+  const fb = new Framebuffer(80, 40)
+  fb.clear(0, 0, 0, 0)
+  const view: View = { x: 8, y: 4, z: 1.6, angle: 0, sector: 0, fovY: DEFAULT_FOV_Y }
+  renderView(fb, level, view, 0.5, {})
+
+  const drawn = new Set<string>()
+  for (const code of fb.chars) if (code !== 0 && code !== 32) drawn.add(String.fromCharCode(code))
+  const stoneGlyphs = [...MATERIALS.stone!.ramp].filter((c) => c !== ' ')
+  const wallGlyphs = [...MATERIALS.wall!.ramp].filter((c) => c !== ' ')
+
+  assert(
+    stoneGlyphs.some((glyph) => drawn.has(glyph)),
+    `a room walled in stone drew none of ${JSON.stringify(stoneGlyphs.join(''))} -- it drew ${JSON.stringify([...drawn].join(''))}`,
+  )
+  assert(
+    !wallGlyphs.some((glyph) => drawn.has(glyph)),
+    'a room walled in stone drew the plain wall material as well',
+  )
+})
+
+test('a wall arrives made of what the file says it is', () => {
+  /*
+   * The check the mapper's own tests cannot make.
+   *
+   * `wallMaterial` being right says nothing about whether the parser reads a
+   * texture at all -- and when the wiring was deliberately reverted to a fixed
+   * "wall", every check still passed. The fixture writes a texture name now so
+   * this can ask the question end to end.
+   */
+  const solid = readMap(tinyWad('E1M1', true, '', [], 0, false, 90, 0, 0, false, 'METAL2'), 'E1M1')
+  const metals = solid.level.lines.filter((line) => line.material === 'metal')
+  assert(metals.length > 0, 'a wall named METAL2 arrived made of something else')
+
+  // A different name gives a different material, so this is reading the name
+  // rather than returning one answer for everything.
+  const stone = readMap(tinyWad('E1M1', true, '', [], 0, false, 90, 0, 0, false, 'GSTONE1'), 'E1M1')
+  assert(
+    stone.level.lines.some((line) => line.material === 'stone'),
+    'a wall named GSTONE1 did not arrive as stone',
+  )
+  assert(
+    !stone.level.lines.some((line) => line.material === 'metal'),
+    'a map with no metal in it produced a metal wall',
+  )
+
+  // And a file that names nothing keeps what every wall used to be.
+  const plain = readMap(tinyWad('E1M1'), 'E1M1')
+  assert(
+    plain.level.lines.every((line) => line.material === 'wall'),
+    'a nameless side became something other than a plain wall',
+  )
+})
+
+test('every material a texture name can produce is one the renderer has', () => {
+  /*
+   * The one that would be found on screen rather than here.
+   *
+   * `paint` looks a material up in `MATERIALS` and asserts it exists; a stem
+   * mapped to a name nobody defined would throw in the middle of a frame, on
+   * one map, on whichever wall happened to carry that texture. This asks the
+   * two tables about each other instead.
+   */
+  for (const material of surfaceMaterials()) {
+    assert(MATERIALS[material] !== undefined, `a texture can become "${material}" and the renderer has no such material`)
+  }
+})
+
+test('a texture name decides what a wall is made of', () => {
+  // The stems are matched longest first, which is the only part of this with a
+  // way to go wrong: BROWNGRN has to beat BROWN, and SW1 has to beat nothing at
+  // all because it is three letters that start a lot of names.
+  assert(wallMaterial('BROWN96') === 'rust', 'BROWN96 is not rust')
+  assert(wallMaterial('BROWNGRN') === 'rust', 'BROWNGRN is not rust')
+  assert(wallMaterial('SUPPORT3') === 'metal', 'SUPPORT3 is not metal')
+  assert(wallMaterial('COMPSPAN') === 'circuit', 'COMPSPAN is not circuit')
+  assert(wallMaterial('SLADWALL') === 'stone', 'SLADWALL is not stone')
+  // Wood, bone, brick and lit panels fold into the nearest family that exists
+  // rather than each taking one. That is not a shortcut: families may not share
+  // glyphs, about twenty-nine characters read at this size, and six families
+  // were already spent -- so there is room for four more and these three are
+  // one per cent of wall surfaces each. Asserted so the folding is a decision
+  // on the record rather than something that looks like a missing case.
+  assert(wallMaterial('WOOD1') === 'rust', 'wood no longer folds into rust')
+  assert(wallMaterial('SKINFACE') === 'stone', 'bone no longer folds into stone')
+  assert(wallMaterial('BRICK7') === 'stone', 'brick no longer folds into stone')
+  assert(wallMaterial('LITE3') === 'circuit', 'lit panels no longer fold into circuit')
+
+  // Case does not decide it, and neither does an unknown name: anything this
+  // does not recognise stays what every wall used to be.
+  assert(wallMaterial('brown96') === 'rust', 'a lower-case name was not recognised')
+  assert(wallMaterial('ZZQQ7') === 'wall', 'an unknown texture became something other than a wall')
+  assert(wallMaterial('') === 'wall', 'a nameless side became something other than a wall')
+})
+
+test('a flat decides what the ground is made of, and the sky stays sky', () => {
+  assert(flatMaterial('FLOOR7_2') === 'stoneFloor', 'FLOOR7_2 is not a stone floor')
+  assert(flatMaterial('CEIL5_2', true) === 'stoneCeiling', 'CEIL5_2 is not a stone ceiling')
+  assert(flatMaterial('TLITE6_5', true) === 'stoneCeiling', 'lit ceilings no longer fold into stone')
+  assert(flatMaterial('RROCK03') === 'stoneFloor', 'rock no longer folds into stone underfoot')
+  assert(flatMaterial('NUKAGE1') === 'sludge', 'nukage is not sludge')
+
+  // Unknown flats fall back to the right one of the two, which is the only
+  // place in this module where the same name means two things.
+  assert(flatMaterial('ZZQQ7') === 'floor', 'an unknown flat underfoot became something other than floor')
+  assert(flatMaterial('ZZQQ7', true) === 'ceiling', 'an unknown flat overhead became something other than ceiling')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

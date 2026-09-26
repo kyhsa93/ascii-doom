@@ -22,6 +22,7 @@
  */
 
 import { sectorAt, type Level, type Line, type Sector } from './level.ts'
+import { flatMaterial, wallMaterial } from './wadsurface.ts'
 
 /**
  * Map units to metres.
@@ -287,6 +288,25 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
     return name
   }
 
+  /*
+   * The three textures a sidedef names: upper, lower, middle.
+   *
+   * The middle one is the wall you see on a one-sided line and the one across
+   * an opening; the other two face the step above and below a portal. The
+   * middle is taken where there is one and the upper otherwise, because a
+   * two-sided line's middle is usually empty ("-") and what you actually see
+   * there is the upper.
+   */
+  const sideTexture = (index: number): string => {
+    const at = sidedefs.at + index * 30
+    const middle = flatName(at + 20)
+    if (middle !== '' && middle !== '-') return middle
+    const upper = flatName(at + 4)
+    if (upper !== '' && upper !== '-') return upper
+    const lower = flatName(at + 12)
+    return lower === '-' ? '' : lower
+  }
+
   // Sectors first, without their edges: the edges come from the lines, and the
   // lines name sectors, so one of the two has to be built incomplete.
   const edges: (readonly [number, number, number, number])[][] = []
@@ -314,9 +334,15 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
       // Doom stores light 0-255. The floor keeps a dark room from going black,
       // which this renderer reads as a hole rather than as a dark room.
       light: Math.max(0.12, view.getInt16(at + 20, true) / 255),
-      floorMaterial: hurt > 0 ? 'sludge' : 'floor',
-      ceilingMaterial: 'ceiling',
+      // Damaging ground keeps its own family whatever the flat is called: what
+      // it is made of matters less than that standing in it hurts.
+      floorMaterial: hurt > 0 ? 'sludge' : flatMaterial(flatName(at + 4)),
+      ceilingMaterial: flatMaterial(flatName(at + 12), true),
       hurt,
+      // What the file called it, kept rather than dropped after the damage
+      // check: three hundred and twenty-five sectors across these two files are
+      // marked secret and nothing downstream could tell.
+      special,
       // The flat named above an outdoor room is a marker rather than a texture.
       // Every map in the original uses the same name for it.
       sky: flatName(at + 12) === SKY_FLAT,
@@ -352,7 +378,7 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
       by,
       front,
       back,
-      material: 'wall',
+      material: wallMaterial(sideTexture(right)),
       // Bit 0 is Doom's "blocks players and monsters".
       blocking: (flags & 1) !== 0,
     }

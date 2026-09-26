@@ -98,6 +98,14 @@ export function tinyWad(
    * to make the rule that stops at the burst do anything.
    */
   withArt = false,
+  /**
+   * What the wall between the rooms is made of, by the file's own naming.
+   *
+   * Empty by default, which is what this fixture always wrote and what the
+   * importer turns into the plain `wall` material -- so every fixture written
+   * before textures existed still means exactly what it meant.
+   */
+  wallTexture = '',
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -160,6 +168,11 @@ export function tinyWad(
     ),
   ]
 
+  /** Eight bytes, NUL-padded, as the format stores every texture and flat. */
+  const writeName = (view: DataView, at: number, text: string): void => {
+    for (let i = 0; i < 8; i++) view.setUint8(at + i, i < text.length ? text.charCodeAt(i) : 0)
+  }
+
   const bytes = (size: number) => new Uint8Array(size)
   const lump = (size: number, write: (view: DataView) => void) => {
     const data = bytes(size)
@@ -191,7 +204,20 @@ export function tinyWad(
     })
   })
   const sidedefs = lump(SIDEDEF_SECTOR.length * 30, (view) => {
-    SIDEDEF_SECTOR.forEach((sector, i) => view.setInt16(i * 30 + 28, sector, true))
+    SIDEDEF_SECTOR.forEach((sector, i) => {
+      view.setInt16(i * 30 + 28, sector, true)
+      /*
+       * A texture name in the middle slot, which is the one a wall is drawn
+       * with.
+       *
+       * Left empty for as long as nothing read it, which meant that when the
+       * importer started deciding a wall's material from its texture, no
+       * fixture could say what a wall was made of -- and breaking that wiring
+       * deliberately changed nothing anywhere. Writing a name here is what lets
+       * a check notice.
+       */
+      writeName(view, i * 30 + 20, wallTexture)
+    })
   })
   const vertexes = lump(VERTEXES.length * 4, (view) => {
     VERTEXES.forEach(([x, y], i) => {

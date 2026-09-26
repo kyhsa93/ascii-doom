@@ -31,6 +31,16 @@ export interface SectorDef {
   ceilingMaterial?: string
   /** Damage dealt to whoever stands in it, per bite. Zero is safe ground. */
   hurt?: number
+  /**
+   * The original's own sector special, for the things this engine reads later.
+   *
+   * Carried raw rather than interpreted, like every other number out of a file.
+   * Three hundred and twenty-five sectors across the two files are marked
+   * secret -- special 9, on sixty-six of the sixty-eight maps -- and the
+   * importer was reading this word to find damaging floors and then dropping
+   * it, so nothing downstream could tell a secret room from any other.
+   */
+  special?: number
   /** A name for switches and triggers to refer to. */
   tag?: string
 }
@@ -59,6 +69,8 @@ export interface Sector {
   readonly ceilingMaterial: string
   /** Damage per bite for standing here; zero for ordinary ground. */
   readonly hurt: number
+  /** What the file called this sector, or zero for a plain room. */
+  readonly special: number
   /**
    * Whether the ceiling is open air rather than a surface.
    *
@@ -160,6 +172,8 @@ export function buildLevel(defs: readonly SectorDef[]): Level {
       floorMaterial: def.floorMaterial ?? 'floor',
       ceilingMaterial: def.ceilingMaterial ?? 'ceiling',
       hurt: def.hurt ?? 0,
+      // Written levels have no file behind them, so nothing called them anything.
+      special: def.special ?? 0,
       // Levels written here are all indoors. Nothing authored needs this yet,
       // and a map that arrives as data sets it for itself.
       sky: false,
