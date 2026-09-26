@@ -1525,12 +1525,13 @@ test('a map whose exit is a line you walk over can be finished', () => {
   assert(state.goal.reached, 'the map did not record having been finished')
 })
 
-test('a map whose exit is a switch stays unfinishable, and says so by staying shut', () => {
-  // Half the maps in the set end on a switch, which is a line you press rather
-  // than a room you enter, and this game has no way to press a line. Those keep
-  // the sentinel -- and the sentinel is deliberately not -1, because that is
-  // what `sectorAt` answers for a point outside the map, so walking off the
-  // edge would otherwise finish a level that has no ending at all.
+test('a switch exit cannot be finished by walking, the edge of the map included', () => {
+  // Pressing one does finish the map -- that is checked in the browser, where
+  // the pressing lives. What this pins is that the other route stays shut, so
+  // the two ways of ending a level cannot both fire on the same map. The
+  // sentinel is deliberately not -1, because that is what `sectorAt` answers
+  // for a point outside the map, so walking off the edge would otherwise
+  // finish a level no room ends.
   const switched = wadLevelState(tinyWad('E1M1', true, '', [], 11, false), 'E1M1')
   assert(!reachExit(switched.goal, 0, 1 / 60), 'a switch exit finished the map from sector 0')
   assert(!reachExit(switched.goal, 1, 1 / 60), 'a switch exit finished the map from sector 1')

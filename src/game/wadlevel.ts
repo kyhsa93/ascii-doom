@@ -128,8 +128,9 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
      *
      * A walk-over exit becomes the room on the far side of the line, because
      * arriving there is what crossing it means and arriving somewhere is the
-     * only question `reachExit` knows how to ask. A map whose exit is a switch
-     * keeps the sentinel and stays unfinishable, which is half of them.
+     * only question `reachExit` knows how to ask. A map whose exit is only a
+     * switch keeps the sentinel here and is finished through `exitLines`
+     * instead, so the sentinel means "no room ends this", not "nothing does".
      */
     goal: makeGoal(exitSectorFrom(map.specials) ?? NO_EXIT),
     /**

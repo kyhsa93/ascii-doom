@@ -12,8 +12,14 @@
  * switch is the line itself: you face that piece of wall and press it, and
  * thirty-two of the thirty-five such lines here have nothing behind them at
  * all, so there is no room to name. Counted across the two files this was
- * built against: thirty-six of the sixty-eight maps end on a line you walk
- * over, thirty-two on one you press, and no map has neither.
+ * built against: thirty-six of the sixty-eight maps carry a line you walk over
+ * and thirty-two carry one you press, which overlap on three, so sixty-five
+ * can be finished and three cannot. The three are the maps the original ends
+ * by killing what stands in the room, and no line in them says so.
+ *
+ * That last sentence read "and no map has neither" in the same commit that
+ * corrected the README to sixty-five. Fifth time a header has outlived what it
+ * describes; the commit it shipped in was the one warning about headers.
  *
  * Secret exits are treated as exits. There is nothing secret to go to.
  */
