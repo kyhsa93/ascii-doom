@@ -16,6 +16,7 @@ import { drawAutomap } from '../src/columns/automap.ts'
 import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
 import { columnOfCamX, DEFAULT_FOV_Y, projectionOf, renderView, type View } from '../src/columns/render.ts'
+import { crossings } from '../src/columns/crossing.ts'
 import { drawBillboards, drawSprite, squeezed, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, normalizeAngle, provoke, updateActors } from '../src/game/ai.ts'
 import {
@@ -63,6 +64,15 @@ let levelIndex = 0
 let state: LevelState = loadLevel(LEVELS[0]!)
 /** Everything in flight, emptied whenever a level is. */
 let projectiles: Projectile[] = []
+/**
+ * Teleport lines that have been used up.
+ *
+ * Special 39 works once and 97 repeats, and the difference has to be kept
+ * somewhere. Here rather than on the line, because the line belongs to a level
+ * that may be played again -- and cleared in `enterLevel` with everything else
+ * of this shape, which is the lesson the kill counters taught.
+ */
+let usedTeleports = new Set<Line>()
 /**
  * The lines the view has reached, which is what the automap may draw.
  *
@@ -159,6 +169,7 @@ function enterLevel(next: LevelState): void {
   // Split once here rather than filtered every time somebody presses use.
   doors = next.movers.filter((mover) => mover.kind.surface === 'ceiling')
   projectiles = []
+  usedTeleports = new Set<Line>()
   advanceIn = 0
   deadFor = 0
   seen = new Set<Line>()
@@ -534,7 +545,38 @@ function step(): void {
   const dx = fx * intent.forward + sx * intent.strafe
   const dy = fy * intent.forward + sy * intent.strafe
   // Already unit length at most: the intent does that, so both devices agree.
+  const wasX = player.x
+  const wasY = player.y
   if (dx !== 0 || dy !== 0) moveBody(level, player, dx * speed, dy * speed)
+
+  /*
+   * Lines crossed by that step, which is how most of the original's map works.
+   *
+   * Asked of the step rather than of where the body ended up. The exit importer
+   * had to approximate crossing with "did you arrive in the room beyond", which
+   * is true of an exit because an exit happens once; it is not true of a
+   * teleport, where the room beyond is the room you left behind a moment later.
+   *
+   * Only from the front, which is the original's rule and not a simplification:
+   * a teleport crossed from the back is how you walk away from the pad you just
+   * landed on without being sent straight back.
+   */
+  for (const crossed of crossings(level.lines, wasX, wasY, player.x, player.y)) {
+    if (!crossed.fromFront) continue
+    const where = state.teleportLines.get(crossed.line)
+    if (where === undefined || usedTeleports.has(crossed.line)) continue
+    if (where.once) usedTeleports.add(crossed.line)
+
+    player.x = where.x
+    player.y = where.y
+    player.angle = where.angle
+    player.sector = where.sector
+    player.floor = level.sectors[where.sector]?.floor ?? player.floor
+    say('teleported')
+    // One a step. A pad standing on another teleport line would otherwise send
+    // you on again in the same frame, and arriving is not crossing.
+    break
+  }
 
   // The ground underfoot, after the move rather than before it: a step out of a
   // channel is a step out of it, and the clock starts again on the way back in.

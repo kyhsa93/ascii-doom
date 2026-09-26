@@ -36,6 +36,7 @@ import { exitSectorFrom, switchExitLines } from './wadexit.ts'
 import { liftsFrom } from './wadlifts.ts'
 import { supplyFor, supplyPictureFor } from './waditems.ts'
 import { creatureFor, creaturePictureFor } from './wadthings.ts'
+import { teleportsFrom } from './wadteleport.ts'
 
 /**
  * A sector index no map can have.
@@ -227,6 +228,13 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
      * two files this was built against is untagged.
      */
     liftLines,
+    /**
+     * And the lines that put you somewhere else entirely.
+     *
+     * The pad the tag names, not the room: a teleport arrives at a thing, and
+     * a room is not a place to stand.
+     */
+    teleportLines: teleportsFrom(map.specials, map.things, map.tagged),
     /**
      * Still empty, and now for a reason rather than for want of an importer.
      * A lift here is a floor that carries you when you stand on it; a lift in a

@@ -14,6 +14,7 @@
  * then the same shape as one, and replaying is simply loading again.
  */
 
+import type { Teleport } from './wadteleport.ts'
 import { buildLevel, sectorAt, type Level, type SectorDef, type Line } from '../columns/level.ts'
 import { spawnActor, type Actor, type ActorKind } from './ai.ts'
 import { makeGoal, type Goal } from './exit.ts'
@@ -78,6 +79,15 @@ export interface LevelState {
    * say which floor should move. One line may call several.
    */
   readonly liftLines: ReadonlyMap<Line, readonly Mover[]>
+  /**
+   * Lines that send you somewhere else when you walk across them.
+   *
+   * Empty for every level written here, which have nowhere else to be. Fifty-one
+   * of the sixty-eight maps in the files this was built against carry one, which
+   * makes it the most common thing a crossed line does after opening a door --
+   * and a teleport you cannot take is a set of rooms you can see and never reach.
+   */
+  readonly teleportLines: ReadonlyMap<Line, Teleport>
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
   /**
@@ -144,6 +154,7 @@ export function loadLevel(def: LevelDef): LevelState {
       .map((mover) => mover.sector),
     exitLines: new Set<Line>(),
     liftLines: new Map<Line, readonly Mover[]>(),
+    teleportLines: new Map<Line, Teleport>(),
     fromFile: 0,
   }
 }

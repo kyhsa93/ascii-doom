@@ -45,6 +45,7 @@ import {
   readMap,
   type LineSpecial,
   UNITS_PER_METRE,
+  type WadThing,
 } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
@@ -58,6 +59,8 @@ import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
+import { crossings } from '../src/columns/crossing.ts'
+import { teleportsFrom, teleportSpecials } from '../src/game/wadteleport.ts'
 import { tinyWad } from './wadfixture.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import {
@@ -2314,9 +2317,11 @@ test('only the lifts you press come across', () => {
     const made = liftsFrom(level, [spec(special, null, 5)], tagged)
     assert(made.platforms.length === 1, `special ${special} is in the table and makes no lift`)
   }
-  // The ones triggered by crossing a line, which this engine cannot notice --
-  // and, at the end, the two I expected to carry most of these maps before
-  // counting them. They appear zero times in either file.
+  // The ones triggered by crossing a line, which this importer does not make
+  // yet -- the engine can notice a crossing now, and 88 and 120 are waiting on
+  // this table rather than on the geometry: they are on thirty-eight and
+  // fifteen of these maps. And, at the end, the two I expected to carry most of
+  // these maps before counting them. Those appear zero times in either file.
   for (const special of [88, 120, 121, 10, 21]) {
     const made = liftsFrom(level, [spec(special, null, 5)], tagged)
     assert(made.platforms.length === 0, `special ${special} came across as a lift`)
@@ -3777,6 +3782,176 @@ test('the title fits across rather than being cut off at both edges', () => {
   // And a grid with room for it is left alone, rather than rebuilt into an
   // identical copy each frame.
   assert(squeezed(FREEDOOM.LOGO, 163) === FREEDOOM.LOGO, 'a title that already fits was rebuilt anyway')
+})
+
+console.log('\nlines you walk across')
+
+/** A wall from (1,-1) to (1,1): everything below crosses it or fails to. */
+const GATE: Line = {
+  ax: 1, ay: -1, bx: 1, by: 1,
+  front: 0, back: 1, material: 'wall', blocking: false,
+}
+
+test('a step through a line reports it once, with the side it came from', () => {
+  const through = crossings([GATE], 0, 0, 2, 0)
+  assert(through.length === 1, `walking through reported ${through.length} crossings`)
+  assert(Math.abs(through[0]!.at - 0.5) < 1e-9, `the crossing sat at ${through[0]!.at} of the step`)
+
+  // The same step the other way is the other side. Which side matters because
+  // the original refuses several specials crossed from the back.
+  const back = crossings([GATE], 2, 0, 0, 0)
+  assert(back.length === 1, `walking back reported ${back.length} crossings`)
+  assert(
+    back[0]!.fromFront !== through[0]!.fromFront,
+    'both directions reported the same side, so the side is not being measured',
+  )
+})
+
+test('a step that does not reach a line does not report it', () => {
+  for (const [name, step] of [
+    ['stopping short', [0, 0, 0.9, 0]],
+    ['past the end of the line', [0, 5, 2, 5]],
+    ['running along it', [1, -1, 1, 1]],
+  ] as const) {
+    const [ax, ay, bx, by] = step
+    const out = crossings([GATE], ax, ay, bx, by)
+    assert(out.length === 0, `${name} reported ${out.length} crossings`)
+  }
+})
+
+test('standing on a line does not fire it over and over', () => {
+  // The failure this is here for: a body at rest on a line, asked sixty times a
+  // second, must answer "no" every time. A step of no length is the shape that
+  // takes, and so is a step that starts where the last one ended.
+  assert(crossings([GATE], 1, 0, 1, 0).length === 0, 'a body standing still crossed a line')
+  assert(crossings([GATE], 1, 0, 2, 0).length === 0, 'stepping off a line crossed it again')
+  // Arriving is still arriving, though: a step that ends on the line has
+  // crossed it, which is what walking into a doorway and stopping is.
+  assert(crossings([GATE], 0, 0, 1, 0).length === 1, 'a step that ended on the line missed it')
+})
+
+test('two lines in one step fire in the order they were met', () => {
+  const far: Line = { ...GATE, ax: 3, ay: -1, bx: 3, by: 1 }
+  const both = crossings([far, GATE], 0, 0, 4, 0)
+  assert(both.length === 2, `a step across two lines reported ${both.length}`)
+  assert(both[0]!.line === GATE, 'the further line was reported first')
+  assert(both[0]!.at < both[1]!.at, 'the crossings came back out of order')
+})
+
+console.log('\nteleports out of a file')
+
+/** A line, a tag, and a pad standing in the room that tag names. */
+function teleportFixture(special: number, tag: number, padSector: number) {
+  const line: Line = {
+    ax: 0, ay: 0, bx: 1, by: 0,
+    front: 0, back: 1, material: 'wall', blocking: false,
+  }
+  const specials: LineSpecial[] = [{ special, tag, front: 0, back: 1, line }]
+  const things: WadThing[] = [{ type: 14, x: 40, y: 60, angle: 90, sector: padSector }]
+  const tagged = new Map<number, readonly number[]>([[7, [3]]])
+  return { line, specials, things, tagged }
+}
+
+test('a teleport line is answered with where it sends you', () => {
+  const { line, specials, things, tagged } = teleportFixture(97, 7, 3)
+  const found = teleportsFrom(specials, things, tagged)
+  const where = found.get(line)
+  assert(where !== undefined, 'a line with a tag and a pad made no teleport')
+  assert(where.x === 40 && where.y === 60, `it lands at ${where.x},${where.y} rather than on the pad`)
+  // The pad's own angle, because arriving facing the wall you came through is
+  // how the original does not do it.
+  assert(where.angle === 90, `it arrives facing ${where.angle} rather than the way the pad points`)
+  assert(where.once === false, '97 was treated as a one-shot')
+  assert(teleportsFrom(teleportFixture(39, 7, 3).specials, things, tagged).size === 1, '39 made no teleport')
+  const onceOnly = teleportsFrom(teleportFixture(39, 7, 3).specials, things, tagged)
+  assert([...onceOnly.values()][0]!.once === true, '39 was treated as repeatable')
+})
+
+test('a teleport with nowhere to go is not made', () => {
+  const { specials, things, tagged } = teleportFixture(97, 7, 3)
+  // A pad in a room the tag does not name is not this line's pad.
+  const elsewhere: WadThing[] = [{ ...things[0]!, sector: 9 }]
+  assert(teleportsFrom(specials, elsewhere, tagged).size === 0, 'a pad in another room was taken')
+  // No pad at all.
+  assert(teleportsFrom(specials, [], tagged).size === 0, 'a teleport was made with no pad')
+  // A tag naming nothing.
+  assert(teleportsFrom(specials, things, new Map()).size === 0, 'a tag naming no room still made one')
+})
+
+test('tag zero is refused before it is looked up', () => {
+  // The same lock the lifts carry. Zero is what the format writes on an
+  // ordinary sector, so one stray zero would make every untagged room in the
+  // map a destination -- and unlike a lift, that would move the player.
+  const { specials, things } = teleportFixture(97, 0, 3)
+  const zeroed = new Map<number, readonly number[]>([[0, [3]]])
+  assert(teleportsFrom(specials, things, zeroed).size === 0, 'a teleport line with tag zero was honoured')
+})
+
+test('the monster-only teleports are left alone', () => {
+  // 125 and 126 are the same machine pointed at bodies this game does not
+  // teleport; 126 is on forty-one of these maps, so taking them would send the
+  // player through lines the original never lets them use.
+  for (const special of [125, 126]) {
+    const { specials, things, tagged } = teleportFixture(special, 7, 3)
+    assert(teleportsFrom(specials, things, tagged).size === 0, `${special} was treated as a teleport`)
+  }
+  assert(teleportSpecials().length === 2, 'the teleport table grew without this check being told')
+})
+
+test('a map from a file arrives with its teleports wired up', () => {
+  // Through `wadLevelState` rather than through the importer, because the
+  // importer being right proves nothing about the level the page is handed.
+  // This is the check that would have caught the table being built and then
+  // never carried -- the failure this repository keeps meeting, where every
+  // piece works and the person sees nothing.
+  //
+  // 97 on the wall between the two rooms, the eastern room wearing tag 7, and a
+  // pad standing in it. `shutBack` off because a room you teleport into has to
+  // be somewhere you can stand.
+  const pad: [number, number, number, number] = [192, 64, 90, 14]
+  const bytes = tinyWad('E1M1', true, '', [pad], 97, false, 90, 7, 0)
+  const state = wadLevelState(bytes, 'E1M1')
+  assert(state.teleportLines.size === 1, `${state.teleportLines.size} teleports came off a map with one`)
+
+  const where = [...state.teleportLines.values()][0]!
+  // The pad's position in metres, which is the same conversion the spawn gets.
+  assert(
+    Math.abs(where.x - 192 / UNITS_PER_METRE) < 1e-9 && Math.abs(where.y - 64 / UNITS_PER_METRE) < 1e-9,
+    `it lands at ${where.x}, ${where.y} rather than where the pad stands`,
+  )
+  assert(state.level.sectors[where.sector] !== undefined, 'it lands in a sector the level does not have')
+  // Degrees in the file, radians everywhere here.
+  assert(Math.abs(where.angle - Math.PI / 2) < 1e-9, `it arrives facing ${where.angle} rather than north`)
+
+  // And the line it is hung on is one a step across actually meets.
+  const line = [...state.teleportLines.keys()][0]!
+  const mx = (line.ax + line.bx) / 2
+  const my = (line.ay + line.by) / 2
+  const ex = line.bx - line.ax
+  const ey = line.by - line.ay
+  const length = Math.hypot(ex, ey)
+  const rx = (ey / length) * 0.3
+  const ry = (-ex / length) * 0.3
+  const met = crossings(state.level.lines, mx + rx, my + ry, mx - rx, my - ry).filter((c) => c.line === line)
+  assert(met.length === 1, `a step across the teleport line met it ${met.length} times`)
+  // Against what the file says, not against my own arithmetic. The first
+  // version of this asked only whether `fromFront` was true, which it was --
+  // on a fixture whose line was wound backwards, so "the front" meant the
+  // opposite of what it means in every real map, and the page quietly refused
+  // to teleport anybody. A line names its front sector; standing in that
+  // sector and walking across is what crossing from the front *is*.
+  assert(
+    sectorAt(state.level, mx + rx, my + ry) === line.front,
+    'the fixture no longer starts the step on the side the file calls the front',
+  )
+  assert(met[0]!.fromFront, 'a step from the sector the line calls its front was reported as from the back')
+})
+
+test('a map with no teleport line brings no teleports', () => {
+  // The same fixture with the special taken off. Without this the check above
+  // passes on a build that hands every line a teleport.
+  const bytes = tinyWad('E1M1', true, '', [[192, 64, 90, 14]], 0, false, 90, 7, 0)
+  assert(wadLevelState(bytes, 'E1M1').teleportLines.size === 0, 'a map with no teleport line got one')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

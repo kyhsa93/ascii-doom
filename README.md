@@ -14,9 +14,9 @@ What is in it now: sector-based maps, a column renderer for walls with
 horizontal spans for floors and ceilings, light that falls off with distance,
 billboard creatures that wake when they see you and swing when they reach you,
 one that throws bolts instead of closing the distance, two instant weapons and
-one that throws, doors and lifts, supplies you walk over, keys and the doors
-that ask for them, and an exit that ends a level, tallies what you did and
-hands you to the next one.
+one that throws, doors and lifts, teleports, supplies you walk over, keys and
+the doors that ask for them, and an exit that ends a level, tallies what you
+did and hands you to the next one.
 
 There is an automap, drawn from what you have actually been able to see rather
 than from the level file: the renderer marks a wall the moment a column of the
@@ -229,8 +229,32 @@ than one room. So a lift is a line that calls a list of platforms, and pressing
 the wall the map marked is what calls them. Five hundred and sixty-five of
 those lines are a switch, and five hundred and eight of those arrive as
 something you can press — across sixty-two of the sixty-eight maps. The
-hundred and ninety-six you trigger by walking over instead do not arrive at
-all, because crossing a line is not something this engine can notice.
+hundred and ninety-six you trigger by walking over are the next thing to
+arrive, now that crossing a line is something this engine can notice.
+
+Crossing a line is a thing that happens now, and most of what the original's
+maps do hangs off it. A step is a segment — the body was here at the start of
+the frame and there at the end of it — so which lines it passed through is a
+segment against a segment and nothing more. What that buys immediately is
+teleports, which fifty-one of the sixty-eight maps carry across eight hundred
+and sixty-three lines: a line names a tag, a marker thing stands in a room
+wearing it, and you arrive standing where the marker stands, facing the way it
+faces. Only when crossed from the front, which is the original's rule and not a
+simplification — a teleport taken from behind is how you walk off the pad you
+just landed on without being sent straight back.
+
+That rule is also what caught the fixture lying. The two-sided line the test
+file is built around was wound the opposite way to every real one, so its front
+sidedef sat on its left; six checks and a measurement across three real maps all
+passed while the page refused to teleport anybody, because the fixture's idea of
+"the front" was backwards. The check now asks the file which sector the line
+calls its front and walks from there, rather than trusting arithmetic of its
+own.
+
+The walk-over exit stays as it was — the room across the line rather than the
+line itself. It could be moved onto this now, and there is no reason to: an
+exit fires once and arriving in the room beyond is what crossing it means, so
+the two agree, and a rewrite would be motion rather than progress.
 
 A platform starts raised, drops to the floor of the lowest room touching it,
 rests three seconds and climbs back. None of that needed building: a door is a

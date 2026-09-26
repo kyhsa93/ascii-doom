@@ -96,8 +96,18 @@ export function tinyWad(
   // v1, v2, flags, special, tag, right sidedef, left sidedef (0xffff for none).
   const LINEDEFS: [number, number, number, number, number, number, number][] = [
     [0, 1, 1, 0, 0, 0, 0xffff],
-    // The one that joins the rooms, and the only one with two sides.
-    [1, 2, 0, lineSpecial, roomTag, 1, 2],
+    /*
+     * The one that joins the rooms, and the only one with two sides.
+     *
+     * Wound from vertex 2 to vertex 1 -- south -- so that its right-hand side
+     * is the western room, which is the room its right sidedef belongs to. It
+     * ran the other way until a teleport was hung on it and would not fire:
+     * every real file puts the front sidedef on the right of the line's
+     * direction, this put it on the left, and a rule about which side a body
+     * crossed from came out backwards here while being right on every map.
+     * Nothing else noticed, because nothing else had asked about a side.
+     */
+    [2, 1, 0, lineSpecial, roomTag, 1, 2],
     [2, 3, 1, 0, 0, 3, 0xffff],
     [3, 0, 1, 0, 0, 4, 0xffff],
     [1, 4, 1, 0, 0, 5, 0xffff],
