@@ -14,9 +14,10 @@
  * the failure this arrangement is here to catch.
  */
 
-import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
 import { extname, join, normalize, resolve } from 'node:path'
 import { chromium, type Page } from 'playwright'
 import { tinyWad } from './wadfixture.ts'
@@ -948,6 +949,50 @@ check('dying in a map from a file puts you back in that map', () => {
   assert(revivedInWad.levelIndex === -1, `came back on campaign index ${revivedInWad.levelIndex}`)
   assert(revivedInWad.lines === 7, `came back with ${revivedInWad.lines} lines, so it is a different map`)
   assert(revivedInWad.health === 100, `came back with ${revivedInWad.health} health`)
+})
+
+// The way a person opens a map: the file input, on a page with no probe door in
+// it at all. Everything above went through a hatch that only exists under a
+// flag, so none of it says the feature works in the page people are handed.
+const goodWad = join(tmpdir(), 'ascii-doom-fixture.wad')
+const notAWad = join(tmpdir(), 'ascii-doom-not.wad')
+writeFileSync(goodWad, tinyWad('E1M1'))
+writeFileSync(notAWad, Buffer.from('this is not a WAD, it is a sentence'))
+
+const chooser = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const picker = await chooser.newPage()
+picker.on('pageerror', (error) => problems.push(`picker: ${error.message}`))
+await picker.goto(base, { waitUntil: 'domcontentloaded' })
+await picker.waitForTimeout(900)
+
+const beforePick = await readOpened(picker)
+await picker.setInputFiles('#wad', goodWad)
+await picker.waitForTimeout(600)
+const afterPick = await readOpened(picker)
+await picker.waitForTimeout(400)
+const stillDrawing = await readOpened(picker)
+
+// And a file that is not one. Handing the game the wrong thing is an ordinary
+// mistake, and carrying on with the level already loaded is the right answer.
+await picker.setInputFiles('#wad', notAWad)
+await picker.waitForTimeout(600)
+const afterJunk = await picker.evaluate(() => ({
+  text: document.getElementById('screen')?.textContent ?? '',
+  level: ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.level as string) ?? '',
+}))
+
+check('a person can open a map with the file picker', () => {
+  assert(beforePick.level !== 'E1M1', `the page was already showing "${beforePick.level}" before any file was chosen`)
+  assert(afterPick.level === 'E1M1', `after choosing a WAD the level is "${afterPick.level}"`)
+  assert(afterPick.lines === 7, `the page built ${afterPick.lines} lines from a seven-line map`)
+  assert(afterPick.levelIndex === -1, `a map from a file reports campaign index ${afterPick.levelIndex}`)
+  assert(afterPick.cols > 20, `the grid came back ${afterPick.cols} columns wide`)
+  assert(stillDrawing.frames > afterPick.frames, 'the page stopped drawing after the map was opened')
+})
+
+check('the wrong file is said out loud, not thrown', () => {
+  assert(afterJunk.text.includes('not a WAD'), 'nothing on screen said what was wrong with the file')
+  assert(afterJunk.level === 'E1M1', `the bad file replaced the level with "${afterJunk.level}"`)
 })
 
 check('pushing the stick walks the player', () => {

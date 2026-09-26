@@ -31,6 +31,7 @@ import { deathLines, reachExit, summaryLayout, summaryLines } from '../src/game/
 import { layoutHud } from '../src/game/hud.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
+import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { activate, moverInFront, updateMovers } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
@@ -39,7 +40,7 @@ import { EYE_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody } from '../src/game/play
 import { WEAPONS, fire } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
-const hint = document.getElementById('hint')!
+const keys = document.getElementById('keys')!
 const surface = new PreSurface(screen)
 
 /**
@@ -793,5 +794,29 @@ if ('serviceWorker' in navigator && !import.meta.url.endsWith('.ts')) {
   })
 }
 
-hint.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'
+/**
+ * Opening a map from a file, which is the only way a person can.
+ *
+ * The first map in the file, because choosing between them wants a menu and
+ * this wants to work. Failures are said on screen rather than thrown: handing
+ * the game the wrong file is an ordinary thing to do, and the game carrying on
+ * with the level it already had is the right answer to it.
+ */
+const wadInput = document.getElementById('wad') as HTMLInputElement | null
+wadInput?.addEventListener('change', () => {
+  const file = wadInput.files?.[0]
+  if (!file) return
+  void file
+    .arrayBuffer()
+    .then((buffer) => {
+      const bytes = new Uint8Array(buffer)
+      const names = mapNames(bytes)
+      const first = names[0]
+      if (first === undefined) throw new Error('that file has no maps in it')
+      enterWad(bytes, first)
+    })
+    .catch((error: unknown) => say((error as Error).message))
+})
+
+keys.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'
 requestAnimationFrame(frame)

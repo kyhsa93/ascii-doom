@@ -67,10 +67,42 @@
       }
       #hint {
         flex: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
         padding: 5px 10px;
         font-size: 12px;
         color: #6a6460;
         border-top: 1px solid #191922;
+      }
+      /*
+        Pushed to the far end. Sitting at the end of the legend it read as part
+        of the sentence -- "E use open a WAD" -- because every other item in
+        that line is separated by a middot and this one was not.
+      */
+      #pick {
+        margin-left: auto;
+        flex: none;
+        padding: 3px 9px;
+        border: 1px solid #2c2c38;
+        border-radius: 6px;
+        background: rgba(20, 20, 28, 0.42);
+        color: #b9b2a6;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      #pick:hover {
+        background: rgba(60, 60, 78, 0.6);
+      }
+      /*
+        The native control is the only bright thing on a near-black page and
+        brings its own "No file chosen" besides, so the label is the button and
+        this is hidden behind it. Clicking a label still opens the picker, and
+        a check can still hand it a file: `setInputFiles` sets the files on the
+        element rather than clicking it, so it does not need the input visible.
+      */
+      #wad {
+        display: none;
       }
 
       /*
@@ -234,7 +266,23 @@
   </head>
   <body>
     <pre id="screen"></pre>
-    <div id="hint">booting…</div>
+    <!--
+      The legend and the file picker share one row on purpose. A new row in this
+      flex column would come out of `#screen`, which takes what is left and is
+      measured to decide how many rows of game there are; sharing costs about
+      one row on a desktop and none at all on a touch screen, where this whole
+      element is hidden.
+
+      The legend lives in its own span because the page writes it at boot, and
+      writing it into `#hint` itself would take the input with it.
+    -->
+    <div id="hint">
+      <span id="keys">booting…</span>
+      <label id="pick">
+        open a WAD
+        <input id="wad" type="file" accept=".wad,application/octet-stream" />
+      </label>
+    </div>
 
     <!--
       Touch controls. Left thumb walks, the right side of the screen turns and
