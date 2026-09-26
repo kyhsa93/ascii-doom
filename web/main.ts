@@ -79,12 +79,24 @@ const REVIVE_DELAY = 1.2
 /** The clock on the ground underfoot, if the ground is the kind that hurts. */
 let hazard = makeHazard()
 
-function startLevel(index: number): void {
-  // What carries and what does not is decided in `campaign.ts`, where a check
-  // can ask about it. What is left here is what only the page owns: the things
-  // in flight and the pause before the next map.
-  levelIndex = index
-  state = beginLevel(index, carrier)
+/**
+ * Takes up a level the page is about to run.
+ *
+ * Everything reset here belongs to the page rather than to the campaign: what
+ * is in flight, what the automap has learned, the clock on the ground underfoot
+ * and the panels that might be up. The automap set is the one that matters
+ * most, because it holds the level's own line objects and a new level builds
+ * new ones -- keeping it would leave the map drawing a place that no longer
+ * exists.
+ *
+ * It lived in two places until now, once for starting a level and once for
+ * restarting after dying, and the copies had already drifted: only one of them
+ * cleared the pause. That difference cannot be reached today, because the
+ * summary branch returns before the death branch can run, which is exactly the
+ * kind of harmless-for-now that stops being harmless quietly.
+ */
+function enterLevel(next: LevelState): void {
+  state = next
   projectiles = []
   advanceIn = 0
   deadFor = 0
@@ -92,6 +104,14 @@ function startLevel(index: number): void {
   mapOpen = false
   hazard = makeHazard()
   say(state.def.name)
+}
+
+function startLevel(index: number): void {
+  // What carries between levels and what does not is decided in `campaign.ts`,
+  // where a check can ask about it. What is left here is what only the page
+  // owns, and that is now one function.
+  levelIndex = index
+  enterLevel(beginLevel(index, carrier))
 }
 
 let weaponIndex = 0
@@ -300,13 +320,7 @@ function step(): void {
     deadFor += STEP
     const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
     if (deadFor >= REVIVE_DELAY && (asked.fire || asked.use)) {
-      state = restartLevel(levelIndex, carrier)
-      projectiles = []
-      deadFor = 0
-      seen = new Set<Line>()
-      mapOpen = false
-      hazard = makeHazard()
-      say(state.def.name)
+      enterLevel(restartLevel(levelIndex, carrier))
     }
     return
   }
