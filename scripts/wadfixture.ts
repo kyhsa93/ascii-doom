@@ -11,7 +11,7 @@
  * full of nukage, and the western floor above zero so that a check comparing a
  * player's floor against the room's compares something.
  */
-export function tinyWad(mapName: string, withStart = true): Uint8Array {
+export function tinyWad(mapName: string, withStart = true, ceilingFlat = ''): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
     [128, 0],
@@ -76,6 +76,12 @@ export function tinyWad(mapName: string, withStart = true): Uint8Array {
     SECTORS.forEach(([floor, ceiling, light, special], i) => {
       view.setInt16(i * 26, floor, true)
       view.setInt16(i * 26 + 2, ceiling, true)
+      // The two flat names sit between the heights and the light, eight bytes
+      // each, NUL-padded. Left as zeros unless a caller wants one, so every
+      // fixture written before this reads back exactly as it did.
+      for (let c = 0; c < ceilingFlat.length && c < 8; c++) {
+        view.setUint8(i * 26 + 12 + c, ceilingFlat.charCodeAt(c))
+      }
       view.setInt16(i * 26 + 20, light, true)
       view.setInt16(i * 26 + 22, special, true)
     })

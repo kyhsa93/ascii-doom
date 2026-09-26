@@ -1322,6 +1322,58 @@ test("the original's damaging floors arrive as this engine's hazard", () => {
   )
 })
 
+test('an outdoor room is read as open air, not as a ceiling', () => {
+  // Outdoor rooms in the original are sectors like any other. What marks them
+  // is the flat named above them, and every map uses the same name for it.
+  // The fixture puts it on both of its rooms, which is all this needs to say.
+  const outdoors = readMap(tinyWad('E1M1', true, 'F_SKY1'), 'E1M1')
+  for (const [i, sector] of outdoors.level.sectors.entries()) {
+    assert(sector.sky, `sector ${i} is under F_SKY1 and did not come back as sky`)
+  }
+
+  const indoors = readMap(tinyWad('E1M1', true, 'FLOOR4_8'), 'E1M1')
+  for (const [i, sector] of indoors.level.sectors.entries()) {
+    assert(!sector.sky, `sector ${i} is under an ordinary flat and came back as sky`)
+  }
+
+  // And the case every fixture written before this one relies on.
+  const unnamed = readMap(tinyWad('E1M1'), 'E1M1')
+  assert(!unnamed.level.sectors[0]!.sky, 'a sector with no flat named at all came back as sky')
+})
+
+test('sky is drawn as nothing, and takes its rows with it', () => {
+  // The behaviour, not the flag. Same map, same light, same geometry -- the
+  // only difference is what the ceiling claims to be, so anything that changes
+  // in the frame is that claim and nothing else.
+  //
+  // Counting drawn cells rather than measuring rows: the rows a ceiling owns
+  // are still owned when it is sky, because everything nearer has to keep
+  // clipping against them. What changes is whether they are painted.
+  const shot = (sky: boolean) => {
+    const map = readMap(tinyWad('E1M1', true, sky ? 'F_SKY1' : 'FLOOR4_8'), 'E1M1')
+    const spawn = map.spawn!
+    const fb = new Framebuffer(80, 40)
+    fb.clear(0, 0, 0, 0)
+    renderView(
+      fb,
+      map.level,
+      { x: spawn.x, y: spawn.y, z: 1.6, angle: 0, sector: spawn.sector, fovY: DEFAULT_FOV_Y },
+      0.574,
+      {},
+    )
+    let drawn = 0
+    for (let i = 0; i < fb.width * fb.height; i++) {
+      if ((fb.chars[i] ?? 32) !== 32 && (fb.chars[i] ?? 0) !== 0) drawn++
+    }
+    return drawn
+  }
+
+  const roofed = shot(false)
+  const open = shot(true)
+  assert(roofed > 0, 'the indoor version drew nothing, so there is nothing to compare')
+  assert(open < roofed, `open air drew ${open} cells against a ceiling's ${roofed}`)
+})
+
 test('a file that is not a WAD is refused rather than misread', () => {
   const nonsense = new Uint8Array(64)
   let complained = ''
@@ -1628,6 +1680,7 @@ test('a room with a pillar in it knows the pillar is not part of the room', () =
     floorMaterial: 'floor',
     ceilingMaterial: 'ceiling',
     hurt: 0,
+    sky: false,
     tag: null,
     minX: 0,
     minY: 0,

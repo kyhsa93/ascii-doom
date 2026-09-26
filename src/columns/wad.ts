@@ -35,6 +35,8 @@ export const UNITS_PER_METRE = 26
 
 /** Doom's damaging floor specials, which this engine already has an answer for. */
 const DAMAGING = new Set([4, 5, 7, 16])
+/** The flat that means "this room is outdoors; draw no ceiling here". */
+const SKY_FLAT = 'F_SKY1'
 /** What standing in one costs a bite, matching the hazard the levels here use. */
 const DAMAGE = 5
 
@@ -138,6 +140,16 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
     view.getInt16(vertexes.at + index * 4 + 2, true) / UNITS_PER_METRE,
   ]
   const sideSector = (index: number): number => view.getInt16(sidedefs.at + index * 30 + 28, true)
+  /** An eight-byte, NUL-padded name, as the format stores every flat and texture. */
+  const flatName = (at: number): string => {
+    let name = ''
+    for (let i = 0; i < 8; i++) {
+      const code = view.getUint8(at + i)
+      if (code === 0) break
+      name += String.fromCharCode(code)
+    }
+    return name
+  }
 
   // Sectors first, without their edges: the edges come from the lines, and the
   // lines name sectors, so one of the two has to be built incomplete.
@@ -161,6 +173,9 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
       floorMaterial: hurt > 0 ? 'sludge' : 'floor',
       ceilingMaterial: 'ceiling',
       hurt,
+      // The flat named above an outdoor room is a marker rather than a texture.
+      // Every map in the original uses the same name for it.
+      sky: flatName(at + 12) === SKY_FLAT,
       tag: null,
       minX: Infinity,
       minY: Infinity,

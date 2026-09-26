@@ -59,6 +59,16 @@ export interface Sector {
   readonly ceilingMaterial: string
   /** Damage per bite for standing here; zero for ordinary ground. */
   readonly hurt: number
+  /**
+   * Whether the ceiling is open air rather than a surface.
+   *
+   * Outdoor rooms in the original are sectors like any other, with a ceiling
+   * height that exists only to bound the walls -- the flat above them is a
+   * marker meaning "do not draw this". Left as a flag rather than a material
+   * because the renderer's answer is to paint nothing at all, and a material
+   * that is never looked up is a name waiting to be looked up by mistake.
+   */
+  readonly sky: boolean
   readonly tag: string | null
   /** Axis-aligned bounds, so point tests can reject most sectors immediately. */
   readonly minX: number
@@ -150,6 +160,9 @@ export function buildLevel(defs: readonly SectorDef[]): Level {
       floorMaterial: def.floorMaterial ?? 'floor',
       ceilingMaterial: def.ceilingMaterial ?? 'ceiling',
       hurt: def.hurt ?? 0,
+      // Levels written here are all indoors. Nothing authored needs this yet,
+      // and a map that arrives as data sets it for itself.
+      sky: false,
       tag: def.tag ?? null,
       minX,
       minY,

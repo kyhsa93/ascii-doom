@@ -319,7 +319,11 @@ function drawColumn(
     // detour through someone else's map showed that a floor asking to be drawn
     // as sludge was drawn as ordinary ground -- the fields had been stored on
     // every sector since they were introduced and read by nothing.
-    top = paintPlane(fb, col, top, Math.min(bottom, firstRow(ceilingRow) - 1), sector.ceiling, sector.light, view.z, projScale, horizon, sector.ceilingMaterial, maxDistance)
+    // An open sky is claimed but not painted: the rows still belong to this
+    // sector, so everything nearer keeps clipping against them, and they are
+    // left as they were cleared -- which is the same nothing the renderer shows
+    // where a ray leaves the map altogether.
+    top = paintPlane(fb, col, top, Math.min(bottom, firstRow(ceilingRow) - 1), sector.ceiling, sector.light, view.z, projScale, horizon, sector.ceilingMaterial, maxDistance, false, !sector.sky)
     bottom = paintPlane(fb, col, Math.max(top, firstRow(floorRow)), bottom, sector.floor, sector.light, view.z, projScale, horizon, sector.floorMaterial, maxDistance, true)
 
     const next = acrossFrom(hit.line, current)
@@ -372,8 +376,17 @@ function paintPlane(
   material: string,
   maxDistance: number,
   fromBelow = false,
+  /**
+   * False to take the rows without drawing on them, for a ceiling that is sky.
+   *
+   * The skip lives here rather than at the call site so that the bound stays
+   * worked out in one place: the caller would otherwise need its own copy of
+   * the arithmetic to know what to advance past.
+   */
+  draw = true,
 ): number {
   if (from > to) return fromBelow ? to + 1 : from
+  if (!draw) return fromBelow ? from - 1 : to + 1
   const surface = MATERIALS[material]!
   for (let row = from; row <= to; row++) {
     const distance = distanceOfRow(height, row + 0.5, eyeZ, projScale, horizon)
