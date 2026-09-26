@@ -22,7 +22,9 @@
  */
 
 import type { Line } from '../columns/level.ts'
-import { readMap } from '../columns/wad.ts'
+import type { Sprite } from '../columns/sprite.ts'
+import { readArt, readMap } from '../columns/wad.ts'
+import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../columns/wadpic.ts'
 import { spawnActor, type Actor } from './ai.ts'
 import { makeGoal } from './exit.ts'
 import type { LevelDef, LevelState } from './levels.ts'
@@ -32,8 +34,8 @@ import { spawnPlayer } from './player.ts'
 import { doorsFrom } from './waddoors.ts'
 import { exitSectorFrom, switchExitLines } from './wadexit.ts'
 import { liftsFrom } from './wadlifts.ts'
-import { supplyFor } from './waditems.ts'
-import { creatureFor } from './wadthings.ts'
+import { supplyFor, supplyPictureFor } from './waditems.ts'
+import { creatureFor, creaturePictureFor } from './wadthings.ts'
 
 /**
  * A sector index no map can have.
@@ -44,7 +46,7 @@ import { creatureFor } from './wadthings.ts'
  */
 const NO_EXIT = -2
 
-export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
+export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0.6): LevelState {
   const map = readMap(bytes, mapName)
   if (!map.spawn) throw new Error(`${mapName} has no player start to stand on`)
   if (map.spawn.sector < 0) throw new Error(`${mapName} starts the player outside its own map`)
@@ -79,6 +81,50 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
    * when you walk in on it, and that is the difference between being seen and
    * seeing first.
    */
+  /**
+   * The pictures the file draws its things with, if it has any.
+   *
+   * A whole separate question from the map: the art sits in one run of lumps
+   * for the whole file, and a file is free to have none -- every fixture the
+   * checks are written against is exactly that. When there is none, or when a
+   * picture will not decode, the creature keeps the art written for this game,
+   * which is what it always had.
+   *
+   * What is taken is the shape and the colours. How big the thing is, how hard
+   * it hits, how far it can see and what it does when it notices you are all
+   * this project's, unchanged.
+   */
+  const art = readArt(bytes)
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  // A map places fifty-three creatures and perhaps four kinds of them, so the
+  // same picture is asked for over and over.
+  const drawn = new Map<string, Sprite | null>()
+
+  function pictureOf(prefix: string | null, fit: { height: number } | { width: number }, dead = false): Sprite | null {
+    if (prefix === null || art === null) return null
+    const key = `${prefix}|${dead}|${'height' in fit ? `h${fit.height}` : `w${fit.width}`}`
+    const already = drawn.get(key)
+    if (already !== undefined) return already
+
+    let made: Sprite | null = null
+    try {
+      const standing = frontFacing(art.sprites, prefix)
+      if (standing !== null) {
+        const wanted = dead
+          ? deathFrame(view, art.sprites, prefix, pictureSize(view, art.sprites.get(standing)!).height)
+          : standing
+        const at = wanted === null ? undefined : art.sprites.get(wanted)
+        if (at !== undefined) made = spriteFromPicture(readPicture(view, at), art.palette, fit, cellAspect)
+      }
+    } catch {
+      // Bytes a player chose. A picture that will not read leaves the thing
+      // looking like this game's own, rather than stopping the level loading.
+      made = null
+    }
+    drawn.set(key, made)
+    return made
+  }
+
   const actors: Actor[] = []
   const pickups: Pickup[] = []
   for (const thing of map.things) {
@@ -88,7 +134,15 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
 
     const kind = creatureFor(thing.type)
     if (kind) {
-      const actor = spawnActor(kind, thing.x, thing.y, thing.sector, room.floor)
+      // Standing is fitted to the creature's own height; the corpse is fitted
+      // to the standing picture's width, so falling over does not change its
+      // size. Either may come back null, and null means keep what we had.
+      const prefix = creaturePictureFor(thing.type)
+      const upright = pictureOf(prefix, { height: kind.height })
+      const fallen = upright === null ? null : pictureOf(prefix, { width: upright.width }, true)
+      const looks =
+        upright === null ? kind : { ...kind, sprite: upright, corpse: fallen ?? kind.corpse }
+      const actor = spawnActor(looks, thing.x, thing.y, thing.sector, room.floor)
       actor.angle = thing.angle
       actors.push(actor)
       continue
@@ -98,12 +152,15 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
     // it, the same as the ones placed by hand in the levels written here.
     const supply = supplyFor(thing.type)
     if (supply) {
+      // Fitted to the height this game already draws that supply at, so a box
+      // of ammunition out of a file is the same size as one written here.
+      const shown = pictureOf(supplyPictureFor(thing.type), { height: supply.sprite.height })
       pickups.push({
         x: thing.x,
         y: thing.y,
         z: room.floor,
         light: room.light,
-        sprite: supply.sprite,
+        sprite: shown ?? supply.sprite,
         grant: supply.grant,
         radius: supply.radius,
         taken: false,

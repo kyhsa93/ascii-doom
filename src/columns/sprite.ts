@@ -30,7 +30,24 @@ export interface Sprite {
    * writing a space instead would punch a hole in the wall behind.
    */
   readonly rows: readonly string[]
+  /**
+   * One colour for the whole drawing.
+   *
+   * What a sprite written by hand wants: the art carries the shape in its
+   * glyphs and the colour says what kind of thing it is. A picture decoded out
+   * of a file has a colour per pixel instead, and brings `colors` below.
+   */
   readonly tint: readonly [number, number, number]
+  /**
+   * A colour per cell, laid out exactly like `rows`, or absent.
+   *
+   * Absent is the normal case and costs nothing: without it every cell takes
+   * `tint`, which is what every sprite drawn for this game does. With it, the
+   * shape comes from the glyphs and the colour from the picture the glyphs were
+   * sampled out of -- which is the whole difference between a silhouette and a
+   * thing you recognise.
+   */
+  readonly colors?: readonly (readonly (readonly [number, number, number])[])[]
   /** How wide the art is in world units. */
   readonly width: number
   /** How tall the art is in world units, measured up from the thing's feet. */
@@ -120,29 +137,32 @@ export function drawBillboards(
     const invW = 1 / depth
     const shade = lightAt(thing.light, depth)
     const tint = sprite.tint
-    const red = tint[0] * shade
-    const green = tint[1] * shade
-    const blue = tint[2] * shade
+    const painted = sprite.colors
 
     for (let row = firstRow; row <= lastRow; row++) {
       // Nearest-sample the art. A creature is a handful of cells tall at any
       // useful distance, so filtering it would only turn a face into a smudge.
       const v = (row + 0.5 - topRow) / spanRows
       const line = art[Math.min(art.length - 1, Math.max(0, Math.floor(v * art.length)))]!
+      // The same row of colours as of glyphs, when there is one. Sampled with
+      // the same index rather than with the same arithmetic written twice.
+      const hues = painted?.[Math.min(painted.length - 1, Math.max(0, Math.floor(v * art.length)))]
       for (let col = firstCol; col <= lastCol; col++) {
         const u = (col + 0.5 - (centre - halfCols)) / (halfCols * 2)
-        const glyph = line[Math.min(line.length - 1, Math.max(0, Math.floor(u * line.length)))]
+        const at = Math.min(line.length - 1, Math.max(0, Math.floor(u * line.length)))
+        const glyph = line[at]
         if (glyph === undefined || glyph === ' ') continue
 
         const index = row * cols + col
         // Larger depth is nearer, so the world wins when it is in front.
         if (fb.depth[index]! > invW) continue
 
+        const own = hues?.[at] ?? tint
         fb.chars[index] = glyph.charCodeAt(0)
         const c = index * 3
-        fb.color[c] = red
-        fb.color[c + 1] = green
-        fb.color[c + 2] = blue
+        fb.color[c] = own[0] * shade
+        fb.color[c + 1] = own[1] * shade
+        fb.color[c + 2] = own[2] * shade
         fb.depth[index] = invW
       }
     }

@@ -64,6 +64,34 @@ const AMMO = new Map<number, { weapon: number; amount: number }>([
   [2046, { weapon: 2, amount: 5 }],
 ])
 
+/**
+ * What the file calls each supply's picture, by the same four-letter naming the
+ * creatures use. All fifteen resolve in both files -- supplies, unlike
+ * monsters, did not change between the two games.
+ */
+const PICTURE = new Map<number, string>([
+  [2014, 'BON1'],
+  [2011, 'STIM'],
+  [2012, 'MEDI'],
+  [2007, 'CLIP'],
+  [2048, 'AMMO'],
+  [2008, 'SHEL'],
+  [2049, 'SBOX'],
+  [2010, 'ROCK'],
+  [2046, 'BROK'],
+  [5, 'BKEY'],
+  [40, 'BSKU'],
+  [13, 'RKEY'],
+  [39, 'RSKU'],
+  [6, 'YKEY'],
+  [38, 'YSKU'],
+])
+
+/** What this supply's picture is called in a file, or null if nothing is known. */
+export function supplyPictureFor(type: number): string | null {
+  return PICTURE.get(type) ?? null
+}
+
 /** What lies where the map put a thing of this type, or null for one to ignore. */
 export function supplyFor(type: number): Supply | null {
   const heals = HEALTH.get(type)

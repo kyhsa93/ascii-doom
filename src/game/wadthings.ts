@@ -57,6 +57,46 @@ const HEAVY = [
   7,
 ]
 
+/**
+ * What the file calls each one's picture.
+ *
+ * Four letters, which is how every sprite lump in the format is named. This is
+ * the second place in the importers to rest on knowledge about a game rather
+ * than on something in the file -- and unlike the key colours, it was checked
+ * against the files themselves rather than trusted: all seventeen resolve, and
+ * the seven at the end resolve only in the second file, because they are the
+ * later game's and the first one never had them.
+ *
+ * A name that resolves to nothing costs nothing. The creature still stands
+ * there in this project's own art, which is what every creature did before any
+ * of this, so a file with no pictures in it plays exactly as it used to.
+ */
+const PICTURE = new Map<number, string>([
+  [3004, 'POSS'],
+  [3006, 'SKUL'],
+  [9, 'SPOS'],
+  [3001, 'TROO'],
+  [3005, 'HEAD'],
+  [3002, 'SARG'],
+  [58, 'SARG'],
+  [3003, 'BOSS'],
+  [16, 'CYBR'],
+  [7, 'SPID'],
+  // Only in the second file.
+  [65, 'CPOS'],
+  [66, 'SKEL'],
+  [71, 'PAIN'],
+  [64, 'VILE'],
+  [69, 'BOS2'],
+  [67, 'FATT'],
+  [68, 'BSPI'],
+])
+
+/** What this thing's picture is called in a file, or null if nothing is known. */
+export function creaturePictureFor(type: number): string | null {
+  return PICTURE.get(type) ?? null
+}
+
 const BY_TYPE = new Map<number, ActorKind>([
   ...LIGHT.map((type) => [type, CRAWLER_KIND] as const),
   ...THROWERS.map((type) => [type, DRIFTER_KIND] as const),

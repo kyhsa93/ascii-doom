@@ -65,6 +65,25 @@ export function tinyWad(
    * rather than through it.
    */
   backFloor = 0,
+  /**
+   * Whether to give the file a palette and a couple of pictures.
+   *
+   * Off by default, so every fixture written before this one comes out byte for
+   * byte the same. On, the file carries `PLAYPAL` and a sprite run holding
+   * `POSSA1` and `CLIPA0` -- the front-facing frame of the commonest creature
+   * and the all-angles frame of the commonest box of ammunition, which are the
+   * two shapes of sprite name the format uses.
+   *
+   * The pictures are eight by eight with a transparent border, because a
+   * decoder that ignores transparency reads an opaque rectangle and a check
+   * against an opaque rectangle would not notice.
+   *
+   * Two death frames come with them: a flat one and a taller one after it. That
+   * is the shape a real death sequence has -- the body falls and then, if it
+   * was gibbed, the burst starts over at full height -- and it is the only way
+   * to make the rule that stops at the burst do anything.
+   */
+  withArt = false,
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -151,6 +170,65 @@ export function tinyWad(
     })
   })
 
+  /**
+   * Doom's picture format: a header, one offset per column, then each column as
+   * runs of opaque pixels. A run is a start row, a length, a padding byte, the
+   * palette indices, and another padding byte; 255 ends the column.
+   */
+  const picture = (w: number, h: number, indexAt: (x: number, y: number) => number): Uint8Array => {
+    const columns: number[][] = []
+    for (let x = 0; x < w; x++) {
+      const out: number[] = []
+      let y = 0
+      while (y < h) {
+        if (indexAt(x, y) < 0) {
+          y++
+          continue
+        }
+        const start = y
+        const run: number[] = []
+        while (y < h && indexAt(x, y) >= 0) {
+          run.push(indexAt(x, y))
+          y++
+        }
+        out.push(start, run.length, 0, ...run, 0)
+      }
+      out.push(0xff)
+      columns.push(out)
+    }
+    const header = 8 + w * 4
+    const body = columns.reduce((total, column) => total + column.length, 0)
+    const data = bytes(header + body)
+    const view = new DataView(data.buffer)
+    view.setInt16(0, w, true)
+    view.setInt16(2, h, true)
+    view.setInt16(4, Math.floor(w / 2), true)
+    view.setInt16(6, h, true)
+    let at = header
+    columns.forEach((column, x) => {
+      view.setInt32(8 + x * 4, at, true)
+      for (const byte of column) data[at++] = byte
+    })
+    return data
+  }
+
+  // Index 1 is red, 2 green, 3 very nearly black, and everything else black.
+  //
+  // The dark one earns its place, and its exact value is the point. A ramp that
+  // begins with a space turns a dark pixel into a hole, and with only a bright
+  // colour and a middling one in the picture, adding that space changed nothing
+  // that could be told apart -- so the constant it guards had no check behind
+  // it. Eight of two hundred and fifty-five is the brightness that lands on the
+  // first glyph of a ramp either way: the darkest character without the space,
+  // and the space with it. Twelve was tried and was not dark enough to fall off
+  // the end.
+  const playpal = bytes(768)
+  playpal.set([0, 0, 0, 255, 0, 0, 0, 255, 0, 8, 8, 8], 0)
+  // A border of nothing, a red body, a green stripe down the middle, and one
+  // column of the dark.
+  const edged = (x: number, y: number): number =>
+    x === 0 || y === 0 || x === 7 || y === 7 ? -1 : x === 3 || x === 4 ? 2 : x === 6 ? 3 : 1
+
   const entries: [string, Uint8Array][] = [
     [mapName, bytes(0)],
     ['THINGS', things],
@@ -158,6 +236,20 @@ export function tinyWad(
     ['SIDEDEFS', sidedefs],
     ['VERTEXES', vertexes],
     ['SECTORS', sectors],
+    ...(withArt
+      ? ([
+          ['PLAYPAL', playpal],
+          ['S_START', bytes(0)],
+          ['POSSA1', picture(8, 8, edged)],
+          ['CLIPA0', picture(8, 8, edged)],
+          // Lying down: two rows of the eight, so it is well under the three
+          // quarters that counts as fallen.
+          ['POSSL0', picture(8, 2, (x) => (x === 0 || x === 7 ? -1 : 1))],
+          // And then back up again, which is where a death stops being one.
+          ['POSSU0', picture(8, 7, (x, y) => (x === 0 || y === 0 ? -1 : 2))],
+          ['S_END', bytes(0)],
+        ] as [string, Uint8Array][])
+      : []),
   ]
 
   const body = entries.reduce((total, [, data]) => total + data.length, 0)

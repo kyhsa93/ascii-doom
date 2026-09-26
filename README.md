@@ -107,12 +107,14 @@ The half of the screen you drag is as tall as the picture rather than a share
 of the phone, so the two cannot drift apart when the controls take a different
 shape lying down.
 
-**All content is original.** The levels, the creatures, the weapons, the
-textures and the names are written for this project. Nothing is extracted from
-a commercial game, and no commercial data file is needed to play. If you want
-to run genuinely Doom-compatible content one day,
-[Freedoom](https://freedoom.github.io/) is the freely licensed asset set that
-belongs in that slot.
+**All content is original, and no commercial data file is needed to play.** The
+levels, the creatures, the weapons, the textures and the names are written for
+this project, and nothing is extracted from a commercial game.
+[Freedoom](https://freedoom.github.io/) is the freely licensed set this was
+built against — its own artwork, under a three-clause BSD licence, rather than
+anybody's commercial game — and a map opened from it is drawn with its
+pictures. The campaign is not: nothing is bundled, so the levels written here
+are drawn with the art written here.
 
 ## Installing it
 
@@ -198,10 +200,33 @@ armour has none, so it is not quietly turned into something else, it simply is
 not there. The first map of the set this was built against leaves sixty-four
 things lying about, one of them a key.
 
-The creatures do come across, after a fashion. A map says where something
-stood and roughly what weight it was, and one of this project's own three
-creatures stands there instead — nothing of the original's art, names or
-behaviour is reproduced, and the grouping is by weight rather than by identity.
+The pictures come across too. A creature or a supply the file has a drawing for
+is drawn with it: the picture is decoded out of the file's own sprite lumps,
+averaged down to a grid of characters, and kept in colour a cell at a time
+rather than as one tint for the whole thing — a monster in a single colour is a
+silhouette. What does not change is anything you can feel. How big it is, how
+hard it hits, how far it can see and what it does when it notices you are this
+game's, exactly as they were; the file decides only what you are looking at.
+
+Two rules there fell out of the files rather than being chosen. A creature
+keeps its height standing and its width lying down, so it does not change size
+as it falls. And the frame it falls into is found by walking the death sequence
+until the height jumps back up, which is where the bursting starts: across nine
+creatures the largest rise inside a death is 1.33 and the smallest jump into a
+burst is 2.4, so there is a wide gap to put the line in. Two of those nine have
+no frame that lies down at all — a skull bursts into something larger than it
+was — and they keep the art drawn for them here.
+
+A picture is also stretched until its own brightest part reaches the brightness
+this game's own art is drawn at. Taken at face value it was four times darker
+than everything standing beside it, and being dark it spent only the bottom two
+glyphs of a nine-glyph ramp, so the shape washed out into colons. A grid with
+nine levels cannot say both "this is dark" and "this is the shape of a face".
+
+The creatures themselves come across after a fashion. A map says where
+something stood and roughly what weight it was, and one of this project's own
+three creatures stands there instead — the grouping is by weight rather than by
+identity, and nothing of its behaviour is reproduced.
 Numbers this game has no answer for put nothing there at all, which is why a
 map arrives without its lamps and barrels rather than with them swinging at
 you. The first map of the set this was built against places fifty-three of

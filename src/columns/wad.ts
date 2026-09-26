@@ -153,6 +153,54 @@ export interface LineSpecial {
   readonly line: Line
 }
 
+/**
+ * The pictures in a file, and the colours they are drawn in.
+ *
+ * File-wide rather than per-map: a WAD keeps its art in one run of lumps
+ * between markers and every map in the file draws from the same run. Offsets
+ * only -- what a picture *is* is arithmetic on bytes, and that belongs with the
+ * decoder rather than here.
+ */
+export interface WadArt {
+  /**
+   * Two hundred and fifty-six colours, three bytes each.
+   *
+   * The first of the fourteen a file carries. The other thirteen are the
+   * flashes -- taking damage, picking something up -- which this game says with
+   * its own means and does not need a whole palette for.
+   */
+  readonly palette: Uint8Array
+  /** Picture name to the byte it starts at. */
+  readonly sprites: ReadonlyMap<string, number>
+}
+
+/**
+ * The sprite run and the palette, or null for a file that has neither.
+ *
+ * Null rather than an exception: a map is perfectly readable out of a file with
+ * no pictures in it, and the fixtures the checks are written against are
+ * exactly that. What a caller does without art is keep its own.
+ */
+export function readArt(bytes: Uint8Array): WadArt | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const lumps = directory(view)
+  const palette = lumps.find((lump) => lump.name === 'PLAYPAL')
+  if (!palette || palette.size < 768) return null
+
+  const start = lumps.findIndex((lump) => lump.name === 'S_START')
+  const end = lumps.findIndex((lump) => lump.name === 'S_END')
+  if (start < 0 || end < start) return null
+
+  const sprites = new Map<string, number>()
+  for (const lump of lumps.slice(start + 1, end)) {
+    // A marker has no bytes. The run also carries them, to divide it up.
+    if (lump.size > 0) sprites.set(lump.name, lump.at)
+  }
+  if (sprites.size === 0) return null
+
+  return { palette: bytes.subarray(palette.at, palette.at + 768), sprites }
+}
+
 export interface WadMap {
   readonly name: string
   readonly level: Level

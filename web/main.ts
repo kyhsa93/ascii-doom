@@ -153,7 +153,11 @@ function startLevel(index: number): void {
 
 /** Opens a map from a file, from the beginning, with the kit a run starts with. */
 function enterWad(bytes: Uint8Array, mapName: string): void {
-  const next = wadLevelState(bytes, mapName)
+  // The measured cell aspect, because a picture out of the file is sampled
+  // into characters and the number decides how many columns that is worth.
+  // Wrong, it costs detail rather than shape -- but it is measured here and
+  // nowhere else, so there is no reason to hand the importer a guess.
+  const next = wadLevelState(bytes, mapName, surface.cellAspect)
   wadSource = { bytes, mapName }
   // Said rather than left at whatever was running: everything that reads this
   // index is about progressing through levels written here, and there is no

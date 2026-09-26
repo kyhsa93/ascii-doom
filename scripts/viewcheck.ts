@@ -1500,6 +1500,146 @@ check('a shot from a thumb lands where a shot from a key would not', () => {
   )
 })
 
+// --- pictures out of the file the player opened -----------------------------
+//
+// The claim Node cannot make: that a picture decoded out of a file reaches the
+// screen. Everything below is one page handed two maps that differ in nothing
+// but whether the file carries art, so a difference in what is drawn can only
+// have come from the art.
+
+/**
+ * What is drawn in the picture, and in how many colours.
+ *
+ * The first and last rows are left out, and that is not tidiness. The last one
+ * is the status line, which carries a frame rate: its digits change between any
+ * two readings, so a comparison of what is on screen came out different however
+ * the game was drawn. That version of this check passed with the imported art
+ * switched off, which is the only reason it was found.
+ *
+ * Colours as well as glyphs, because a colour per cell changes no glyph at all.
+ * A check that only counted characters could not tell a creature painted from
+ * its own picture from one painted in a single tint, and did not.
+ */
+function glyphsOnScreen(page: Page): Promise<{ distinct: string; painted: number; colours: number }> {
+  return page.evaluate(() => {
+    const screen = document.getElementById('screen')
+    const rows = (screen?.textContent ?? '').split('\n').filter((row) => row.length > 0)
+    const seen = new Set<string>()
+    let painted = 0
+    for (const row of rows.slice(1, -1)) {
+      for (const ch of row) {
+        if (ch === ' ') continue
+        painted++
+        seen.add(ch)
+      }
+    }
+    const colours = new Set<string>()
+    for (const span of Array.from(screen?.querySelectorAll('span') ?? [])) {
+      const colour = (span as HTMLElement).style.color
+      if (colour !== '') colours.add(colour)
+    }
+    return { distinct: [...seen].sort().join(''), painted, colours: colours.size }
+  })
+}
+
+// A creature a couple of metres in front of the start, facing away so it stays
+// asleep and stays put between the readings.
+//
+// Inside the western room rather than on the line between the two. At 128 it
+// sat exactly on the wall, which put it in the room beyond at a floor thirty-two
+// units lower, and it drew almost nothing: the first version of this check
+// measured the same 7824 glyphs either way and one colour *fewer* from the file.
+const CREATURE: [number, number, number, number][] = [[110, 64, 0, 3004]]
+const PLAIN = [...tinyWad('E1M1', true, '', CREATURE, 0, false, 0)]
+const PAINTED = [...tinyWad('E1M1', true, '', CREATURE, 0, false, 0, 0, 0, true)]
+
+const gallery = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const shown = await gallery.newPage()
+shown.on('pageerror', (error) => problems.push(`pictures: ${error.message}`))
+await shown.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await shown.waitForTimeout(900)
+
+const tookPlain = await shown.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [PLAIN, 'E1M1'] as [number[], string],
+)
+await shown.waitForTimeout(600)
+const drawnByHand = await glyphsOnScreen(shown)
+
+// The same map again, to find out whether this measurement holds still. A
+// comparison that drifts on its own says nothing about what changed it, and
+// the first version of this section drifted: it read the status line, whose
+// frame rate changes between any two readings.
+await shown.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [PLAIN, 'E1M1'] as [number[], string],
+)
+await shown.waitForTimeout(600)
+const drawnAgain = await glyphsOnScreen(shown)
+
+const tookPainted = await shown.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [PAINTED, 'E1M1'] as [number[], string],
+)
+await shown.waitForTimeout(600)
+const drawnFromFile = await glyphsOnScreen(shown)
+await shown.screenshot({ path: join(SHOTS, 'imported-art.png') })
+
+console.log(
+  `  imported art: by hand ${drawnByHand.painted} glyphs / ${drawnByHand.colours} colours, ` +
+    `again ${drawnAgain.painted}/${drawnAgain.colours}, from the file ` +
+    `${drawnFromFile.painted}/${drawnFromFile.colours}`,
+)
+
+check('reading what is on screen gives the same answer twice', () => {
+  assert(tookPlain, 'the page would not take the map')
+  assert(drawnByHand.painted > 50, `the map drew ${drawnByHand.painted} glyphs`)
+  // Everything below is one reading against another, so this is the premise
+  // that makes any of it mean something.
+  assert(
+    drawnAgain.distinct === drawnByHand.distinct,
+    `the same map drew "${drawnByHand.distinct}" and then "${drawnAgain.distinct}"`,
+  )
+  assert(
+    drawnAgain.colours === drawnByHand.colours,
+    `the same map drew ${drawnByHand.colours} colours and then ${drawnAgain.colours}`,
+  )
+})
+
+check('a creature from a file is drawn with the file\u2019s own picture', () => {
+  assert(tookPainted, 'the page would not take the map with art in it')
+  assert(drawnFromFile.painted > 50, `the map with art drew ${drawnFromFile.painted} glyphs`)
+  // The two maps differ in nothing but whether the file carries pictures, and
+  // the reading above holds still, so a difference can only be the pictures.
+  assert(
+    drawnFromFile.distinct !== drawnByHand.distinct,
+    `the same glyphs either way ("${drawnByHand.distinct}"), so nothing of the file reached the screen`,
+  )
+})
+
+check('a creature from a file is drawn in more than one colour', () => {
+  // Three colours in the picture against one tint for a whole hand-drawn
+  // creature. Counted off the spans the presenter writes, which is the only
+  // place a colour per cell can be seen from outside the page.
+  assert(
+    drawnFromFile.colours > drawnByHand.colours,
+    `${drawnFromFile.colours} colours from the file against ${drawnByHand.colours} by hand -- ` +
+      'a colour per cell is not reaching the screen',
+  )
+})
+
 await browser.close()
 server.close()
 

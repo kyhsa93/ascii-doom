@@ -38,12 +38,19 @@ import {
   rowOfHeight,
   type View,
 } from '../src/columns/render.ts'
-import { UNITS_PER_METRE, mapNames, readMap, type LineSpecial } from '../src/columns/wad.ts'
+import {
+  mapNames,
+  readArt,
+  readMap,
+  type LineSpecial,
+  UNITS_PER_METRE,
+} from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
 import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
 import { aimAt } from '../src/game/autoaim.ts'
+import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
@@ -1591,6 +1598,171 @@ test('only a line with somewhere beyond it can be the way out', () => {
       `special ${special} is in the table and finishes nothing`,
     )
   }
+})
+
+console.log('\npictures out of a file')
+
+/**
+ * The fixture's art, decoded, with one character cell per pixel.
+ *
+ * A cell aspect of one is not what a screen has -- a real cell is about 0.57 as
+ * wide as it is tall -- and that is the point: at one, the eight by eight
+ * picture comes out as eight by eight characters and every cell can be named.
+ * What the real number does is allocate more columns, which is detail rather
+ * than shape, and there is a check below for that separately.
+ */
+function fixtureArt(): { view: DataView; sprites: ReadonlyMap<string, number>; palette: Uint8Array } {
+  const bytes = tinyWad('E1M1', true, '', [], 0, false, 0, 0, 0, true)
+  const art = readArt(bytes)
+  if (art === null) throw new Error('the fixture was asked for art and gave none')
+  return { view: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), ...art }
+}
+
+test('a file with no pictures in it says so rather than pretending', () => {
+  assert(readArt(tinyWad('E1M1')) === null, 'a fixture with no art claimed to have some')
+  const art = readArt(tinyWad('E1M1', true, '', [], 0, false, 0, 0, 0, true))
+  assert(art !== null, 'a fixture built with art has none')
+  assert(art.palette.length === 768, `a palette of ${art.palette.length} bytes`)
+  assert(art.sprites.has('POSSA1') && art.sprites.has('CLIPA0'), 'the sprite run is missing its pictures')
+  assert(!art.sprites.has('S_START'), 'the markers that divide the run were taken for pictures')
+})
+
+test('a picture is read back the shape it was written', () => {
+  const { view, sprites } = fixtureArt()
+  const picture = readPicture(view, sprites.get('POSSA1')!)
+  assert(picture.width === 8 && picture.height === 8, `${picture.width} by ${picture.height}`)
+  // The border is nothing, which is the half of the format a decoder can get
+  // wrong without anything looking broken.
+  assert(picture.pixels[0] === -1, 'the top-left corner came back painted')
+  assert(picture.pixels[7 * 8 + 7] === -1, 'the bottom-right corner came back painted')
+  assert(picture.pixels[1 * 8 + 1] === 1, 'the body is not the colour it was written in')
+  assert(picture.pixels[1 * 8 + 3] === 2, 'the stripe is not the colour it was written in')
+  assert(picture.pixels[1 * 8 + 6] === 3, 'the dark column is not the colour it was written in')
+  const painted = [...picture.pixels].filter((index) => index >= 0).length
+  assert(painted === 36, `${painted} pixels painted rather than the six by six inside the border`)
+})
+
+test('a picture becomes characters, transparent where it was transparent', () => {
+  const { view, sprites, palette } = fixtureArt()
+  const sprite = spriteFromPicture(readPicture(view, sprites.get('POSSA1')!), palette, { height: 1 }, 1)
+  assert(sprite !== null, 'a picture with something in it painted nothing')
+  assert(sprite.rows.length === 8, `${sprite.rows.length} rows from an eight-pixel picture`)
+  assert(sprite.rows[0] === '        ', `the top row came out "${sprite.rows[0]}" rather than empty`)
+  assert(sprite.rows[7] === '        ', `the bottom row came out "${sprite.rows[7]}" rather than empty`)
+  // Red is dark and green is bright, and the picture is stretched so its own
+  // brightest reaches the top of the ramp -- so the stripe is the last glyph
+  // and the body is near the bottom.
+  assert(sprite.rows[3] === ' --@@-. ', `the middle row came out "${sprite.rows[3]}"`)
+  // And the column that is nearly black is still drawn. This is the whole
+  // reason the ramp does not begin with a space: a cell is transparent because
+  // the picture does not cover it, never because what covers it is dark.
+  assert(
+    sprite.rows[3]![6] !== ' ',
+    'a cell that is dark but painted came out blank, which is a hole in the creature',
+  )
+})
+
+test('every cell keeps its own colour', () => {
+  const { view, sprites, palette } = fixtureArt()
+  const sprite = spriteFromPicture(readPicture(view, sprites.get('POSSA1')!), palette, { height: 1 }, 1)!
+  assert(sprite.colors !== undefined, 'a decoded picture came back with one tint for all of it')
+  const row = sprite.colors![3]!
+  const body = row[1]!
+  const stripe = row[3]!
+  assert(body[0] > 0.5 && body[1] === 0 && body[2] === 0, `the body is [${body.join(', ')}] rather than red`)
+  assert(stripe[1] > 0.5 && stripe[0] === 0 && stripe[2] === 0, `the stripe is [${stripe.join(', ')}] rather than green`)
+  // Stretched until the brightest cell reaches where this game's own art sits --
+  // measured as brightness and not as a channel. This asserted the channel
+  // first time round and failed at 1.68, which is exactly right for a pure
+  // green: it takes that much of one channel to be as bright as 1.2 of grey,
+  // and the presenter clips each channel at one the same way it clips this
+  // game's own tints of 1.25.
+  close(
+    luminance(stripe[0], stripe[1], stripe[2]),
+    1.2,
+    1e-9,
+    'the brightness of the brightest cell in a decoded picture',
+  )
+  assert(row[0]![0] === 0 && row[0]![1] === 0, 'a transparent cell was given a colour')
+})
+
+test('the size is this game’s and the shape is the file’s', () => {
+  const { view, sprites, palette } = fixtureArt()
+  const picture = readPicture(view, sprites.get('POSSA1')!)
+  const byHeight = spriteFromPicture(picture, palette, { height: 1.3 }, 1)!
+  close(byHeight.height, 1.3, 1e-9, 'a picture fitted to a height')
+  close(byHeight.width, 1.3, 1e-9, 'the width an eight-by-eight picture follows with')
+
+  // A corpse is fitted the other way round, so falling over does not resize it.
+  const flat = readPicture(view, sprites.get('POSSL0')!)
+  const byWidth = spriteFromPicture(flat, palette, { width: byHeight.width }, 1)!
+  close(byWidth.width, byHeight.width, 1e-9, 'a corpse fitted to the standing width')
+  close(byWidth.height, 1.3 / 4, 1e-9, 'the height a two-by-eight picture follows with')
+})
+
+test('more columns than rows, because a cell is taller than it is wide', () => {
+  const { view, sprites, palette } = fixtureArt()
+  const picture = readPicture(view, sprites.get('POSSA1')!)
+  const square = spriteFromPicture(picture, palette, { height: 1 }, 1)!
+  const real = spriteFromPicture(picture, palette, { height: 1 }, 0.5)!
+  assert(square.rows[0]!.length === 8, `${square.rows[0]!.length} columns at a cell aspect of one`)
+  assert(real.rows[0]!.length === 16, `${real.rows[0]!.length} columns at a cell aspect of a half`)
+  // And it changes nothing about how big the thing is, which is the reason the
+  // caller is allowed to hand over a rough number.
+  close(real.width, square.width, 1e-9, 'the world width at a different cell aspect')
+  close(real.height, square.height, 1e-9, 'the world height at a different cell aspect')
+})
+
+test('the front-facing frame is found whichever way the name is spelt', () => {
+  const { sprites } = fixtureArt()
+  assert(frontFacing(sprites, 'POSS') === 'POSSA1', 'a creature’s facing frame was not found')
+  assert(frontFacing(sprites, 'CLIP') === 'CLIPA0', 'a thing that looks the same from everywhere was not found')
+  assert(frontFacing(sprites, 'TROO') === null, 'a name the file does not have came back with a picture')
+})
+
+test('the frame a creature falls into is the fall, not the burst', () => {
+  const { view, sprites } = fixtureArt()
+  // The fixture's sequence is a flat frame and then a taller one, which is what
+  // a real death followed by a gibbing looks like. Stopping at the rise is the
+  // whole rule: without it this answers with the burst.
+  assert(deathFrame(view, sprites, 'POSS', 8) === 'POSSL0', 'the burst was taken for the corpse')
+  assert(pictureSize(view, sprites.get('POSSL0')!).height === 2, 'the fixture’s corpse is not flat')
+  assert(pictureSize(view, sprites.get('POSSU0')!).height === 7, 'the fixture’s burst is not taller')
+
+  // And a thing whose only frame is standing has no corpse at all, which is
+  // what keeps a skull from lying down as something bigger than it was.
+  assert(deathFrame(view, sprites, 'CLIP', 8) === null, 'a standing frame was taken for a corpse')
+})
+
+test('a map from a file is drawn with the file’s pictures', () => {
+  const withArt = wadLevelState(
+    tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0, 0, 0, true),
+    'E1M1',
+    1,
+  )
+  assert(withArt.actors.length === 1, `${withArt.actors.length} creatures placed`)
+  const looks = withArt.actors[0]!.kind
+  assert(looks.sprite.rows.length === 8, `the creature is drawn ${looks.sprite.rows.length} rows tall`)
+  assert(looks.sprite.colors !== undefined, 'the creature came through in one colour')
+  assert(looks.corpse.rows.length === 2, `the corpse is drawn ${looks.corpse.rows.length} rows tall`)
+  // Fitted to the width it had standing, so falling over does not resize it.
+  // Fitted to a height instead, a corpse four times wider than it is tall comes
+  // out four times too wide, and nothing above would notice: the row count is
+  // the picture's and does not move.
+  close(looks.corpse.width, looks.sprite.width, 1e-9, 'the width of a creature once it has fallen')
+  assert(
+    looks.corpse.height < looks.sprite.height,
+    `a corpse ${looks.corpse.height} tall against a creature ${looks.sprite.height} tall`,
+  )
+  // Everything you can feel is untouched: only the picture came from the file.
+  assert(looks.health === CRAWLER_KIND.health, 'the file changed how much the creature can take')
+  assert(looks.speed === CRAWLER_KIND.speed, 'the file changed how fast the creature is')
+  assert(looks.reach === CRAWLER_KIND.reach, 'the file changed how far the creature can hit')
+
+  // And the same map out of a file with no pictures keeps this game's own art,
+  // which is what every map did before any of this.
+  const without = wadLevelState(tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0), 'E1M1', 1)
+  assert(without.actors[0]!.kind.sprite === CRAWLER_KIND.sprite, 'a file with no art still changed the drawing')
 })
 
 console.log('\naiming for a thumb')
