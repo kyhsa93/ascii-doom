@@ -848,6 +848,20 @@ function step(): void {
     }).length
     for (const shot of result.shots) projectiles.push(shot)
     /*
+     * And the walls the pellets landed on, which on thirteen maps is the only
+     * way a door there opens.
+     *
+     * Every pellet rather than the first: a scattergun puts several into the
+     * same wall and `activate` is idempotent on a door already opening, so
+     * counting them is neither needed nor harmful. Keys apply the same as
+     * anywhere else -- shooting a lock is not a way past it.
+     */
+    for (const wall of result.walls) {
+      for (const machine of state.shotLines.get(wall) ?? []) {
+        if (activate(machine, carrier.keys)) noise('switch')
+      }
+    }
+    /*
      * And anything a pellet killed sets off whatever it leaves behind.
      *
      * `fire` damages creatures itself -- it has to, since it traces the pellets

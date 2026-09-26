@@ -106,6 +106,14 @@ export interface LevelState {
    * the sixty-eight maps open a door by pressing a switch somewhere else.
    */
   readonly switchLines: ReadonlyMap<Line, readonly Mover[]>
+  /**
+   * And the walls that work something when a shot stops on them.
+   *
+   * Apart from `switchLines` because the two are asked at different moments --
+   * one when you press use against a wall you are facing, the other when a
+   * pellet arrives somewhere you may be nowhere near.
+   */
+  readonly shotLines: ReadonlyMap<Line, readonly Mover[]>
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
   /**
@@ -182,6 +190,7 @@ export function loadLevel(def: LevelDef): LevelState {
     teleportLines: new Map<Line, Teleport>(),
     crossedLines: new Map<Line, readonly Mover[]>(),
     switchLines: new Map<Line, readonly Mover[]>(),
+    shotLines: new Map<Line, readonly Mover[]>(),
     fromFile: 0,
   }
 }

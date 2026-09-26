@@ -570,11 +570,24 @@ only a floor, and thirty-eight are already where every target this importer
 knows would put them. One special does one thing, and that is not the shape of
 one thing. It is written here unread rather than implemented on a hunch.
 
-What is worth reading next is much smaller and much clearer. Twenty-six lines
-on thirteen maps name twenty-two rooms, and eighteen of those rooms are shut
-the way a door is shut, with the ceiling resting on the floor. The trigger is
-the missing half: this one opens when it is shot, and a bullet stopping on a
-wall is not yet something the level can hear.
+What was worth reading next was much smaller and much clearer, and it is read
+now. Twenty-six lines on thirteen maps name twenty-two rooms, and eighteen of
+those are shut the way a door is shut, with the ceiling resting on the floor.
+The geometry was never the problem. What was missing was that a bullet stopping
+on a wall was not something the level could hear.
+
+So a machine now has three ways of being worked rather than two: a wall you
+press, a line you cross, and a wall a shot lands on. The tracer already knew
+which wall -- every ray crossing carries the line it crossed -- and the walk
+that finds how far a bullet carries held that line in its hand and returned
+only the distance. Reporting it as well is most of the feature; the rest is the
+page asking, after each pull of the trigger, what its pellets landed on.
+
+Every pellet rather than the first, because a scattergun puts several into the
+same door and reopening a door that is already opening does nothing. Keys apply
+exactly as they do to a switch: shooting a lock is not a way past it. Thirteen
+maps get twenty-two doors out of it, which is the same twenty-two the file
+promised before any of this was wired.
 
 The things that fly do. Seven hundred and forty-three of the bodies a normal run
 of the two files puts in front of you float in the original -- the big one that

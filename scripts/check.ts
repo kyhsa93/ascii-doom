@@ -2520,7 +2520,9 @@ test('every tagged special arrives, under the table that matches how it works', 
   //
   // 18 and 20 raise a floor to the next step above it rather than to the
   // highest one -- a fourth target, added for them.
-  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 18, 20, 2, 109, 38, 37, 19, 36]
+  // 46 is the one worked by shooting it, which is why the count below adds a
+  // third table rather than two.
+  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 18, 20, 2, 109, 38, 37, 19, 36, 46]
   const table = taggedSpecials()
   for (const special of EXPECTED) {
     assert(table.includes(special), `special ${special} has gone out of the tagged table`)
@@ -2543,10 +2545,10 @@ test('every tagged special arrives, under the table that matches how it works', 
       made.movers.length === 1,
       `special ${special} is in the table and makes no machine in any of the three shapes`,
     )
-    // And it is filed under exactly one of the two ways of working it, because
-    // the page asks two different questions -- what am I facing, and what did
-    // my step cross.
-    const worked = made.pressed.size + made.crossed.size
+    // And it is filed under exactly one of the three ways of working it,
+    // because the page asks three different questions -- what am I facing,
+    // what did my step cross, and what did my shot land on.
+    const worked = made.pressed.size + made.crossed.size + made.shot.size
     assert(worked === 1, `special ${special} arrived under ${worked} ways of working it`)
   }
 })
@@ -2567,6 +2569,57 @@ test('a switch opens the door its tag names', () => {
   assert(mover.kind.open > mover.kind.shut, 'the door would open downwards')
   assert(made.pressed.get(line.line)?.length === 1, 'the wall works nothing when pressed')
   assert(made.crossed.size === 0, 'a switch arrived as something you walk across')
+})
+
+test('a door opened by gunfire is filed under being shot, not pressed or crossed', () => {
+  /*
+   * Special 46, and the reason it sat unread while its geometry was fine.
+   *
+   * Twenty-six lines on thirteen maps name twenty-two rooms, and eighteen of
+   * those are shut the way a door is shut -- ceiling resting on the floor. The
+   * missing half was never the room; it was that a bullet stopping on a wall
+   * is not something the level could hear. A third way of working a machine,
+   * beside pressing a wall and walking over a line.
+   */
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[1]!.ceiling = 0
+  const line = spec(46, null, 5)
+  const made = taggedFrom(level, [line], new Map([[5, [1]]]))
+
+  assert(made.movers.length === 1, `${made.movers.length} machines came off one gun-triggered line`)
+  const mover = made.movers[0]!
+  assert(mover.kind.surface === 'ceiling', 'a gun-triggered door moves the floor rather than the ceiling')
+  assert(mover.kind.open > mover.kind.shut, 'the door would open downwards')
+  assert(made.shot.get(line.line)?.length === 1, 'the wall works nothing when it is shot')
+  assert(made.pressed.size === 0, 'a gun-triggered door arrived as something you press')
+  assert(made.crossed.size === 0, 'a gun-triggered door arrived as something you walk across')
+})
+
+test('only the gun-triggered special is worked by shooting it', () => {
+  // The other way round from the check above, and the one that would catch a
+  // number wandering into the wrong set. A switch stays a switch.
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[1]!.ceiling = 0
+  const pressed = taggedFrom(level, [spec(103, null, 5)], new Map([[5, [1]]]))
+  assert(pressed.shot.size === 0, 'a switch can be worked by shooting it')
+  const crossed = taggedFrom(level, [spec(2, null, 5)], new Map([[5, [1]]]))
+  assert(crossed.shot.size === 0, 'a walk-over door can be worked by shooting it')
+})
+
+test('a shot reports the wall it stopped on', () => {
+  /*
+   * The half that was missing. `castRay` has always known which line a ray
+   * crosses -- `RayHit` carries it -- and `wallDistance` held that line in its
+   * hand and returned only how far away it was. Nothing downstream could ask
+   * "what did I just shoot", which is exactly what a gun-triggered door needs.
+   */
+  const shot = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 40, [])
+  assert(shot.hit === null, 'a shot down an empty hall found a body')
+  assert(shot.wall !== null, 'a shot that stopped on a wall does not say which wall')
+
+  // And a shot that runs out of range in open air stopped on nothing.
+  const short = traceShot(LEVEL_1, sectorAt(LEVEL_1, 2, 3), 2, 3, 1.6, 0, 0.1, [])
+  assert(short.wall === null, 'a shot that hit nothing claims to have stopped on a wall')
 })
 
 test('a floor that rises to the next step stops at the nearest one above', () => {

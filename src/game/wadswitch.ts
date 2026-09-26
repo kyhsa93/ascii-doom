@@ -104,6 +104,11 @@ const TAGGED = new Map<
   [37, { surface: 'floor', target: 'lowestFloor', fast: false }],
   [19, { surface: 'floor', target: 'highestFloor', fast: false }],
   [36, { surface: 'floor', target: 'highestFloor', fast: true }],
+  // Opened by being shot rather than by being touched. The room it names is a
+  // door like any other; only the trigger is unusual.
+  [46, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
+  // Opened by being shot rather than by being touched. The room it names is a
+  // door like any other; only the trigger is unusual.
 ])
 
 /*
@@ -124,13 +129,18 @@ const TAGGED = new Map<
  *   readings that disagree mean a third thing is going on, and guessing which
  *   is how the key colours went wrong an hour earlier.
  *
- *   46 (twenty-six lines) has twenty-eight of its thirty-two rooms already at
- *   the bottom, which is what a gun-triggered door looks like from here: the
- *   trigger is the missing half, not the geometry.
+ *   46 was out for exactly one reason and is now in. Its geometry was always
+ *   fine -- eighteen of the twenty-two rooms its twenty-six lines name are shut
+ *   the way a door is shut -- and what was missing was that a bullet stopping
+ *   on a wall was not something the level could hear. That is a third way of
+ *   working a machine rather than a fourth kind of machine.
  */
 
 /** Which of these are worked by pressing, rather than by walking across. */
 const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71, 18, 20])
+
+/** And which are worked by being shot, which is neither of those. */
+const SHOT = new Set([46])
 
 export interface TaggedMachines {
   /** The movers to add to the level, in the order they were made. */
@@ -139,6 +149,8 @@ export interface TaggedMachines {
   readonly pressed: Map<Line, readonly Mover[]>
   /** Lines that work them when crossed. */
   readonly crossed: Map<Line, readonly Mover[]>
+  /** And walls that work them when a shot stops on them. */
+  readonly shot: Map<Line, readonly Mover[]>
 }
 
 export function taggedSpecials(): number[] {
@@ -162,6 +174,7 @@ export function taggedFrom(
   const madeFor = new Map<number, number>()
   const pressed = new Map<Line, readonly Mover[]>()
   const crossed = new Map<Line, readonly Mover[]>()
+  const shot = new Map<Line, readonly Mover[]>()
 
   for (const entry of specials) {
     const kind = TAGGED.get(entry.special)
@@ -209,11 +222,15 @@ export function taggedFrom(
     }
 
     if (worked.length === 0) continue
-    const into = PRESSED.has(entry.special) ? pressed : crossed
+    const into = SHOT.has(entry.special)
+      ? shot
+      : PRESSED.has(entry.special)
+        ? pressed
+        : crossed
     into.set(entry.line, [...(into.get(entry.line) ?? []), ...worked])
   }
 
-  return { movers, pressed, crossed }
+  return { movers, pressed, crossed, shot }
 }
 
 /** The height a named room's surface is measured against, or null. */

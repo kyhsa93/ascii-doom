@@ -15,7 +15,7 @@
  * which is what lets the portal walk use a single number.
  */
 
-import { acrossFrom, castRay, openingBetween, type Level, type RayHit } from './level.ts'
+import { acrossFrom, castRay, openingBetween, type Level, type Line, type RayHit } from './level.ts'
 
 /** Anything a shot can hit: a position and a radius, and nothing else. */
 export interface ShotBody {
@@ -39,6 +39,15 @@ export interface ShotResult {
   readonly y: number
   /** What it hit, or null if it met a wall or simply ran out. */
   readonly hit: ShotHit | null
+  /**
+   * The wall it stopped on, or null if it met a body or ran out of range.
+   *
+   * `castRay` has always known this -- a `RayHit` carries the line it crossed
+   * -- and the distance walk held that line in its hand and returned only how
+   * far away it was. A door opened by gunfire is the thing that needs it: the
+   * level cannot hear a bullet arrive without knowing what it arrived on.
+   */
+  readonly wall: Line | null
 }
 
 const scratchHits: RayHit[] = []
@@ -59,19 +68,41 @@ export function wallDistance(
   dy: number,
   range: number,
 ): number {
-  if (fromSector < 0) return 0
+  return wallStop(level, fromSector, ox, oy, height, dx, dy, range).distance
+}
+
+/**
+ * The same walk, reporting which line ended it as well as how far that was.
+ *
+ * Split out rather than folded in because most callers want only the number,
+ * and a shot that simply runs out of range has no wall to name -- the two
+ * answers are not the same question with a field added.
+ */
+export function wallStop(
+  level: Level,
+  fromSector: number,
+  ox: number,
+  oy: number,
+  height: number,
+  dx: number,
+  dy: number,
+  range: number,
+): { distance: number; wall: Line | null } {
+  if (fromSector < 0) return { distance: 0, wall: null }
   castRay(level, ox, oy, dx, dy, range, scratchHits)
 
   let current = fromSector
   for (const hit of scratchHits) {
     const next = acrossFrom(hit.line, current)
-    if (next < 0) return hit.t
+    if (next < 0) return { distance: hit.t, wall: hit.line }
     const opening = openingBetween(level, current, next)
-    if (!opening) return hit.t
-    if (height <= opening.bottom || height >= opening.top) return hit.t
+    if (!opening) return { distance: hit.t, wall: hit.line }
+    if (height <= opening.bottom || height >= opening.top) {
+      return { distance: hit.t, wall: hit.line }
+    }
     current = next
   }
-  return range
+  return { distance: range, wall: null }
 }
 
 /**
@@ -95,7 +126,8 @@ export function traceShot(
 ): ShotResult {
   const dx = Math.cos(angle)
   const dy = Math.sin(angle)
-  const limit = wallDistance(level, fromSector, ox, oy, height, dx, dy, range)
+  const stop = wallStop(level, fromSector, ox, oy, height, dx, dy, range)
+  const limit = stop.distance
 
   let best: ShotHit | null = null
   for (let index = 0; index < bodies.length; index++) {
@@ -114,5 +146,13 @@ export function traceShot(
   }
 
   const distance = best ? best.distance : limit
-  return { distance, x: ox + dx * distance, y: oy + dy * distance, hit: best }
+  // A pellet that met a creature never reached the wall behind it, so the wall
+  // is not what it stopped on.
+  return {
+    distance,
+    x: ox + dx * distance,
+    y: oy + dy * distance,
+    hit: best,
+    wall: best ? null : stop.wall,
+  }
 }

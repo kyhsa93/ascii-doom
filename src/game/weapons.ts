@@ -15,7 +15,7 @@
  */
 
 import { traceShot, type ShotBody } from '../columns/hitscan.ts'
-import type { Level } from '../columns/level.ts'
+import type { Level, Line } from '../columns/level.ts'
 import { damageActor, isAlive, type Actor } from './ai.ts'
 import type { Body } from './player.ts'
 import { spawnProjectile, type Projectile, type ProjectileKind } from './projectiles.ts'
@@ -132,6 +132,15 @@ export interface FireResult {
   readonly killed: number[]
   /** Where each pellet ended, for drawing a spark. Empty for a thrown weapon. */
   readonly ends: { x: number; y: number }[]
+  /**
+   * The walls pellets stopped on, for whatever those walls work.
+   *
+   * Only the ones that actually met a wall: a pellet that hit a creature, or
+   * one that ran out in open air, contributes nothing. Duplicates are left in
+   * -- a scattergun puts several pellets into the same door, and deciding that
+   * this counts once is the caller's business rather than the tracer's.
+   */
+  readonly walls: Line[]
   /** Anything now in flight, for the caller to add to what it is tracking. */
   readonly shots: Projectile[]
 }
@@ -167,6 +176,7 @@ export function fire(
   let hits = 0
   let kills = 0
   const ends: { x: number; y: number }[] = []
+  const walls: Line[] = []
   const shots: Projectile[] = []
   const killed: number[] = []
 
@@ -194,6 +204,7 @@ export function fire(
       (index) => isAlive(actors[index]!),
     )
     ends.push({ x: shot.x, y: shot.y })
+    if (shot.wall) walls.push(shot.wall)
     if (!shot.hit) continue
     hits++
     if (damageActor(actors[shot.hit.index]!, weapon.damage, random)) {
@@ -202,5 +213,5 @@ export function fire(
     }
   }
 
-  return { hits, kills, killed, ends, shots }
+  return { hits, kills, killed, ends, shots, walls }
 }

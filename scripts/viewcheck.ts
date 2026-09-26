@@ -1622,6 +1622,56 @@ check('a door in a map from a file opens when the page is told to open it', () =
   assert(!afterPressing.complete, 'opening a door finished the level')
 })
 
+/*
+ * A door that opens because it was shot, which is the only way thirteen maps
+ * open the one they give you no way to touch.
+ *
+ * The same shape as the pressed-door check above and for the same reason: the
+ * rules are exercised directly in Node, so nothing there notices if the page
+ * stops asking. The fixture's only machine is this door, which is what makes
+ * `doorState` -- the first mover's state -- the right thing to read.
+ *
+ * Walking up to it is checked as well as shooting it. A gun-triggered line
+ * that leaked into the crossed table would open on approach and the shot would
+ * look like it worked.
+ */
+const shotWad = [...tinyWad('E1M1', true, '', [], 46, true, 0, 5)]
+const shotPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+shotPage.on('pageerror', (error) => problems.push(`gun door: ${error.message}`))
+await shotPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await shotPage.waitForTimeout(900)
+await begin(shotPage)
+await shotPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [shotWad, 'E1M1'] as [number[], string],
+)
+await shotPage.waitForTimeout(400)
+const beforeShooting = await readOpened(shotPage)
+await shotPage.keyboard.down('w')
+await shotPage.waitForTimeout(900)
+await shotPage.keyboard.up('w')
+await shotPage.waitForTimeout(200)
+const atTheShotWall = await readOpened(shotPage)
+await hold(shotPage, ' ', 250)
+await shotPage.waitForTimeout(900)
+const afterTheShot = await readOpened(shotPage)
+await shotPage.close()
+
+check('a door in a map from a file opens when it is shot', () => {
+  assert(beforeShooting.doorState === 'shut', `the door arrived as "${beforeShooting.doorState}"`)
+  assert(atTheShotWall.doorState === 'shut', 'walking up to the door opened it without a shot')
+  assert(
+    afterTheShot.doorState !== 'shut',
+    `shooting the door left it "${afterTheShot.doorState}"`,
+  )
+  // And a pellet landing on a wall is not an exit, any more than pressing one is.
+  assert(!afterTheShot.complete, 'shooting a door finished the level')
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

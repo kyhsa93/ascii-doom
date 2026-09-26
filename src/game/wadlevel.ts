@@ -291,6 +291,11 @@ export function wadLevelState(
     /** And the walls that do, beyond the ones that call a platform. */
     switchLines: machines.pressed,
     /**
+     * And the walls a shot works, which is how thirteen maps open a door they
+     * give you no way to touch.
+     */
+    shotLines: machines.shot,
+    /**
      * Still empty, and now for a reason rather than for want of an importer.
      * A lift here is a floor that carries you when you stand on it; a lift in a
      * file starts raised and is called from a wall, and putting one in this
