@@ -18,8 +18,10 @@ import { readMap } from '../columns/wad.ts'
 import { spawnActor, type Actor } from './ai.ts'
 import { makeGoal } from './exit.ts'
 import type { LevelDef, LevelState } from './levels.ts'
+import { makeMover } from './movers.ts'
 import type { Pickup } from './pickups.ts'
 import { spawnPlayer } from './player.ts'
+import { doorsFrom } from './waddoors.ts'
 import { supplyFor } from './waditems.ts'
 import { creatureFor } from './wadthings.ts'
 
@@ -105,7 +107,16 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
     player: spawnPlayer(map.level, map.spawn.x, map.spawn.y, map.spawn.angle),
     actors,
     pickups,
-    movers: [],
+    /**
+     * The doors you open by pressing them.
+     *
+     * No lifts and no switches: both of those act on a sector named by a tag
+     * rather than on the one behind the line, and this game has no notion of
+     * either. So `liftSectors` stays empty -- a lift here is a floor that
+     * carries you when you stand on it, and nothing in a file is imported as
+     * one.
+     */
+    movers: doorsFrom(map.level, map.specials).map((door) => makeMover(door.sector, door.kind)),
     goal: makeGoal(NO_EXIT),
     liftSectors: [],
   }

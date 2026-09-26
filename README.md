@@ -132,8 +132,19 @@ Nothing is bundled: thirty megabytes of someone else's work has no business in
 a page that is thirty kilobytes and caches itself for offline use, and the file
 never leaves your machine.
 
-Be clear about what arrives. It is not a level yet: no doors, and no way to
-finish.
+Be clear about what arrives. There is still no way to finish one: an exit is a
+line that ends the level, and that is the next thing to read rather than
+something already here.
+
+The doors you open by pressing come across. In the original a door is not a
+property of a room but a number on a line, and there are two families: a line
+that opens the room behind it, and a line that opens every room carrying some
+tag. The first is what this engine already models — it finds the sector across
+the line you are facing — so those arrive, locks and all, while switches and
+the tagged kind are left alone. The height a door opens to is measured from the
+rooms around it rather than chosen: across one file that gap runs from sixty
+map units to a hundred and twenty-four, so any fixed number would be wrong
+nearly every time.
 
 The supplies come across the same way the creatures do — the file says
 something of a certain class lay here, and one of this project's own is put

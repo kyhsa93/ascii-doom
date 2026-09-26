@@ -37,6 +37,7 @@ import {
 } from '../src/columns/render.ts'
 import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
+import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
@@ -1499,6 +1500,106 @@ test('creatures from a file wake up and behave like what they are', () => {
 
   assert(state.actors.every((actor) => actor.awake), 'a creature in plain sight never woke')
   assert(reach(brawler) < was, `the one with no way to hit from a distance stayed ${was.toFixed(2)}m away`)
+})
+
+test('a door in a file becomes a door here', () => {
+  // Special 1 on the wall between the rooms. The fixture shuts that room the
+  // way the original shuts a door -- ceiling down to the floor -- which is how
+  // six hundred and eighty-two of the six hundred and ninety-two in the first
+  // file are built.
+  const state = wadLevelState(tinyWad('E1M1', true, '', [], 1), 'E1M1')
+  assert(state.movers.length === 1, `one door in the file, ${state.movers.length} here`)
+
+  const door = state.movers[0]!
+  const room = state.level.sectors[door.sector]!
+  close(door.kind.shut, room.floor, 1e-9, 'a shut door sitting on its own floor')
+  assert(door.kind.open > door.kind.shut, 'the door opens downward, which is not a door')
+
+  // The height it opens to is measured from the room next door rather than
+  // chosen: across one file the gap runs from sixty map units to a hundred and
+  // twenty-four, so a constant would be wrong nearly every time. Checked
+  // against the neighbour rather than against the constant that produced it,
+  // which would agree with itself whatever the scale became.
+  const neighbour = state.level.sectors[sectorAt(state.level, 64 / UNITS_PER_METRE, 64 / UNITS_PER_METRE)]!
+  assert(door.kind.open < neighbour.ceiling, 'the door opens past the ceiling it opens into')
+  assert(
+    neighbour.ceiling - door.kind.open < 0.3,
+    `the door stops ${(neighbour.ceiling - door.kind.open).toFixed(2)}m short of the ceiling`,
+  )
+  assert(door.kind.requiresKey === undefined, 'an unlocked door asked for a key')
+})
+
+test('a door from a file actually opens', () => {
+  // Through `activate` and `updateMovers`, which is what the page runs. A door
+  // that is merely described is not a way through.
+  const state = wadLevelState(tinyWad('E1M1', true, '', [], 1), 'E1M1')
+  const door = state.movers[0]!
+  const ceiling = () => state.level.sectors[door.sector]!.ceiling
+
+  close(ceiling(), door.kind.shut, 1e-9, 'the door starts shut')
+  assert(activate(door), 'the door refused to start')
+  for (let i = 0; i < 300; i++) updateMovers(state.level, state.movers, [], 1 / 60)
+  close(ceiling(), door.kind.open, 1e-6, 'the ceiling after five seconds of opening')
+})
+
+test('a locked door from a file wants the key that file hid', () => {
+  // The lock and the key come from one table, so a colour I have remembered
+  // wrongly is wrong on both sides and the level stays completable. What has
+  // to hold is that the door declines without it and agrees with it.
+  const state = wadLevelState(tinyWad('E1M1', true, '', [], 26), 'E1M1')
+  const door = state.movers[0]!
+  const wanted = door.kind.requiresKey
+  assert(wanted !== undefined, 'a locked special came through with no lock on it')
+
+  assert(!activate(door, new Set<string>()), 'the locked door opened for somebody with no keys')
+  assert(!activate(door, new Set(['a colour no map uses'])), 'the locked door opened for the wrong key')
+  assert(activate(door, new Set([wanted])), 'the locked door refused the key it asked for')
+})
+
+test('only the line specials this game can honour become doors', () => {
+  // Tagged lines act on somewhere else and are left alone; every special in
+  // the table resolves, so a typo is not a door that silently never appears.
+  const level = wadLevelState(tinyWad('E1M1', true, '', [], 1), 'E1M1').level
+  assert(
+    doorsFrom(level, [{ special: 1, tag: 7, front: 0, back: 1 }]).length === 0,
+    'a tagged line was treated as a door behind itself',
+  )
+  assert(
+    doorsFrom(level, [{ special: 1, tag: 0, front: 0, back: null }]).length === 0,
+    'a line with nothing behind it became a door',
+  )
+  assert(doorsFrom(level, [{ special: 97, tag: 0, front: 0, back: 1 }]).length === 0, 'a teleport became a door')
+  assert(manualDoorSpecials().length > 0, 'no specials are treated as doors at all')
+})
+
+test('a room gets one door however many of its lines carry the special', () => {
+  // Measured rather than assumed: across the first file, six hundred and
+  // ninety-two manual door lines sit behind three hundred and sixty-six
+  // sectors, so a door carries its number on about two lines. Without this the
+  // room takes two machines and they argue -- one opening while the other
+  // closes, on the same ceiling.
+  //
+  // This existed as a guard with nothing behind it until a falsifying run
+  // removed it and every check stayed green.
+  const level = wadLevelState(tinyWad('E1M1', true, '', [], 1), 'E1M1').level
+  const twice = doorsFrom(level, [
+    { special: 1, tag: 0, front: 0, back: 1 },
+    { special: 1, tag: 0, front: 0, back: 1 },
+  ])
+  assert(twice.length === 1, `one room, two lines, ${twice.length} doors`)
+})
+
+test('a door that would open downward is not made', () => {
+  // A door opens to just under the lowest ceiling around it. Where the room is
+  // already that tall there is nothing to open, and making one anyway would be
+  // a door whose open height is below its shut height -- which `updateMovers`
+  // would travel to without complaint, closing upward in silence.
+  //
+  // The fixture without a door has both rooms at the same ceiling, which is
+  // exactly that case.
+  const flat = wadLevelState(tinyWad('E1M1'), 'E1M1').level
+  const made = doorsFrom(flat, [{ special: 1, tag: 0, front: 0, back: 1 }])
+  assert(made.length === 0, `a room with no headroom to give produced ${made.length} doors`)
 })
 
 test('a map from a file leaves its supplies lying about', () => {

@@ -124,6 +124,26 @@ export interface WadThing {
   readonly sector: number
 }
 
+/**
+ * A line that does something, as the file describes it.
+ *
+ * Raw on purpose. Which specials are doors, which of those wait and close
+ * again, and which sector a tagged one is even talking about are all questions
+ * about a game; the file only says that this line carries this number. The
+ * same separation the things go through.
+ *
+ * `back` is null for a one-sided line, which for most door specials means a
+ * line that cannot be what it claims -- but saying so is not this layer's job
+ * either.
+ */
+export interface LineSpecial {
+  readonly special: number
+  /** Zero means the line acts on what is behind it rather than on a tagged sector. */
+  readonly tag: number
+  readonly front: number
+  readonly back: number | null
+}
+
 export interface WadMap {
   readonly name: string
   readonly level: Level
@@ -139,6 +159,14 @@ export interface WadMap {
    * built against. What the rest of the numbers mean is decided a layer up.
    */
   readonly things: readonly WadThing[]
+  /**
+   * Every line carrying a special, in the order the file lists them.
+   *
+   * Kept out of `Line` deliberately. Putting a special on the shared type would
+   * make every level written by hand carry a field that only a file can fill,
+   * for the sake of one importer.
+   */
+  readonly specials: readonly LineSpecial[]
 }
 
 export function readMap(bytes: Uint8Array, name: string): WadMap {
@@ -212,11 +240,14 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
   }
 
   const lines: Line[] = []
+  const specials: LineSpecial[] = []
   for (let i = 0; i < linedefs.size / 14; i++) {
     const at = linedefs.at + i * 14
     const [ax, ay] = vertex(view.getUint16(at, true))
     const [bx, by] = vertex(view.getUint16(at + 2, true))
     const flags = view.getUint16(at + 4, true)
+    const special = view.getUint16(at + 6, true)
+    const tag = view.getUint16(at + 8, true)
     const right = view.getUint16(at + 10, true)
     const left = view.getUint16(at + 12, true)
     // 0xffff is how a WAD says "no side here". A line with no right side is
@@ -236,6 +267,7 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
       // Bit 0 is Doom's "blocks players and monsters".
       blocking: (flags & 1) !== 0,
     })
+    if (special !== 0) specials.push({ special, tag, front, back })
     for (const side of [front, back]) {
       if (side === null || side < 0 || side >= sectors.length) continue
       edges[side]!.push([ax, ay, bx, by])
@@ -286,5 +318,5 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
     placed.push({ type, x, y, angle, sector: sectorAt(level, x, y) })
   }
 
-  return { name, level, spawn, things: placed }
+  return { name, level, spawn, things: placed, specials }
 }

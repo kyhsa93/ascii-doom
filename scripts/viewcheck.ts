@@ -870,6 +870,7 @@ function readOpened(page: Page) {
       alive: (probe.alive as number) ?? -1,
       awake: (probe.awake as number) ?? -1,
       pickupsLeft: (probe.pickupsLeft as number) ?? -1,
+      doorState: (probe.doorState as string | null) ?? null,
     }
   })
 }
@@ -885,14 +886,21 @@ const onOutpost = await readOpened(wadPage)
 // With monsters in it. The page had only ever been handed an empty map, so
 // nothing said it could carry a level with creatures standing in it -- and a
 // level from a file is the only kind whose creatures the page did not build.
+// Creatures, a supply, and a door on the wall between the rooms -- special 1,
+// the commonest manual door in the set. The page had never been handed a level
+// carrying any of the three.
 const wadBytes = [
-  ...tinyWad('E1M1', true, '', [
-    [160, 32, 180, 3001],
-    [200, 96, 180, 3002],
-    // And something to pick up, so the page is asked to carry a level with
-    // supplies in it as well as creatures.
-    [180, 64, 0, 2012],
-  ]),
+  ...tinyWad(
+    'E1M1',
+    true,
+    '',
+    [
+      [160, 32, 180, 3001],
+      [200, 96, 180, 3002],
+      [180, 64, 0, 2012],
+    ],
+    1,
+  ),
 ]
 const tookIt = await wadPage.evaluate(
   ([bytes, name]) =>
@@ -924,6 +932,12 @@ check('the page can open a map from a file and keep running', () => {
   assert(
     onWad.pickupsLeft === 1,
     `the map left one supply and the page reports ${onWad.pickupsLeft} still lying there`,
+  )
+  // A door came with it, shut. Node can say the mover was built; only a running
+  // page can say the step loop took it up without falling over.
+  assert(
+    onWad.doorState === 'shut',
+    `the map's door reached the page as "${onWad.doorState}" rather than shut`,
   )
 })
 

@@ -17,6 +17,15 @@ export function tinyWad(
   ceilingFlat = '',
   /** Extra things, as [x, y, angle, type] in map units, placed after the start. */
   extraThings: readonly [number, number, number, number][] = [],
+  /**
+   * A linedef special to hang on the wall between the two rooms.
+   *
+   * That is the only two-sided line here, which makes it the only one that can
+   * be a door: a manual door is the sector behind the line you press. Zero by
+   * default, so every fixture written before this one comes out byte for byte
+   * the same.
+   */
+  doorSpecial = 0,
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -30,7 +39,7 @@ export function tinyWad(
   const LINEDEFS: [number, number, number, number, number, number, number][] = [
     [0, 1, 1, 0, 0, 0, 0xffff],
     // The one that joins the rooms, and the only one with two sides.
-    [1, 2, 0, 0, 0, 1, 2],
+    [1, 2, 0, doorSpecial, 0, 1, 2],
     [2, 3, 1, 0, 0, 3, 0xffff],
     [3, 0, 1, 0, 0, 4, 0xffff],
     [1, 4, 1, 0, 0, 5, 0xffff],
@@ -41,9 +50,15 @@ export function tinyWad(
   // floor, ceiling, light, special. 7 is Doom's nukage.
   // The western room's floor sits above zero on purpose: with both at zero, a
   // check comparing the player's floor against the room's compares nothing.
+  //
+  // When the wall between them is a door, the eastern room becomes the door:
+  // its ceiling comes down to its floor, which is what a shut door is in the
+  // original -- six hundred and eighty-two of the six hundred and ninety-two
+  // in the first file are built exactly that way -- and is what lets a check
+  // ask whether the way through is blocked before it is opened.
   const SECTORS: [number, number, number, number][] = [
     [32, 128, 200, 0],
-    [0, 128, 200, 7],
+    [0, doorSpecial === 0 ? 128 : 0, 200, 7],
   ]
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.
