@@ -22,6 +22,7 @@ import { makeMover } from './movers.ts'
 import type { Pickup } from './pickups.ts'
 import { spawnPlayer } from './player.ts'
 import { doorsFrom } from './waddoors.ts'
+import { exitSectorFrom } from './wadexit.ts'
 import { supplyFor } from './waditems.ts'
 import { creatureFor } from './wadthings.ts'
 
@@ -117,7 +118,15 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
      * one.
      */
     movers: doorsFrom(map.level, map.specials).map((door) => makeMover(door.sector, door.kind)),
-    goal: makeGoal(NO_EXIT),
+    /**
+     * Where the map ends, if it ends anywhere this game can notice.
+     *
+     * A walk-over exit becomes the room on the far side of the line, because
+     * arriving there is what crossing it means and arriving somewhere is the
+     * only question `reachExit` knows how to ask. A map whose exit is a switch
+     * keeps the sentinel and stays unfinishable, which is half of them.
+     */
+    goal: makeGoal(exitSectorFrom(map.specials) ?? NO_EXIT),
     liftSectors: [],
   }
 }

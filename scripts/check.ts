@@ -38,6 +38,7 @@ import {
 import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
+import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
@@ -1500,6 +1501,56 @@ test('creatures from a file wake up and behave like what they are', () => {
 
   assert(state.actors.every((actor) => actor.awake), 'a creature in plain sight never woke')
   assert(reach(brawler) < was, `the one with no way to hit from a distance stayed ${was.toFixed(2)}m away`)
+})
+
+test('a map whose exit is a line you walk over can be finished', () => {
+  // Special 52 on the wall between the rooms, and the room left open rather
+  // than shut: an exit is a line you cross, so what is beyond it has to be
+  // somewhere a body can stand.
+  const state = wadLevelState(tinyWad('E1M1', true, '', [], 52, false), 'E1M1')
+  const beyond = sectorAt(state.level, 192 / UNITS_PER_METRE, 64 / UNITS_PER_METRE)
+
+  assert(beyond >= 0, 'the fixture has no room on the far side to end in')
+  assert(
+    state.goal.exitSector === beyond,
+    `the exit is sector ${state.goal.exitSector} rather than the room across the line (${beyond})`,
+  )
+  assert(!state.goal.reached, 'the map came back already finished')
+
+  // Through the rule the page runs, not by reading the field.
+  assert(!reachExit(state.goal, sectorAt(state.level, 64 / UNITS_PER_METRE, 64 / UNITS_PER_METRE), 1 / 60),
+    'standing where you started finished the map')
+  assert(reachExit(state.goal, beyond, 1 / 60), 'walking across the exit line did not finish the map')
+  assert(state.goal.reached, 'the map did not record having been finished')
+})
+
+test('a map whose exit is a switch stays unfinishable, and says so by staying shut', () => {
+  // Half the maps in the set end on a switch, which is a line you press rather
+  // than a room you enter, and this game has no way to press a line. Those keep
+  // the sentinel -- and the sentinel is deliberately not -1, because that is
+  // what `sectorAt` answers for a point outside the map, so walking off the
+  // edge would otherwise finish a level that has no ending at all.
+  const switched = wadLevelState(tinyWad('E1M1', true, '', [], 11, false), 'E1M1')
+  assert(!reachExit(switched.goal, 0, 1 / 60), 'a switch exit finished the map from sector 0')
+  assert(!reachExit(switched.goal, 1, 1 / 60), 'a switch exit finished the map from sector 1')
+  assert(!reachExit(switched.goal, -1, 1 / 60), 'walking off the edge of the map finished it')
+})
+
+test('only a line with somewhere beyond it can be the way out', () => {
+  assert(exitSectorFrom([{ special: 52, tag: 0, front: 0, back: 1 }]) === 1, 'a walk-over exit leads nowhere')
+  assert(
+    exitSectorFrom([{ special: 52, tag: 0, front: 0, back: null }]) === null,
+    'a line with nothing on its far side became the way out',
+  )
+  assert(exitSectorFrom([{ special: 11, tag: 0, front: 0, back: 1 }]) === null, 'a switch became a walk-over exit')
+  assert(exitSectorFrom([]) === null, 'a map with no specials at all found an exit')
+
+  for (const special of walkOverExitSpecials()) {
+    assert(
+      exitSectorFrom([{ special, tag: 0, front: 0, back: 1 }]) === 1,
+      `special ${special} is in the table and finishes nothing`,
+    )
+  }
 })
 
 test('a door in a file becomes a door here', () => {

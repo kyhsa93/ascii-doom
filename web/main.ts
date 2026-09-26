@@ -339,7 +339,11 @@ function step(): void {
     //
     // Before the death branch deliberately: a bolt still in the air when you
     // stepped into the exit does not take the level back off you.
-    const next = nextLevel(levelIndex)
+    // A map opened from a file has no place in the campaign's order, so there
+    // is nothing after it. Without this `nextLevel(-1)` answers 0 and finishing
+    // someone else's map would quietly hand you the outpost -- which was
+    // unreachable only because a file had no exit to reach until now.
+    const next = wadSource ? null : nextLevel(levelIndex)
     if (next !== null) {
       advanceIn -= STEP
       if (advanceIn <= 0) startLevel(next)

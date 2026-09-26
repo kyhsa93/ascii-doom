@@ -871,6 +871,7 @@ function readOpened(page: Page) {
       awake: (probe.awake as number) ?? -1,
       pickupsLeft: (probe.pickupsLeft as number) ?? -1,
       doorState: (probe.doorState as string | null) ?? null,
+      complete: probe.complete === true,
     }
   })
 }
@@ -1029,6 +1030,49 @@ check('a person can open a map with the file picker', () => {
 check('the wrong file is said out loud, not thrown', () => {
   assert(afterJunk.text.includes('not a WAD'), 'nothing on screen said what was wrong with the file')
   assert(afterJunk.level === 'E1M1', `the bad file replaced the level with "${afterJunk.level}"`)
+})
+
+// Finishing a map that came from a file. The fixture's one two-sided wall can
+// carry one special, and the one above is a door, so this is a second file
+// handed to the same page -- an exit line with the room beyond it left open.
+const exitWad = [...tinyWad('E1M1', true, '', [], 52, false)]
+const openedExit = await wadPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [exitWad, 'E1M1'] as [number[], string],
+)
+await wadPage.waitForTimeout(300)
+const beforeExit = await readOpened(wadPage)
+const walkedOut = await wadPage.evaluate(
+  () => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit() ?? false,
+)
+await wadPage.waitForTimeout(400)
+const justFinished = await readOpened(wadPage)
+// Past the pause that hands you the next level in the campaign.
+await wadPage.waitForTimeout(4200)
+const afterThePause = await readOpened(wadPage)
+
+check('a map from a file can be finished, and finishing it stays there', () => {
+  assert(openedExit, 'the page would not take a second file')
+  assert(beforeExit.level === 'E1M1', `the second file came up as "${beforeExit.level}"`)
+  assert(walkedOut, 'the probe could not reach an exit, so the map has none the page can see')
+  assert(justFinished.complete, 'crossing the exit did not finish the map')
+
+  // The part that matters. `nextLevel` answers 0 for a campaign index of -1,
+  // so without the guard the pause would end and hand you the outpost --
+  // someone else's map replaced by one of mine, quietly, as a reward for
+  // finishing theirs.
+  assert(
+    afterThePause.level === 'E1M1',
+    `after the pause the page was showing "${afterThePause.level}" instead of the map that was open`,
+  )
+  assert(
+    afterThePause.levelIndex === -1,
+    `after the pause the page reports campaign index ${afterThePause.levelIndex}`,
+  )
 })
 
 check('pushing the stick walks the player', () => {

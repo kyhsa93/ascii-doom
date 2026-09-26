@@ -21,11 +21,19 @@ export function tinyWad(
    * A linedef special to hang on the wall between the two rooms.
    *
    * That is the only two-sided line here, which makes it the only one that can
-   * be a door: a manual door is the sector behind the line you press. Zero by
-   * default, so every fixture written before this one comes out byte for byte
-   * the same.
+   * carry a special worth anything: a manual door is the sector behind the line
+   * you press, and a walk-over exit is the line you cross. Zero by default, so
+   * every fixture written before this one comes out byte for byte the same.
    */
-  doorSpecial = 0,
+  lineSpecial = 0,
+  /**
+   * Whether the eastern room is shut like a door, ceiling down to its floor.
+   *
+   * A door wants that and an exit does not -- an exit is a line you walk
+   * across, so the room beyond it has to be somewhere you can stand. Defaults
+   * to whatever the special implies, which keeps every existing caller exact.
+   */
+  shutBack = lineSpecial !== 0,
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -39,7 +47,7 @@ export function tinyWad(
   const LINEDEFS: [number, number, number, number, number, number, number][] = [
     [0, 1, 1, 0, 0, 0, 0xffff],
     // The one that joins the rooms, and the only one with two sides.
-    [1, 2, 0, doorSpecial, 0, 1, 2],
+    [1, 2, 0, lineSpecial, 0, 1, 2],
     [2, 3, 1, 0, 0, 3, 0xffff],
     [3, 0, 1, 0, 0, 4, 0xffff],
     [1, 4, 1, 0, 0, 5, 0xffff],
@@ -58,7 +66,7 @@ export function tinyWad(
   // ask whether the way through is blocked before it is opened.
   const SECTORS: [number, number, number, number][] = [
     [32, 128, 200, 0],
-    [0, doorSpecial === 0 ? 128 : 0, 200, 7],
+    [0, shutBack ? 0 : 128, 200, 7],
   ]
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.
