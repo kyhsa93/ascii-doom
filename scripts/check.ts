@@ -36,6 +36,7 @@ import {
   type View,
 } from '../src/columns/render.ts'
 import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
+import { wadLevelState } from '../src/game/wadlevel.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
 import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
@@ -80,7 +81,7 @@ import {
   type Projectile,
   type ProjectileKind,
 } from '../src/game/projectiles.ts'
-import { PLAYER_RADIUS, moveBody, type Body } from '../src/game/player.ts'
+import { PLAYER_HEIGHT, PLAYER_RADIUS, moveBody, type Body } from '../src/game/player.ts'
 import { ALL_SPRITES, LEVEL_1_PICKUPS } from '../src/game/things.ts'
 
 let failed = 0
@@ -1267,7 +1268,7 @@ console.log('\nreading a map out of a WAD')
  * read in one go. Two square rooms side by side, sharing the wall between them,
  * with the eastern one full of something that hurts.
  */
-function tinyWad(mapName: string): Uint8Array {
+function tinyWad(mapName: string, withStart = true): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
     [128, 0],
@@ -1289,12 +1290,15 @@ function tinyWad(mapName: string): Uint8Array {
   ]
   const SIDEDEF_SECTOR = [0, 0, 1, 0, 0, 1, 1, 1]
   // floor, ceiling, light, special. 7 is Doom's nukage.
+  // The western room's floor sits above zero on purpose: with both at zero, a
+  // check comparing the player's floor against the room's compares nothing.
   const SECTORS: [number, number, number, number][] = [
-    [0, 128, 200, 0],
+    [32, 128, 200, 0],
     [0, 128, 200, 7],
   ]
-  // x, y, angle, type. Type 1 is the first player's start.
-  const THINGS: [number, number, number, number][] = [[64, 64, 90, 1]]
+  // x, y, angle, type. Type 1 is the first player's start. A file is free to
+  // have none, which is a thing worth being able to write down here.
+  const THINGS: [number, number, number, number][] = withStart ? [[64, 64, 90, 1]] : []
 
   const bytes = (size: number) => new Uint8Array(size)
   const lump = (size: number, write: (view: DataView) => void) => {
@@ -1431,6 +1435,74 @@ test('a file that is not a WAD is refused rather than misread', () => {
     complained = (error as Error).message
   }
   assert(complained.includes('not a WAD'), `a file of zeroes gave "${complained}"`)
+})
+
+console.log('\na WAD map as something to walk around in')
+
+test('a map from a file becomes a state the game could step', () => {
+  const state = wadLevelState(tinyWad('E1M1'), 'E1M1')
+
+  assert(state.def.name === 'E1M1', `the level calls itself ${state.def.name}`)
+  assert(state.level.sectors.length === 2, 'the geometry did not come through')
+  assert(state.player.sector >= 0, 'the player starts outside the map')
+
+  // Empty rather than absent. A WAD map has none of these here, and the step
+  // loop iterates all of them every frame: a missing list is a crash, and
+  // saying "none" in the type is the difference.
+  assert(state.actors.length === 0, 'a map with no creatures brought creatures')
+  assert(state.pickups.length === 0, 'a map with no supplies brought supplies')
+  assert(state.movers.length === 0, 'a map with no doors brought doors')
+  assert(state.liftSectors.length === 0, 'a map with no lifts brought lifts')
+})
+
+test('the player stands on the floor of the room they start in', () => {
+  // Built by the same function the authored levels use. A body made a second
+  // way for files would drift from that one -- a different radius, a floor
+  // taken from the wrong place -- and the two would disagree about what fits
+  // through a door long before anyone noticed.
+  const state = wadLevelState(tinyWad('E1M1'), 'E1M1')
+  const room = state.level.sectors[state.player.sector]!
+
+  close(state.player.floor, room.floor, 1e-9, 'the floor underfoot')
+  assert(state.player.radius === PLAYER_RADIUS, `a WAD player is ${state.player.radius} wide`)
+  assert(state.player.height === PLAYER_HEIGHT, `a WAD player is ${state.player.height} tall`)
+})
+
+test('a map with no exit cannot be finished, even by leaving it', () => {
+  // The sentinel matters. `sectorAt` answers -1 for a point outside the map, so
+  // an exit sector of -1 would mean walking off the edge of a WAD finishes a
+  // level that has no exit in it at all.
+  const state = wadLevelState(tinyWad('E1M1'), 'E1M1')
+
+  for (const sector of state.level.sectors.keys()) {
+    assert(!reachExit(state.goal, sector, 1 / 60), `standing in sector ${sector} finished the map`)
+  }
+  assert(!reachExit(state.goal, -1, 1 / 60), 'walking off the edge of the map finished it')
+  assert(!state.goal.reached, 'the map came back already finished')
+  assert(state.goal.elapsed > 0, 'the clock never started')
+})
+
+test('a map that puts nobody anywhere is refused rather than run', () => {
+  // A file can be perfectly well formed and still have no player start.
+  // Running it would mean a body at the origin, in no sector, and a first
+  // frame of nothing -- a failure that looks like a broken renderer.
+  let complained = ''
+  try {
+    wadLevelState(tinyWad('E1M1', false), 'E1M1')
+  } catch (error) {
+    complained = (error as Error).message
+  }
+  assert(complained.includes('no player start'), `a map with nobody in it gave "${complained}"`)
+})
+
+test('asking for a map the file does not have says so', () => {
+  let complained = ''
+  try {
+    wadLevelState(tinyWad('E1M1'), 'NOSUCH')
+  } catch (error) {
+    complained = (error as Error).message
+  }
+  assert(complained.includes('no map called NOSUCH'), `asking for a missing map gave "${complained}"`)
 })
 
 console.log('\nthe automap')
