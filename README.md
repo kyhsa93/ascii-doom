@@ -107,14 +107,22 @@ The half of the screen you drag is as tall as the picture rather than a share
 of the phone, so the two cannot drift apart when the controls take a different
 shape lying down.
 
-**All content is original, and no commercial data file is needed to play.** The
-levels, the creatures, the weapons, the textures and the names are written for
-this project, and nothing is extracted from a commercial game.
-[Freedoom](https://freedoom.github.io/) is the freely licensed set this was
-built against — its own artwork, under a three-clause BSD licence, rather than
-anybody's commercial game — and a map opened from it is drawn with its
-pictures. The campaign is not: nothing is bundled, so the levels written here
-are drawn with the art written here.
+**No commercial data file is needed to play, and none is used.** The levels, the
+weapons and the names are written for this project. What you are looking at is
+[Freedoom](https://freedoom.github.io/) — its own artwork, under a three-clause
+BSD licence, and an independent work that merely happens to be compatible with
+a commercial game rather than taken from one.
+
+The pictures are turned into characters before the game ships, by
+`scripts/bakeart.ts`, and the result is committed as source. No WAD is
+redistributed and none is needed: the converter reads one once, at a desk. The
+notice the licence asks to travel with the work is in `docs/freedoom/`, with
+the contributors it names.
+
+That costs something and it is worth saying which: the page was seventeen
+kilobytes gzipped and is about forty-nine now. Thirty-one of that is the art
+itself; the first figure written here was thirty-one, which was the generated
+file measured on its own rather than the page it ends up inside.
 
 ## Installing it
 
@@ -149,8 +157,8 @@ rectangle.
 ## Opening a map from a WAD
 
 There is a file picker on the page — bottom right at a desk, above the stick on
-a phone. **Nothing here happens until you give it a file**: the campaign is this
-project's own levels drawn with this project's own art, and it stays that way.
+a phone. It is for playing somebody else's maps; the art needs nothing from
+you, because it is already here.
 Give it a WAD — [Freedoom](https://freedoom.github.io/) is the freely licensed
 one — and the first map in it is drawn by this renderer, with that file's own
 pictures. The page says which it did: how many things it drew from the file, or
@@ -205,8 +213,9 @@ armour has none, so it is not quietly turned into something else, it simply is
 not there. The first map of the set this was built against leaves sixty-four
 things lying about, one of them a key.
 
-The pictures come across too. A creature or a supply the file has a drawing for
-is drawn with it: the picture is decoded out of the file's own sprite lumps,
+A file you open still brings its own pictures, which matters for a WAD whose
+art is not Freedoom's. A creature or a supply the file has a drawing for is
+drawn with it: the picture is decoded out of the file's own sprite lumps,
 averaged down to a grid of characters, and kept in colour a cell at a time
 rather than as one tint for the whole thing — a monster in a single colour is a
 silhouette. What does not change is anything you can feel. How big it is, how

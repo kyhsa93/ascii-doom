@@ -174,10 +174,13 @@ function enterWad(bytes: Uint8Array, mapName: string): void {
    * event: a map appeared. The first report of this feature was "I can't tell
    * what changed", which is a fair thing to say about a change that announces
    * itself by looking slightly different in a dark room.
+   *
+   * The count comes from the importer, which knows. Working it out here by
+   * asking whether a sprite had a colour per cell worked only while baked art
+   * did not exist, and then quietly said "one drawn from the file" about a file
+   * with no pictures in it.
    */
-  const drawn =
-    next.actors.filter((actor) => actor.kind.sprite.colors !== undefined).length +
-    next.pickups.filter((pickup) => pickup.sprite.colors !== undefined).length
+  const drawn = next.fromFile
   say(drawn === 0 ? `${mapName} · no pictures in that file` : `${mapName} · ${drawn} drawn from the file`)
 }
 
@@ -765,6 +768,37 @@ function frame(now: number): void {
     reviveDelay: REVIVE_DELAY,
     elapsed: goal.elapsed,
     doorState: state.movers[0]?.state ?? null,
+    /**
+     * How many things the opened file supplied pictures for, or zero.
+     *
+     * Reported rather than worked out from the screen: a check that counted
+     * colours could tell baked art from a single tint, and cannot tell baked
+     * art from a file's art, because both are a colour a cell.
+     */
+    fromFile: state.fromFile,
+    /**
+     * What the first creature in the level is actually drawn with.
+     *
+     * Its shape, not the screen's. Counting colours on screen was tried and
+     * cannot answer this: at the distance a creature stands in the outpost, the
+     * walls carry most of the colours and a creature painted in one flat tint
+     * measured *more* of them than the real art did. So this reports the art
+     * itself and says plainly that it is doing so.
+     */
+    creatureArt: ((): { rows: number; cells: number; colours: number } | null => {
+      const drawnAs = actors[0]?.kind.sprite
+      if (drawnAs === undefined) return null
+      const seen = new Set<string>()
+      let cells = 0
+      for (const row of drawnAs.colors ?? []) {
+        for (const hue of row) {
+          if (hue[0] === 0 && hue[1] === 0 && hue[2] === 0) continue
+          cells++
+          seen.add(hue.map((value) => Math.round(value * 100)).join(','))
+        }
+      }
+      return { rows: drawnAs.rows.length, cells, colours: seen.size }
+    })(),
     /** Which creature the aiming help has hold of, or -1 for none and for a keyboard. */
     aimed: locked?.index ?? -1,
     aimDistance: locked?.distance ?? null,

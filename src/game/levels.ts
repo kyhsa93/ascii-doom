@@ -80,6 +80,16 @@ export interface LevelState {
   readonly liftLines: ReadonlyMap<Line, readonly Mover[]>
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
+  /**
+   * How many things were drawn with pictures out of the file this came from.
+   *
+   * Counted where it is known rather than guessed at afterwards. The page used
+   * to work it out by asking whether a sprite carried a colour per cell, which
+   * was a fair proxy while the only such art came from a file -- and stopped
+   * being one the day the art that ships was baked the same way. Zero for the
+   * levels written here, and zero for a file with no pictures in it.
+   */
+  readonly fromFile: number
 }
 
 /** The index of a tagged sector, or -1. */
@@ -134,5 +144,6 @@ export function loadLevel(def: LevelDef): LevelState {
       .map((mover) => mover.sector),
     exitLines: new Set<Line>(),
     liftLines: new Map<Line, readonly Mover[]>(),
+    fromFile: 0,
   }
 }

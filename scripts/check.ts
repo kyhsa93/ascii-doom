@@ -50,12 +50,18 @@ import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
 import { liftsFrom, switchLiftSpecials } from '../src/game/wadlifts.ts'
 import { aimAt } from '../src/game/autoaim.ts'
+import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
+import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
-import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
+import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
-import { drawBillboards, type Billboard, type Sprite } from '../src/columns/sprite.ts'
+import {
+  drawBillboards,
+  type Billboard,
+  type Sprite,
+} from '../src/columns/sprite.ts'
 import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
 import {
   LEVELS,
@@ -111,7 +117,9 @@ import {
 import {
   ALL_SPRITES,
   CRAWLER_KIND,
+  DRIFTER_KIND,
   LEVEL_1_PICKUPS,
+  SENTRY_KIND,
 } from '../src/game/things.ts'
 
 let failed = 0
@@ -1763,6 +1771,140 @@ test('a map from a file is drawn with the file’s pictures', () => {
   // which is what every map did before any of this.
   const without = wadLevelState(tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0), 'E1M1', 1)
   assert(without.actors[0]!.kind.sprite === CRAWLER_KIND.sprite, 'a file with no art still changed the drawing')
+})
+
+console.log('\nart that was baked in')
+
+test('a baked picture comes back the shape it was written', () => {
+  // Two strings laid out alike, a palette, and the brightest channel they are
+  // fractions of. Small enough to read, which is the point of checking the
+  // unpacker against something written by hand rather than against the
+  // generator -- the generator is the thing it has to disagree with to be
+  // useful.
+  // The colour characters are the first two of the alphabet, not '0' and '1':
+  // an index is a position in `CODES`, and `CODES` starts at '!' -- so '0' is
+  // the thirteenth colour, not the first. Written the other way round this
+  // asked for a palette entry that was not there and read NaN, and the code was
+  // right both times.
+  const sprite = unpackSprite([' ab ', 'ba  '], [` ${CODES[0]}${CODES[1]} `, `${CODES[1]}${CODES[0]}  `], 'ff000000ff00', '808000', 0.5, 1.2)
+  assert(sprite.rows.length === 2, `${sprite.rows.length} rows`)
+  assert(sprite.height === 1, `baked art came back ${sprite.height} tall rather than one`)
+  close(sprite.width, 0.5, 1e-9, 'the width it was given')
+
+  // Index 0 is red at full, index 1 green at full, and the scale says what full
+  // means. A cell whose colour character is a space is transparent whatever its
+  // glyph says.
+  close(sprite.colors![0]![1]![0]!, 1.2, 1e-9, 'the red of the first palette entry')
+  close(sprite.colors![0]![2]![1]!, 1.2, 1e-9, 'the green of the second')
+  assert(sprite.colors![0]![0]!.every((v) => v === 0), 'a transparent cell was given a colour')
+})
+
+test('a palette byte is a fraction of the picture\u2019s own brightest channel', () => {
+  // A scale that is not 1.2, which is the whole point. Written with 1.2 the
+  // first time, this could not tell the scale being used from the old fixed
+  // ceiling being hardcoded -- the two agree exactly at that one value, and
+  // replacing the scale with a constant broke nothing any check could see.
+  //
+  // 1.68 is not arbitrary either: a pure green needs that much of one channel
+  // to be as bright as 1.2 of grey, which is how the clipping this replaced was
+  // found in the first place.
+  const green = unpackSprite(['a'], [CODES[0]!], '00ff00', '00ff00', 1, 1.68)
+  close(green.colors![0]![0]![1]!, 1.68, 1e-9, 'a full channel against a scale of 1.68')
+  close(green.tint[1]!, 1.68, 1e-9, 'the tint against the same scale')
+
+  const half = unpackSprite(['a'], [CODES[0]!], '008000', '008000', 1, 1.68)
+  close(half.colors![0]![0]![1]!, (128 / 255) * 1.68, 1e-9, 'half a channel against a scale of 1.68')
+  // And the brightness of a pure green at that scale is where the decoder puts
+  // the brightest cell of every picture, which is what makes the two agree.
+  close(luminance(0, 1.68, 0), 1.2014, 1e-3, 'the brightness a full green at 1.68 comes to')
+})
+
+test('a baked picture refuses to be half a picture', () => {
+  let said = ''
+  try {
+    unpackSprite(['ab'], ['0'], 'ff0000', '800000', 1, 1.2)
+  } catch (error) {
+    said = (error as Error).message
+  }
+  assert(said.includes('glyphs against'), `a row of two glyphs and one colour was accepted: "${said}"`)
+
+  said = ''
+  try {
+    unpackSprite(['ab', 'cd'], ['01'], 'ff0000', '800000', 1, 1.2)
+  } catch (error) {
+    said = (error as Error).message
+  }
+  assert(said.includes('rows of glyphs'), `two rows against one row of colour was accepted: "${said}"`)
+})
+
+test('the size is put on at the point it is known', () => {
+  const flat = unpackSprite(['ab'], ['00'], 'ff0000', 'ff0000', 4, 1.2)
+  // Standing: the height is what you ask for and the width follows the shape.
+  const tall = atHeight(flat, 1.5)
+  close(tall.height, 1.5, 1e-9, 'a picture asked to stand this tall')
+  close(tall.width, 6, 1e-9, 'the width four-to-one follows with')
+  // Fallen: the width is what you ask for, so it does not shrink as it drops.
+  const down = atWidth(flat, 6)
+  close(down.width, 6, 1e-9, 'a picture asked to lie this wide')
+  close(down.height, 1.5, 1e-9, 'the height four-to-one follows with')
+})
+
+test('every character a colour can be written as is one the source can hold', () => {
+  // A space means transparent, so it cannot also mean a colour; the other four
+  // would have to be escaped in generated source, and an escaped index is an
+  // off-by-one nobody sees in a diff.
+  for (const forbidden of [' ', "'", '"', '\\', '`']) {
+    assert(!CODES.includes(forbidden), `the alphabet contains ${JSON.stringify(forbidden)}`)
+  }
+  assert(new Set(CODES).size === CODES.length, 'the alphabet repeats a character')
+  assert(CODES.length >= 64, `only ${CODES.length} characters to index colours with`)
+})
+
+test('the art that was baked covers the things the importers name', () => {
+  // The converter carries its own list, because the importers import what it
+  // generates and a converter that cannot run before its own output exists is
+  // one nobody can rerun. This is what holds the two lists together instead.
+  const baked = FREEDOOM as unknown as Record<string, Sprite | undefined>
+  let creatures = 0
+  for (const type of creatureTypes()) {
+    const picture = creaturePictureFor(type)
+    assert(picture !== null, `thing type ${type} puts a creature down and has no picture named`)
+    creatures++
+  }
+  assert(creatures > 10, `only ${creatures} creature types checked`)
+
+  // And what the game itself shows is baked art rather than anything left over.
+  for (const [name, sprite] of [
+    ['crawler', CRAWLER_KIND.sprite],
+    ['crawler fallen', CRAWLER_KIND.corpse],
+    ['sentry', SENTRY_KIND.sprite],
+    ['drifter', DRIFTER_KIND.sprite],
+  ] as const) {
+    assert(sprite.colors !== undefined, `the ${name} is drawn in a single tint, so it is not baked art`)
+    assert(sprite.rows.length > 4, `the ${name} is only ${sprite.rows.length} rows of art`)
+  }
+  assert(baked.TROOPER !== undefined && baked.IMP !== undefined, 'the baked file is missing its commonest pictures')
+})
+
+test('a creature that has fallen over is lying down', () => {
+  // The rule the death frames were chosen by, applied to what the game actually
+  // shows. A corpse baked the wrong way round came out exactly as tall as the
+  // creature standing, and nothing here noticed until the numbers were printed.
+  for (const [name, kind] of [
+    ['crawler', CRAWLER_KIND],
+    ['sentry', SENTRY_KIND],
+    ['drifter', DRIFTER_KIND],
+  ] as const) {
+    // Width first, because that is the assertion with teeth. Swapping the two
+    // sides of `atWidth` leaves a crawler's corpse 0.94 tall against a standing
+    // 1.30 -- which still slips under three quarters, so the lying-down test
+    // alone passed on art that had grown two and a half times wider.
+    close(kind.corpse.width, kind.sprite.width, 1e-9, `the ${name} changed width as it fell`)
+    assert(
+      kind.corpse.height < kind.sprite.height * 0.75,
+      `the ${name} falls to ${kind.corpse.height.toFixed(2)} from ${kind.sprite.height.toFixed(2)}, which is not lying down`,
+    )
+  }
 })
 
 console.log('\naiming for a thumb')

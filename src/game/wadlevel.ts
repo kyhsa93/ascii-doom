@@ -87,8 +87,9 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
    * A whole separate question from the map: the art sits in one run of lumps
    * for the whole file, and a file is free to have none -- every fixture the
    * checks are written against is exactly that. When there is none, or when a
-   * picture will not decode, the creature keeps the art written for this game,
-   * which is what it always had.
+   * picture will not decode, the creature keeps the art baked into the game,
+   * which is Freedoom's too and looks the same; what an opened file buys is
+   * looking like *that* file, which matters for one whose art is its own.
    *
    * What is taken is the shape and the colours. How big the thing is, how hard
    * it hits, how far it can see and what it does when it notices you are all
@@ -127,6 +128,9 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
 
   const actors: Actor[] = []
   const pickups: Pickup[] = []
+  // Counted as it happens. Whether a picture came out of this file is known
+  // exactly here and nowhere else afterwards.
+  let fromFile = 0
   for (const thing of map.things) {
     if (thing.sector < 0) continue
     const room = map.level.sectors[thing.sector]
@@ -142,6 +146,7 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
       const fallen = upright === null ? null : pictureOf(prefix, { width: upright.width }, true)
       const looks =
         upright === null ? kind : { ...kind, sprite: upright, corpse: fallen ?? kind.corpse }
+      if (upright !== null) fromFile++
       const actor = spawnActor(looks, thing.x, thing.y, thing.sector, room.floor)
       actor.angle = thing.angle
       actors.push(actor)
@@ -155,6 +160,7 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
       // Fitted to the height this game already draws that supply at, so a box
       // of ammunition out of a file is the same size as one written here.
       const shown = pictureOf(supplyPictureFor(thing.type), { height: supply.sprite.height })
+      if (shown !== null) fromFile++
       pickups.push({
         x: thing.x,
         y: thing.y,
@@ -228,5 +234,6 @@ export function wadLevelState(bytes: Uint8Array, mapName: string, cellAspect = 0
      * list would drop it out from under anybody who climbed on.
      */
     liftSectors: [],
+    fromFile,
   }
 }

@@ -1320,6 +1320,12 @@ function crosshairAt(page: Page): Promise<{ col: number; centre: number }> {
   })
 }
 
+function readFromFile(page: Page): Promise<number> {
+  return page.evaluate(
+    () => ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.fromFile as number) ?? -1,
+  )
+}
+
 function readAim(page: Page) {
   return page.evaluate(() => {
     const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
@@ -1590,6 +1596,7 @@ const tookPlain = await shown.evaluate(
 await shown.waitForTimeout(600)
 const drawnByHand = await glyphsOnScreen(shown)
 const noticedPlain = await topLine(shown)
+const replacedPlain = await readFromFile(shown)
 
 // The same map again, to find out whether this measurement holds still. A
 // comparison that drifts on its own says nothing about what changed it, and
@@ -1617,6 +1624,7 @@ const tookPainted = await shown.evaluate(
 await shown.waitForTimeout(600)
 const drawnFromFile = await glyphsOnScreen(shown)
 const noticedArt = await topLine(shown)
+const replacedArt = await readFromFile(shown)
 await shown.screenshot({ path: join(SHOTS, 'imported-art.png') })
 
 console.log(
@@ -1665,15 +1673,13 @@ check('opening a file says what came of it', () => {
   )
 })
 
-check('a creature from a file is drawn in more than one colour', () => {
-  // Three colours in the picture against one tint for a whole hand-drawn
-  // creature. Counted off the spans the presenter writes, which is the only
-  // place a colour per cell can be seen from outside the page.
-  assert(
-    drawnFromFile.colours > drawnByHand.colours,
-    `${drawnFromFile.colours} colours from the file against ${drawnByHand.colours} by hand -- ` +
-      'a colour per cell is not reaching the screen',
-  )
+check('what the file brought is counted where it is known', () => {
+  // Not inferred from the pixels. This asked whether a sprite carried a colour
+  // per cell, which told the truth only while the art that ships did not --
+  // once it was baked the same way, a file with nothing in it reported one
+  // picture drawn from itself.
+  assert(replacedPlain === 0, `a file with no pictures reported ${replacedPlain} drawn from it`)
+  assert(replacedArt > 0, `a file with a picture in it reported ${replacedArt} drawn from it`)
 })
 
 // --- can a player get at the importer at all? -------------------------------
@@ -1742,6 +1748,71 @@ check('the file picker keeps off the picture on a phone', () => {
     const seen = pick as { overPicture: number }
     assert(seen.overPicture === 0, `${name}: the file picker covers ${seen.overPicture} square pixels of the view`)
   }
+})
+
+// --- the game looks like this without being given anything -------------------
+//
+// The whole of the art work was reachable only by opening a file, which is not
+// what was asked for and is not what most people will ever do. Baked in, the
+// campaign itself is drawn with it -- so this looks at the outpost, with no
+// file handed over and no probe door used, and asks whether what is on screen
+// is painted a cell at a time.
+
+const gallery2 = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const plain = await gallery2.newPage()
+plain.on('pageerror', (error) => problems.push(`baked: ${error.message}`))
+await plain.goto(base, { waitUntil: 'domcontentloaded' })
+await plain.waitForTimeout(1200)
+// Walked forward, because the creatures in the outpost are down the hall and a
+// check that never sees one says nothing about how creatures are drawn.
+await plain.keyboard.down('w')
+await plain.waitForTimeout(1600)
+await plain.keyboard.up('w')
+await plain.waitForTimeout(400)
+
+const campaign = await plain.evaluate(() => {
+  const screen = document.getElementById('screen')
+  const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+  const colours = new Set<string>()
+  for (const span of Array.from(screen?.querySelectorAll('span') ?? [])) {
+    const colour = (span as HTMLElement).style.color
+    if (colour !== '') colours.add(colour)
+  }
+  return {
+    level: (probe.level as string) ?? '',
+    alive: (probe.alive as number) ?? -1,
+    colours: colours.size,
+    art: (probe.creatureArt as { rows: number; cells: number; colours: number } | null) ?? null,
+  }
+})
+await plain.screenshot({ path: join(SHOTS, 'baked-campaign.png') })
+
+console.log(
+  `  baked campaign: ${campaign.colours} colours on screen, ${campaign.alive} creatures alive, ` +
+    `first drawn with ${campaign.art?.rows ?? 0} rows / ${campaign.art?.colours ?? 0} colours`,
+)
+
+check('the campaign is drawn with the baked art, with no file opened', () => {
+  assert(campaign.level === 'the outpost', `the page was showing "${campaign.level}"`)
+  assert(campaign.alive > 0, 'there are no creatures in the level to be drawn at all')
+
+  // Not counted off the screen. That was tried twice and cannot work here: at
+  // the distance a creature stands in the outpost the walls own most of the
+  // colours, and a creature replaced by one flat tint measured 128 against the
+  // real art's 125 -- more, not fewer. A threshold between those two numbers
+  // does not exist, and the first one picked passed with the art gutted.
+  //
+  // So this asks what the creature is drawn with. It is a fact about the art
+  // rather than about the picture on screen, and saying so is better than a
+  // number that looks like evidence and is not.
+  const art = campaign.art
+  assert(art !== null, 'nothing reported what the first creature is drawn with')
+  assert(art.rows >= 8, `the first creature is ${art.rows} rows of art, which is not a baked picture`)
+  assert(
+    art.colours >= 20,
+    `the first creature is drawn in ${art.colours} colours, which is a flat tint rather than a picture`,
+  )
+  assert(art.cells > 50, `only ${art.cells} cells of the first creature are painted`)
 })
 
 await browser.close()

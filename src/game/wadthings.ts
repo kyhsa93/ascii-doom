@@ -5,12 +5,12 @@
  * every map editor ever written agrees on them -- but what it *means* is a
  * fact about a game, which is why this lives here and not in the parser.
  *
- * Nothing of the original's is reproduced. The creatures that appear are this
- * project's own, with this project's own art, and the mapping below is a
- * grouping by weight rather than a re-creation: the file says "something of
- * about this size was here", and one of three creatures written for this game
- * stands there instead. There is no attempt to match a name, a look, or a
- * behaviour beyond how heavy the thing was.
+ * The mapping is a grouping by weight rather than a re-creation: the file says
+ * "something of about this size was here", and one of three creatures written
+ * for this game stands there instead, with that creature's behaviour. What it
+ * looks like is Freedoom's picture for that number -- baked in, or read out of
+ * the file if the one you opened has its own. Nothing of a commercial game's is
+ * reproduced, and no behaviour is copied from anywhere.
  *
  * A whitelist, deliberately. There are a hundred and twenty-one distinct thing
  * types across the maps this was built against, and most of them are supplies,
@@ -68,8 +68,8 @@ const HEAVY = [
  * later game's and the first one never had them.
  *
  * A name that resolves to nothing costs nothing. The creature still stands
- * there in this project's own art, which is what every creature did before any
- * of this, so a file with no pictures in it plays exactly as it used to.
+ * there in the art baked into the game, so a file with no pictures in it looks
+ * exactly like the campaign does.
  */
 const PICTURE = new Map<number, string>([
   [3004, 'POSS'],

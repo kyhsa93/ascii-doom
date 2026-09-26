@@ -1,6 +1,11 @@
 /**
- * What stands in the level besides walls. Original designs, drawn for this
- * project.
+ * What stands in the level besides walls.
+ *
+ * The pictures are Freedoom's, baked into characters before the game shipped
+ * and sized here. They were this project's own drawings until the day the bake
+ * landed, and the note below about how big art has to be is the one thing worth
+ * keeping from that: it is why the baked pictures are asked for at the sizes
+ * they are asked for.
  *
  * Art here rather than in `src/columns/`, because a sprite's shape is a thing
  * you judge by looking at it and the renderer beneath it is a thing you check
@@ -20,96 +25,26 @@
  * holds them to it.
  */
 
+import { atHeight, atWidth } from '../columns/bakedart.ts'
 import type { Sprite } from '../columns/sprite.ts'
 import type { ActorKind } from './ai.ts'
+import {
+  BLUE_KEY,
+  CLIP,
+  HOUND,
+  HOUND_DOWN,
+  IMP,
+  IMP_DOWN,
+  MEDIKIT,
+  ROCKET,
+  SHELLS,
+  TROOPER,
+  TROOPER_DOWN,
+} from './freedoomart.ts'
 // The placement shape lives with the level bundle now, so that two levels
 // describe their casts the same way and nothing has two spellings of it.
 import type { ActorPlacement } from './levels.ts'
 import type { Pickup } from './pickups.ts'
-
-/**
- * A crawler: low and wide, weight forward on two heavy forelimbs.
- *
- * The widest row is the shoulders, which is what separates it at a glance from
- * the upright sentry even when both are a dozen cells across.
- */
-export const CRAWLER: Sprite = {
-  rows: [
-    '        .-~~~~-.        ',
-    "      .'  o  o  '.      ",
-    '     /   \\____/   \\     ',
-    "    |  .-'    '-.  |    ",
-    '    \\_/  ______  \\_/    ',
-    '     |  /      \\  |     ',
-    '    /| |        | |\\    ',
-    '   / | |        | | \\   ',
-    '  /  |_|        |_|  \\  ',
-    ' /__/  \\        /  \\__\\ ',
-    '|__|    \\______/    |__|',
-    " ``       ''''       `` ",
-  ],
-  tint: [1.25, 0.72, 0.55],
-  width: 1.5,
-  height: 1.3,
-}
-
-/**
- * A sentry: upright and narrow, with a heavy head and a braced middle.
- *
- * The tallest silhouette in the level, which is the point of it — at distance
- * the only thing left of any of these is the outline.
- */
-export const SENTRY: Sprite = {
-  rows: [
-    '     .------.     ',
-    '    /  ____  \\    ',
-    '   |  /    \\  |   ',
-    '   | | (oo) | |   ',
-    '   |  \\____/  |   ',
-    '    \\________/    ',
-    '     |      |     ',
-    '  .--+------+--.  ',
-    ' /   |      |   \\ ',
-    '|    |      |    |',
-    '|    |      |    |',
-    ' \\   |      |   / ',
-    "  '--+------+--'  ",
-    '     |      |     ',
-    '     |      |     ',
-    '     |      |     ',
-    '    _|      |_    ',
-    '   / |      | \\   ',
-    '  /__|      |__\\  ',
-    " '''          ''' ",
-  ],
-  tint: [0.95, 0.9, 0.8],
-  width: 0.9,
-  height: 2.1,
-}
-
-/** A drifting lamp: a hovering shell around a bright core, trailing filaments. */
-export const DRIFTER: Sprite = {
-  rows: [
-    '      .----.      ',
-    "    .'      '.    ",
-    '   /   .--.   \\   ',
-    '  |   / @@ \\   |  ',
-    '  |  |  @@  |  |  ',
-    '  |   \\ __ /   |  ',
-    "   \\   '--'   /   ",
-    "    '.      .'    ",
-    "      '-..-'      ",
-    '     /  ||  \\     ',
-    '    |   ||   |    ',
-    '    :   ||   :    ',
-    "     .  ''  .     ",
-    '     :      :     ',
-    '      .    .      ',
-  ],
-  tint: [0.75, 0.95, 1.35],
-  width: 1.0,
-  height: 1.6,
-}
 
 /**
  * What a drifter throws: a small knot of light with a tail.
@@ -118,6 +53,31 @@ export const DRIFTER: Sprite = {
  * says which way it is going — a symmetrical blob in a character grid reads as
  * an object hanging in the air rather than as something coming at you.
  */
+/**
+ * What the things in this game look like.
+ *
+ * Freedoom's pictures, turned into characters before the game shipped and
+ * scaled here to the sizes this game decided on long before it had them. The
+ * art that was drawn by hand for these is gone -- it was the placeholder that
+ * made everything else checkable, and it had done that.
+ *
+ * Height for anything standing and width for anything fallen, so a creature
+ * does not change size as it drops.
+ */
+export const CRAWLER: Sprite = atHeight(TROOPER, 1.3)
+export const CRAWLER_DOWN: Sprite = atWidth(TROOPER_DOWN, CRAWLER.width)
+export const SENTRY: Sprite = atHeight(HOUND, 2.1)
+export const SENTRY_DOWN: Sprite = atWidth(HOUND_DOWN, SENTRY.width)
+export const DRIFTER: Sprite = atHeight(IMP, 1.6)
+export const DRIFTER_DOWN: Sprite = atWidth(IMP_DOWN, DRIFTER.width)
+
+/** The supplies, at the sizes the levels here were laid out around. */
+export const CANISTER: Sprite = atHeight(CLIP, 0.6)
+export const KIT: Sprite = atHeight(MEDIKIT, 0.5)
+export const SHELL_BOX: Sprite = atHeight(SHELLS, 0.45)
+export const SLUG_CRATE: Sprite = atHeight(ROCKET, 0.5)
+export const KEY_TOKEN: Sprite = atHeight(BLUE_KEY, 0.5)
+
 export const BOLT: Sprite = {
   rows: [
     ' ,-() ',
@@ -144,82 +104,6 @@ export const SLUG: Sprite = {
   tint: [1.3, 0.8, 0.5],
   width: 0.5,
   height: 0.45,
-}
-
-/** A canister of charge. Small and bright, unmistakably not a creature. */
-export const CANISTER: Sprite = {
-  rows: [
-    ' .----. ',
-    '| :::: |',
-    '| :::: |',
-    '| ---- |',
-    " '----' ",
-  ],
-  tint: [1.1, 1.25, 0.6],
-  width: 0.5,
-  height: 0.6,
-}
-
-/**
- * An amber token: what a locked door asks for.
- *
- * Deliberately angular where the canister is round and the kit is square, so
- * that at eight cells across the three are told apart by outline alone.
- */
-export const KEY_TOKEN: Sprite = {
-  rows: [
-    ' .====. ',
-    '|  ()  |',
-    '|  ||  |',
-    "|  '-  |",
-    " '====' ",
-  ],
-  tint: [1.3, 0.95, 0.45],
-  width: 0.45,
-  height: 0.5,
-}
-
-/**
- * A box of shells: paired cylinders, so it reads as loose rounds rather than
- * as another crate.
- */
-export const SHELL_BOX: Sprite = {
-  rows: [
-    ' ,-.,-. ',
-    '(:::)(:)',
-    " '-''-' ",
-    ' ______ ',
-  ],
-  tint: [1.15, 0.95, 0.55],
-  width: 0.55,
-  height: 0.45,
-}
-
-/** A crate of slugs. Banded and heavy, told from the shells by its corners. */
-export const SLUG_CRATE: Sprite = {
-  rows: [
-    '.-<##>-.',
-    '|#::::#|',
-    '|#::::#|',
-    "'-<##>-'",
-  ],
-  tint: [1.25, 0.8, 0.45],
-  width: 0.6,
-  height: 0.5,
-}
-
-/** A field kit. A plain box with a bar across it. */
-export const KIT: Sprite = {
-  rows: [
-    '.--------.',
-    '|        |',
-    '|  ====  |',
-    '|        |',
-    "'--------'",
-  ],
-  tint: [0.7, 1.3, 0.85],
-  width: 0.7,
-  height: 0.5,
 }
 
 /**
@@ -293,46 +177,6 @@ export const LEVEL_1_PICKUPS: Pickup[] = [
     taken: false,
   },
 ]
-
-/**
- * What is left behind. A corpse is wide and low where the living shape was
- * tall, so the silhouette alone says the fight there is over.
- */
-export const CRAWLER_DOWN: Sprite = {
-  rows: [
-    '      ..--~~~~--..      ',
-    "  .-'  o        o  '-.  ",
-    ' /__.____________.__\\   ',
-    "  ``     ''''''     ``  ",
-  ],
-  tint: [0.85, 0.5, 0.4],
-  width: 1.6,
-  height: 0.4,
-}
-
-export const SENTRY_DOWN: Sprite = {
-  rows: [
-    '     .-------------.    ',
-    "  .-'  (oo)         '-. ",
-    ' /_______________ ___\\  ',
-    "  '''             '''   ",
-  ],
-  tint: [0.7, 0.68, 0.62],
-  width: 1.8,
-  height: 0.4,
-}
-
-export const DRIFTER_DOWN: Sprite = {
-  rows: [
-    '       .-~~~~~-.        ',
-    "    .-'   ....   '-.    ",
-    "   '--..._______...--'  ",
-    '        ` ` ` `         ',
-  ],
-  tint: [0.5, 0.62, 0.85],
-  width: 1.4,
-  height: 0.35,
-}
 
 /**
  * The cast, as the rules see them.
