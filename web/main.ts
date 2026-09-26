@@ -23,6 +23,7 @@ import {
   freshCarrier,
   isDead,
   nextLevel,
+  refillCarrier,
   restartLevel,
   startLevel as beginLevel,
 } from '../src/game/campaign.ts'
@@ -30,6 +31,7 @@ import { deathLines, reachExit, summaryLayout, summaryLines } from '../src/game/
 import { layoutHud } from '../src/game/hud.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
+import { wadLevelState } from '../src/game/wadlevel.ts'
 import { activate, moverInFront, updateMovers } from '../src/game/movers.ts'
 import { collect, type Carrier } from '../src/game/pickups.ts'
 import { sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
@@ -106,12 +108,42 @@ function enterLevel(next: LevelState): void {
   say(state.def.name)
 }
 
+/**
+ * The file a map came from, while one is open, and null while the campaign runs.
+ *
+ * Kept because dying has to put you back in the same map. `levelIndex` means
+ * nothing once a map arrives from a file, and restarting by index would quietly
+ * swap a map you opened for the outpost. That path is reachable rather than
+ * theoretical: a map read from a WAD has no creatures in it yet, but the
+ * original's nukage arrives as this engine's hazard, so the floor can still
+ * kill you.
+ *
+ * Declared above its first reader rather than below it. Nothing calls
+ * `startLevel` before this line runs today, so the other order worked -- and
+ * this project has twice had a `const` reached before its declaration and spent
+ * a while reading the `undefined` as a result.
+ */
+let wadSource: { bytes: Uint8Array; mapName: string } | null = null
+
 function startLevel(index: number): void {
   // What carries between levels and what does not is decided in `campaign.ts`,
   // where a check can ask about it. What is left here is what only the page
   // owns, and that is now one function.
+  wadSource = null
   levelIndex = index
   enterLevel(beginLevel(index, carrier))
+}
+
+/** Opens a map from a file, from the beginning, with the kit a run starts with. */
+function enterWad(bytes: Uint8Array, mapName: string): void {
+  const next = wadLevelState(bytes, mapName)
+  wadSource = { bytes, mapName }
+  // Said rather than left at whatever was running: everything that reads this
+  // index is about progressing through levels written here, and there is no
+  // progression through a file.
+  levelIndex = -1
+  refillCarrier(carrier)
+  enterLevel(next)
 }
 
 let weaponIndex = 0
@@ -320,7 +352,17 @@ function step(): void {
     deadFor += STEP
     const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
     if (deadFor >= REVIVE_DELAY && (asked.fire || asked.use)) {
-      enterLevel(restartLevel(levelIndex, carrier))
+      // Back into the map you died in, whichever kind it is. A file has no
+      // campaign index to restart by, so it is rebuilt from the bytes it came
+      // from -- which is also what makes its doors shut and its supplies
+      // reappear, exactly as reloading a level definition does.
+      //
+      // Without this branch the campaign is asked for level -1 and refuses, so
+      // the revive never happens and the death panel stays up while the step
+      // throws every frame. Checked, and worth knowing it fails loudly rather
+      // than by handing you the wrong map.
+      if (wadSource) enterWad(wadSource.bytes, wadSource.mapName)
+      else enterLevel(restartLevel(levelIndex, carrier))
     }
     return
   }
@@ -708,6 +750,22 @@ if (new URLSearchParams(location.search).has('probe')) {
     /** Stand in the sector carrying this tag, for checks about the ground. */
     toTag(tag: string): boolean {
       return putIn(state.level.sectors.findIndex((sector) => sector.tag === tag))
+    },
+    /**
+     * Open a map from bytes, the way a file would.
+     *
+     * Takes a plain array rather than a `Uint8Array`: what crosses into a page
+     * from a browser check is serialised, and a typed array does not survive
+     * that intact.
+     */
+    loadWad(bytes: number[], mapName: string): boolean {
+      try {
+        enterWad(Uint8Array.from(bytes), mapName)
+        return true
+      } catch (error) {
+        say((error as Error).message)
+        return false
+      }
     },
   }
 }

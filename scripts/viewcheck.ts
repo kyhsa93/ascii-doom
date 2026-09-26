@@ -19,6 +19,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, resolve } from 'node:path'
 import { chromium, type Page } from 'playwright'
+import { tinyWad } from './wadfixture.ts'
 
 const DIST = resolve(process.cwd(), 'dist')
 const SHOTS = resolve(process.cwd(), 'shots')
@@ -843,6 +844,110 @@ check('standing in the channel costs health, and leaving it stops', () => {
     stillDry.health === onDryGround.health,
     `health kept falling on dry ground (${onDryGround.health} to ${stillDry.health})`,
   )
+})
+
+// A map from a file, in the running page. The bytes are the fixture the parser
+// checks are held to, so this cannot pass against a map the Node side never saw.
+const opener = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const wadPage = await opener.newPage()
+wadPage.on('pageerror', (error) => problems.push(`wad: ${error.message}`))
+await wadPage.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await wadPage.waitForTimeout(900)
+
+function readOpened(page: Page) {
+  return page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      level: (probe.level as string) ?? '',
+      levelIndex: (probe.levelIndex as number) ?? -99,
+      lines: (probe.lines as number) ?? -1,
+      seen: (probe.seen as number) ?? -1,
+      cols: (probe.cols as number) ?? 0,
+      frames: (probe.frames as number) ?? 0,
+      health: (probe.health as number) ?? -1,
+      dead: probe.dead === true,
+    }
+  })
+}
+
+// Walked first, so the automap has learned something about the outpost that
+// would still be there if opening a map failed to clear it.
+await wadPage.keyboard.down('w')
+await wadPage.waitForTimeout(1200)
+await wadPage.keyboard.up('w')
+await wadPage.waitForTimeout(200)
+const onOutpost = await readOpened(wadPage)
+
+const wadBytes = [...tinyWad('E1M1')]
+const tookIt = await wadPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [wadBytes, 'E1M1'] as [number[], string],
+)
+await wadPage.waitForTimeout(400)
+const onWad = await readOpened(wadPage)
+await wadPage.waitForTimeout(400)
+const stillRunning = await readOpened(wadPage)
+
+check('the page can open a map from a file and keep running', () => {
+  assert(tookIt, 'the page would not take the bytes')
+  assert(onWad.level === 'E1M1', `the level calls itself "${onWad.level}"`)
+  // Outside the campaign, and saying so: everything that reads this index is
+  // about progressing through levels written here, and a file has no place in
+  // that order.
+  assert(onWad.levelIndex === -1, `a map from a file reports campaign index ${onWad.levelIndex}`)
+  assert(onWad.lines === 7, `the page built ${onWad.lines} lines from a seven-line map`)
+  assert(onWad.cols > 20, `the grid came back ${onWad.cols} columns wide`)
+  assert(stillRunning.frames > onWad.frames, 'the page stopped drawing once the map changed')
+})
+
+check('opening a map forgets the one before it', () => {
+  // The automap holds the level's own line objects, and a new level builds new
+  // ones -- a set kept across the change would draw a place that no longer
+  // exists. Nothing in Node can see this: the set lives in the page.
+  assert(onOutpost.seen > 7, `the outpost taught the map only ${onOutpost.seen} lines, so this proves nothing`)
+  assert(
+    onWad.seen <= onWad.lines,
+    `a seven-line map came back knowing ${onWad.seen} lines, which can only be the last map's`,
+  )
+})
+
+// Dying inside a map that came from a file.
+//
+// I expected the hazard here to be that restarting by campaign index would
+// quietly swap the map you opened for the outpost. It is not: the index is -1
+// while a file is open, and the campaign refuses that outright. Taking the
+// branch away fails this check with "the panel never cleared, so nothing
+// restarted" -- you are stuck dead, looking at a panel, while the step throws
+// once a frame. Louder than a silent swap, and still worth a check, but not the
+// failure the comment claimed before I made it fail on purpose and read what
+// came back.
+await wadPage.evaluate(() => (window as unknown as { __probe?: { kill(): boolean } }).__probe?.kill())
+await wadPage.waitForTimeout(300)
+const killedInWad = await readOpened(wadPage)
+// Held rather than tapped, and held past the pause before a press is taken as
+// "again". The death branch reads the trigger once per simulation step, so a
+// tap can fall between two steps and never be seen -- which is exactly how the
+// automap key failed earlier today.
+await wadPage.waitForTimeout(1400)
+await wadPage.keyboard.down(' ')
+await wadPage.waitForTimeout(200)
+await wadPage.keyboard.up(' ')
+await wadPage.waitForTimeout(400)
+const revivedInWad = await readOpened(wadPage)
+
+check('dying in a map from a file puts you back in that map', () => {
+  assert(killedInWad.dead, `health went to ${killedInWad.health} and the game did not call that dead`)
+  assert(!revivedInWad.dead, 'the panel never cleared, so nothing restarted')
+  // The whole point. Restarting by campaign index would load the outpost here,
+  // and the picture would look perfectly fine while being the wrong game.
+  assert(revivedInWad.level === 'E1M1', `came back in "${revivedInWad.level}" instead of the map that was open`)
+  assert(revivedInWad.levelIndex === -1, `came back on campaign index ${revivedInWad.levelIndex}`)
+  assert(revivedInWad.lines === 7, `came back with ${revivedInWad.lines} lines, so it is a different map`)
+  assert(revivedInWad.health === 100, `came back with ${revivedInWad.health} health`)
 })
 
 check('pushing the stick walks the player', () => {
