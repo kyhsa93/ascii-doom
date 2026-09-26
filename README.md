@@ -420,16 +420,21 @@ price there was no reason to drop the firing frames or shave the height. The
 chaingun, plasma rifle and BFG are in the file and are not baked -- there is
 nothing here to fire them with, and a picture of a gun you cannot use is weight.
 
-Two locked switches arrive as well -- 133 and 137, on twenty-one maps between
-them. They are the same machine as a locked door: a mover that declines to start
-until you are carrying the right colour, which is what `activate` already does.
-Their colours come from the textures they are built from, DOORBLU and DOORYEL,
-the way 32, 33 and 34 were settled. Four more locked switches exist and are
-deliberately left out: their lines carry plain switch plates that say nothing
-about a colour, so the only thing that could decide them is recollection, and
-recollection had already been wrong once in the same file that day.
+The switches that want a key before they open something are still out, and they
+were briefly in. Trying every colour for the two commonest of them against all
+sixty-eight maps gave seven to eleven maps left with a lock no key of theirs can
+open -- against six with the pair removed altogether. Nothing about adding them
+was an improvement, so they came back out.
 
-That day's mistake is worth writing down. Looking for maps that cannot be
+The evidence for their colours turned out thin as well. In the first file not
+one of their lines carries a coloured door texture at all; in the second, 133 is
+DOORBLU twenty-four times against twenty-two plain lines. And one map settles
+the other on its own -- MAP21 has a single lock and a single key, and that key
+is red, which the second file's DOORYEL flatly contradicts. Two readings that
+disagree mean something else is going on, and guessing which is exactly how the
+key colours went wrong an hour earlier.
+
+That mistake is worth writing down. Looking for maps that cannot be
 finished turned up six whose locked doors wanted a colour no key on their floor
 provided, and the obvious culprit was the key table -- so I swapped two numbers
 in it on the strength of "26, 27 and 28 must be the open-once twins of 32, 33

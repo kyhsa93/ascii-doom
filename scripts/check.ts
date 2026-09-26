@@ -2503,10 +2503,10 @@ test('every tagged special arrives, under the table that matches how it works', 
    * thirty maps -- changed nothing and the falsifier sat silent. A check that
    * derives its expectations from the thing under test is not a check.
    */
-  // 133 and 137 are the two that want a key: built from DOORBLU and DOORYEL,
-  // which is the only reason their colours are known. The other four locked
-  // switches carry plain switch plates and are deliberately out.
-  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 133, 137, 2, 109, 38, 37, 19, 36]
+  // The locked switches are deliberately absent: every colour was tried for 133
+  // and 137 against all sixty-eight maps and none of the nine combinations beat
+  // leaving them out. The reasoning is in `wadswitch.ts`.
+  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 2, 109, 38, 37, 19, 36]
   const table = taggedSpecials()
   for (const special of EXPECTED) {
     assert(table.includes(special), `special ${special} has gone out of the tagged table`)

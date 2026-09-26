@@ -30,7 +30,6 @@
 import type { Level, Line } from '../columns/level.ts'
 import type { LineSpecial } from '../columns/wad.ts'
 import { UNITS_PER_METRE } from '../columns/wad.ts'
-import { keyColourOf } from './waditems.ts'
 import { makeMover, type Mover, type MoverKind } from './movers.ts'
 
 /** Headroom under the lowest neighbouring ceiling, as the door importer uses. */
@@ -53,16 +52,6 @@ const TAGGED = new Map<
     surface: 'floor' | 'ceiling'
     target: 'lowestCeiling' | 'lowestFloor' | 'highestFloor'
     fast: boolean
-    /**
-     * The thing number of the key this one wants, for the switches that lock.
-     *
-     * A locked switch is the same machine that declines to start, which is how
-     * `activate` already treats a locked door -- so this is a field rather than
-     * a second kind of thing. Six maps could not be finished without these:
-     * their blue or yellow key sits behind a switch of this kind, so the key
-     * the map expects you to fetch was behind a door nothing could open.
-     */
-    keyThing?: number
   }
 >([
   /*
@@ -80,24 +69,6 @@ const TAGGED = new Map<
   [112, { surface: 'ceiling', target: 'lowestCeiling', fast: true }],
   [61, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
   [63, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
-  /*
-   * The two switches that want a key, and only the two the file names.
-   *
-   * 133 is built from DOORBLU on twenty-four of its fifty lines and 137 from
-   * DOORYEL on twelve of its forty-six -- the same evidence that settled 32, 33
-   * and 34. Between them they are on twenty-one maps, and six of those could
-   * not be finished without them: the key the map expects you to fetch was
-   * itself behind one of these.
-   *
-   * 134, 135, 136 and 99 are left out, and that is the interesting half. Their
-   * lines are built from SW1COMM, SW1SATYR, BROWN144 -- switch plates that say
-   * nothing about a colour -- so the only thing that could decide them is my
-   * recollection, which has already been wrong once in this file today and cost
-   * five maps while I was sure of it. Two lines of 134, one of 136 and two of
-   * 99 exist in either file; the cost of leaving them is three rooms.
-   */
-  [133, { surface: 'ceiling', target: 'lowestCeiling', fast: true, keyThing: 5 }],
-  [137, { surface: 'ceiling', target: 'lowestCeiling', fast: false, keyThing: 6 }],
   // Switches that move a floor.
   [23, { surface: 'floor', target: 'lowestFloor', fast: false }],
   [102, { surface: 'floor', target: 'highestFloor', fast: false }],
@@ -122,9 +93,19 @@ const TAGGED = new Map<
  * What is deliberately still out, so the next reader does not take the gaps for
  * oversights. Each was measured rather than guessed:
  *
- *   134, 135, 136 and 99 lock a switch the way 133 and 137 do, but their lines
- *   carry plain switch plates rather than a coloured door, so nothing in the
- *   file says which key they want. Five lines between them across both files.
+ *   The locked switches -- 133, 137 and the four rarer ones -- are out, and
+ *   they were briefly in. Every colour was tried for the two commonest against
+ *   all sixty-eight maps: nine combinations, seven to eleven maps left with a
+ *   lock no key of theirs can open, against six with the pair removed
+ *   altogether. Nothing about them is an improvement yet.
+ *
+ *   The evidence is thin as well as unhelpful. In the first file not one of
+ *   their lines carries a coloured door texture; in the second, 133 is DOORBLU
+ *   twenty-four times against twenty-two plain lines and 137 is DOORYEL twelve
+ *   against thirty. And MAP21 settles 137 on its own -- one lock, one key, and
+ *   that key is red -- which the second file's DOORYEL flatly contradicts. Two
+ *   readings that disagree mean a third thing is going on, and guessing which
+ *   is how the key colours went wrong an hour earlier.
  *
  *   18 and 20 (thirty-nine lines between them) raise a floor to the *next*
  *   height above it, which is a fourth kind of target this does not have; only
@@ -137,7 +118,7 @@ const TAGGED = new Map<
  */
 
 /** Which of these are worked by pressing, rather than by walking across. */
-const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71, 133, 137])
+const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71])
 
 export interface TaggedMachines {
   /** The movers to add to the level, in the order they were made. */
@@ -199,16 +180,11 @@ export function taggedFrom(
       if (kind.surface === 'ceiling' && open <= rest) continue
       if (kind.surface === 'floor' && Math.abs(open - rest) < 1e-9) continue
 
-      const colour = kind.keyThing === undefined ? null : keyColourOf(kind.keyThing)
       const made: MoverKind = {
         surface: kind.surface,
         shut: rest,
         open,
         speed: kind.fast ? FAST_SPEED : SPEED,
-        // Read from the same table the key items are read from, so a colour
-        // wrong here is wrong on both sides of the lock rather than making a
-        // map impossible -- which is exactly what a mismatch did cost once.
-        ...(colour === null ? {} : { requiresKey: colour }),
         // No wait: these stay where they are put. A tagged door that shut itself
         // again would need something to decide when, and the original's answer
         // for that is a different special.
