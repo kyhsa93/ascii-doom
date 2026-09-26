@@ -869,6 +869,7 @@ function readOpened(page: Page) {
       dead: probe.dead === true,
       alive: (probe.alive as number) ?? -1,
       awake: (probe.awake as number) ?? -1,
+      pickupsLeft: (probe.pickupsLeft as number) ?? -1,
     }
   })
 }
@@ -888,6 +889,9 @@ const wadBytes = [
   ...tinyWad('E1M1', true, '', [
     [160, 32, 180, 3001],
     [200, 96, 180, 3002],
+    // And something to pick up, so the page is asked to carry a level with
+    // supplies in it as well as creatures.
+    [180, 64, 0, 2012],
   ]),
 ]
 const tookIt = await wadPage.evaluate(
@@ -917,6 +921,10 @@ check('the page can open a map from a file and keep running', () => {
   // them: Node can say the array was built, but only a running page can say
   // the simulation took it up without falling over.
   assert(onWad.alive === 2, `the map placed two creatures and the page reports ${onWad.alive} alive`)
+  assert(
+    onWad.pickupsLeft === 1,
+    `the map left one supply and the page reports ${onWad.pickupsLeft} still lying there`,
+  )
 })
 
 check('opening a map forgets the one before it', () => {

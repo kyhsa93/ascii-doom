@@ -132,8 +132,15 @@ Nothing is bundled: thirty megabytes of someone else's work has no business in
 a page that is thirty kilobytes and caches itself for offline use, and the file
 never leaves your machine.
 
-Be clear about what arrives. It is not a level: no supplies, no doors, and no
-way to finish.
+Be clear about what arrives. It is not a level yet: no doors, and no way to
+finish.
+
+The supplies come across the same way the creatures do — the file says
+something of a certain class lay here, and one of this project's own is put
+there instead. Health, ammunition and keys have counterparts here and arrive;
+armour has none, so it is not quietly turned into something else, it simply is
+not there. The first map of the set this was built against leaves sixty-four
+things lying about, one of them a key.
 
 The creatures do come across, after a fashion. A map says where something
 stood and roughly what weight it was, and one of this project's own three

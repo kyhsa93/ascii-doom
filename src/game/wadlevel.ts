@@ -18,7 +18,9 @@ import { readMap } from '../columns/wad.ts'
 import { spawnActor, type Actor } from './ai.ts'
 import { makeGoal } from './exit.ts'
 import type { LevelDef, LevelState } from './levels.ts'
+import type { Pickup } from './pickups.ts'
 import { spawnPlayer } from './player.ts'
+import { supplyFor } from './waditems.ts'
 import { creatureFor } from './wadthings.ts'
 
 /**
@@ -66,14 +68,35 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
    * seeing first.
    */
   const actors: Actor[] = []
+  const pickups: Pickup[] = []
   for (const thing of map.things) {
+    if (thing.sector < 0) continue
+    const room = map.level.sectors[thing.sector]
+    if (!room) continue
+
     const kind = creatureFor(thing.type)
-    if (!kind || thing.sector < 0) continue
-    const floor = map.level.sectors[thing.sector]?.floor
-    if (floor === undefined) continue
-    const actor = spawnActor(kind, thing.x, thing.y, thing.sector, floor)
-    actor.angle = thing.angle
-    actors.push(actor)
+    if (kind) {
+      const actor = spawnActor(kind, thing.x, thing.y, thing.sector, room.floor)
+      actor.angle = thing.angle
+      actors.push(actor)
+      continue
+    }
+
+    // Supplies rest on the floor of the room they were put in and are lit by
+    // it, the same as the ones placed by hand in the levels written here.
+    const supply = supplyFor(thing.type)
+    if (supply) {
+      pickups.push({
+        x: thing.x,
+        y: thing.y,
+        z: room.floor,
+        light: room.light,
+        sprite: supply.sprite,
+        grant: supply.grant,
+        radius: supply.radius,
+        taken: false,
+      })
+    }
   }
 
   return {
@@ -81,7 +104,7 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
     level: map.level,
     player: spawnPlayer(map.level, map.spawn.x, map.spawn.y, map.spawn.angle),
     actors,
-    pickups: [],
+    pickups,
     movers: [],
     goal: makeGoal(NO_EXIT),
     liftSectors: [],

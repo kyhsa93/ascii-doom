@@ -37,6 +37,7 @@ import {
 } from '../src/columns/render.ts'
 import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
+import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { tinyWad } from './wadfixture.ts'
 import { traceShot, type ShotBody } from '../src/columns/hitscan.ts'
@@ -1498,6 +1499,75 @@ test('creatures from a file wake up and behave like what they are', () => {
 
   assert(state.actors.every((actor) => actor.awake), 'a creature in plain sight never woke')
   assert(reach(brawler) < was, `the one with no way to hit from a distance stayed ${was.toFixed(2)}m away`)
+})
+
+test('a map from a file leaves its supplies lying about', () => {
+  // A medikit, shells, and a key, in the eastern room.
+  const state = wadLevelState(
+    tinyWad('E1M1', true, '', [
+      [160, 32, 0, 2012],
+      [180, 32, 0, 2008],
+      [200, 32, 0, 13],
+    ]),
+    'E1M1',
+  )
+
+  assert(state.pickups.length === 3, `three things placed, ${state.pickups.length} to pick up`)
+  for (const [i, pickup] of state.pickups.entries()) {
+    const room = state.level.sectors[sectorAt(state.level, pickup.x, pickup.y)]
+    assert(room !== undefined, `supply ${i} is lying outside the map`)
+    close(pickup.z, room.floor, 1e-9, `supply ${i} resting on its room's floor`)
+    assert(pickup.taken === false, `supply ${i} was already taken`)
+  }
+
+  const kinds = state.pickups.map((pickup) => pickup.grant.kind).sort()
+  assert(kinds.join(',') === 'ammo,health,key', `the three came out as ${kinds.join(',')}`)
+})
+
+test('a supply from a file is taken by the same rule as one written here', () => {
+  // Through `collect`, not by reading the grant. And the carrier is hurt first
+  // on purpose: the rule declines to hand over anything that would do nothing,
+  // so a check run at full health would pass or fail for its own reasons.
+  const state = wadLevelState(tinyWad('E1M1', true, '', [[160, 32, 0, 2012]]), 'E1M1')
+  // The premise, said out loud. Reaching straight for the first pickup makes
+  // this crash rather than fail when there are none, and a stack trace about a
+  // missing `x` is noise where "the map left nothing to pick up" is an answer.
+  assert(state.pickups.length === 1, `a medikit was placed and ${state.pickups.length} supplies exist`)
+  const supply = state.pickups[0]!
+  const carrier: Carrier = {
+    health: 30,
+    maxHealth: 100,
+    ammo: [0, 0, 0],
+    ammoMax: [120, 48, 24],
+    keys: new Set<string>(),
+  }
+
+  const taken = collect(state.pickups, supply.x, supply.y, PLAYER_RADIUS, carrier)
+  assert(taken.length === 1, `standing on a medikit took ${taken.length} things`)
+  assert(carrier.health > 30, `health stayed at ${carrier.health}`)
+  assert(supply.taken, 'the medikit is still lying there after being taken')
+})
+
+test('only the numbers this game has a supply for leave anything behind', () => {
+  assert(supplyFor(2012) !== null, 'a medikit leaves nothing')
+  assert(supplyFor(2008) !== null, 'a box of shells leaves nothing')
+  assert(supplyFor(13) !== null, 'a key leaves nothing')
+  // No armour in this game, so armour is not quietly turned into something
+  // else -- it simply is not there.
+  assert(supplyFor(2018) === null, 'armour was turned into a supply this game has no notion of')
+  assert(supplyFor(2019) === null, 'the heavier armour was turned into something')
+  assert(supplyFor(2035) === null, 'a barrel was turned into a supply')
+  assert(supplyFor(3001) === null, 'a monster was turned into a supply')
+
+  for (const type of supplyTypes()) {
+    assert(supplyFor(type) !== null, `type ${type} is in the table and leaves nothing`)
+  }
+
+  // The keys and the locks are read from one table, which is what keeps a
+  // colour recalled wrongly from making a level impossible: both sides move
+  // together.
+  assert(keyColourOf(13) !== null, 'a key card has no colour')
+  assert(keyColourOf(2012) === null, 'a medikit was given a key colour')
 })
 
 test('only the numbers this game has a creature for put anything there', () => {
