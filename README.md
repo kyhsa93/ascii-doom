@@ -124,6 +124,32 @@ are tall in character counts for the same reason the sprites are: a monospace
 cell is about 0.6 as wide as it is high, so an eleven-by-eleven mark is a tall
 rectangle.
 
+## Opening a map from a WAD
+
+There is a file picker on the page. Give it a WAD — [Freedoom](https://freedoom.github.io/)
+is the freely licensed one — and the first map in it is drawn by this renderer.
+Nothing is bundled: thirty megabytes of someone else's work has no business in
+a page that is thirty kilobytes and caches itself for offline use, and the file
+never leaves your machine.
+
+Be clear about what arrives. It is a place to walk around in, not a level: no
+creatures, no supplies, no doors, and no way to finish. What does come across
+is the geometry, the lighting, the outdoor rooms — drawn as open air rather
+than as a ceiling twenty metres up — and the damaging floors, which land on the
+same hazard rules the maps here already use, because the original marks them
+with a sector type this engine now reads. Dying in one puts you back at its
+start rather than in the campaign.
+
+The first map only. Choosing between the thirty-odd in a file wants a menu, and
+this wanted to work.
+
+Two things made it possible, both of them changes to the engine rather than to
+the importer. A sector is defined by its boundary rather than by an ordered
+outline, which is what lets a room with a pillar in it exist at all — a fifth
+to a quarter of the sectors in a real map are that shape. And a WAD has no
+outlines to give: it describes lines and which sector lies on each side, which
+is the same thing said differently.
+
 ## Why characters suit this
 
 A character grid is a grid of *columns*, and the renderer this game needs is a
