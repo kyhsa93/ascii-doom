@@ -1782,7 +1782,7 @@ const ITEMS: MenuItem[] = [
   { label: 'begin', action: { kind: 'begin' } },
   { label: 'the outpost', action: { kind: 'level', index: 0 } },
   { label: 'the cistern', action: { kind: 'level', index: 1 } },
-  { label: 'open a WAD', action: { kind: 'openWad' } },
+  { label: 'the vault', action: { kind: 'level', index: 2 } },
 ]
 
 test('a menu opens on something you can actually choose', () => {
@@ -1811,7 +1811,7 @@ test('a disabled item is stepped over rather than landed on', () => {
   const withGap: MenuItem[] = [
     { label: 'begin', action: { kind: 'begin' } },
     { label: 'the cistern', action: { kind: 'level', index: 1 }, enabled: false },
-    { label: 'open a WAD', action: { kind: 'openWad' } },
+    { label: 'the vault', action: { kind: 'level', index: 2 } },
   ]
   const menu = openMenu(withGap)
   const down = moveCursor(menu, 1)
@@ -1824,7 +1824,7 @@ test('a menu with nothing choosable does not spin', () => {
   // Every item disabled: the search must stop after one lap rather than loop.
   const dead = openMenu([
     { label: 'one', action: { kind: 'begin' }, enabled: false },
-    { label: 'two', action: { kind: 'openWad' }, enabled: false },
+    { label: 'two', action: { kind: 'level', index: 0 }, enabled: false },
   ])
   assert(moveCursor(dead, 1).cursor === dead.cursor, 'the cursor moved among items that cannot be chosen')
   assert(chosen(dead) === null, 'a disabled item was offered as a choice')

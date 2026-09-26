@@ -10,13 +10,18 @@
  * is the same one the status line and the status bar already use.
  */
 
-/** What choosing an item asks the page to do. */
+/**
+ * What choosing an item asks the page to do.
+ *
+ * Two kinds, because two is what the title offers. There were three more --
+ * opening a file, help, going back -- written for menus that do not exist; the
+ * file one was a second way to reach a picker the page already shows in the
+ * corner, and a second door to one room is a thing to explain rather than a
+ * thing to have.
+ */
 export type MenuAction =
   | { readonly kind: 'begin' }
   | { readonly kind: 'level'; readonly index: number }
-  | { readonly kind: 'openWad' }
-  | { readonly kind: 'help' }
-  | { readonly kind: 'back' }
 
 export interface MenuItem {
   readonly label: string

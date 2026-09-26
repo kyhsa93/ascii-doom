@@ -93,7 +93,6 @@ let menu: Menu = openMenu([
   { label: 'begin', action: { kind: 'begin' } },
   { label: 'the outpost', action: { kind: 'level', index: 0 } },
   { label: 'the cistern', action: { kind: 'level', index: 1 } },
-  { label: 'open a WAD', action: { kind: 'openWad' } },
 ])
 
 /**
@@ -463,10 +462,6 @@ function step(): void {
       } else if (action?.kind === 'level') {
         titleUp = false
         startLevel(action.index)
-      } else if (action?.kind === 'openWad') {
-        // The picker is a real file input; clicking its label is what a player
-        // does, and the change handler already knows what to do with the bytes.
-        wadInput?.click()
       }
     }
     choosing = pressing

@@ -76,6 +76,13 @@ fits on a character grid they come out as a fog of colons with no shape in
 them. The logo is large flat lettering, which is why it reads at eight rows and
 is crisp at twelve.
 
+Under the logo is a menu: begin, either map by name, and nothing else. It is
+worked with the trigger and the stick, which is every device — a phone has no
+keyboard and a desk has no thumbstick, and the one control both have is the one
+that starts the game. There was a fourth entry for opening a file; the page
+already shows a file picker in the corner on every screen, and a second door
+into one room is a thing to explain rather than a thing to have.
+
 So the status bar is built rather than converted. What is taken from the
 original is the arrangement — health, then ammunition, then keys, then where
 you are, each in its own panel with a rule between — because that is the part
