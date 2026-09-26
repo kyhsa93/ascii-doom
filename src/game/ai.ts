@@ -14,6 +14,7 @@
  * pain chance exists to avoid.
  */
 
+import { traceShot, type ShotBody } from '../columns/hitscan.ts'
 import { lineOfSight, type Level, type RayHit } from '../columns/level.ts'
 import type { Billboard, Sprite } from '../columns/sprite.ts'
 import { moveBody, type Body } from './player.ts'
@@ -60,6 +61,28 @@ export interface ActorKind {
     readonly projectile: ProjectileKind
     /** How far it will shoot from. Beyond this it keeps walking. */
     readonly range: number
+  }
+  /**
+   * A shot that arrives the instant it is fired, for the ones that carry guns.
+   *
+   * The largest thing the importer was getting wrong. Ten thousand of the
+   * bodies across the two files attack at a distance and fewer than fifteen
+   * hundred only bite -- but four thousand eight hundred of those distance
+   * attackers are hitscanners, and with nothing here to be, they were all
+   * arriving as something that runs at you and claws. A room of gunmen and a
+   * room of dogs are not the same room.
+   *
+   * `spread` is how far off the line a shot can land, in radians, and `shots`
+   * is how many go out at once -- one for a rifle, three for a shotgun. The
+   * damage is per shot. Together they are why a hitscanner is dangerous in the
+   * open and survivable behind a corner, which is the whole texture of the
+   * original's fights.
+   */
+  readonly hitscan?: {
+    readonly range: number
+    readonly shots: number
+    readonly damage: number
+    readonly spread: number
   }
 }
 
@@ -159,6 +182,16 @@ export function updateActors(
   const wakeCone = options.wakeCone ?? Math.PI * 0.75
   let damage = 0
   const shots: Projectile[] = []
+  /*
+   * Everything a shot can stop on, with the target last.
+   *
+   * The same list a player's shot is traced against, in the same order, so a
+   * creature standing between a gunman and you takes the bullet -- which is
+   * where infighting comes from and is the reason walking into a crossfire is
+   * a thing you can do on purpose.
+   */
+  const bodies: ShotBody[] = [...actors, target]
+  const playerIndex = actors.length
 
   for (const actor of actors) {
     if (actor.state === 'dead') continue
@@ -229,6 +262,7 @@ export function updateActors(
       // Which attack it turns out to be is decided here rather than when it was
       // committed, so closing on a shooter mid-wind-up gets you clubbed and
       // backing away from a brawler gets you shot at by anything that can.
+      const gun = actor.kind.hitscan
       const ranged = actor.kind.ranged
       if (distance <= actor.kind.reach + aim.radius && canSee) {
         // Only the player's share is reported. A creature clawing another
@@ -236,6 +270,30 @@ export function updateActors(
         // health, which is the one way this could go quietly and badly wrong.
         if (fighting) damageActor(wanted, actor.kind.damage, options.random ?? Math.random)
         else damage += actor.kind.damage
+      } else if (gun !== undefined && canSee && distance <= gun.range) {
+        // Traced the moment it is fired, against the same bodies a player's
+        // shot is traced against -- so a creature standing between the two
+        // takes it, and a wall stops it.
+        for (let shot = 0; shot < gun.shots; shot++) {
+          const off = ((options.random ?? Math.random)() * 2 - 1) * gun.spread
+          const hit = traceShot(
+            level,
+            actor.sector,
+            actor.x,
+            actor.y,
+            actor.floor + actor.kind.eye,
+            facing + off,
+            gun.range,
+            bodies,
+            (index) => index === playerIndex || (actors[index] !== actor && isAlive(actors[index]!)),
+          ).hit
+          if (hit === null) continue
+          if (hit.index === playerIndex) damage += gun.damage
+          else {
+            const struck = actors[hit.index]
+            if (struck !== undefined && struck !== actor) damageActor(struck, gun.damage, options.random ?? Math.random)
+          }
+        }
       } else if (ranged && canSee && distance <= ranged.range) {
         shots.push(
           spawnProjectile(
@@ -259,8 +317,15 @@ export function updateActors(
     if (canSee) actor.angle = facing
 
     const ranged = actor.kind.ranged
+    const gun = actor.kind.hitscan
     const inMelee = distance <= actor.kind.reach + aim.radius
-    const inShot = ranged !== undefined && distance <= ranged.range
+    // Either way of attacking at a distance counts. Written as the thrown one
+    // alone, a creature that only carries a gun never left the chase: it walked
+    // into claw range before it was allowed to attack, so the whole hitscan
+    // branch below was unreachable and a check caught it doing nothing from
+    // twelve metres away.
+    const inShot =
+      (ranged !== undefined && distance <= ranged.range) || (gun !== undefined && distance <= gun.range)
     if (canSee && (inMelee || inShot) && actor.timer <= 0) {
       actor.state = 'winding'
       actor.timer = actor.kind.windUp

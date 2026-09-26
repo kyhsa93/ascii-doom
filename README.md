@@ -335,9 +335,21 @@ glyphs of a nine-glyph ramp, so the shape washed out into colons. A grid with
 nine levels cannot say both "this is dark" and "this is the shape of a face".
 
 The creatures themselves come across after a fashion. A map says where
-something stood and roughly what weight it was, and one of this project's own
-three creatures stands there instead — the grouping is by weight rather than by
-identity, and nothing of its behaviour is reproduced.
+something stood, and one of this project's own five stands there instead. The
+grouping was by weight alone until counting the two files showed what that was
+costing: ten thousand of the bodies in them attack at a distance and fewer than
+fifteen hundred only bite, and four thousand eight hundred of those distance
+attackers carry hitscan weapons — a rifle or a shotgun that hits the instant it
+is fired. Every one of them was arriving as something that runs at you and
+claws, and a room of gunmen is not a kennel.
+
+So there are two that shoot now. A rifleman fires one shot at thirty-two
+metres; the heavier one fires three in a wide cone, which is why backing away
+from it works and backing away from the rifleman does not. Distance does not
+save you from either and geometry does — the shot is traced against the same
+walls and bodies a player's shot is, so a creature standing in the way takes it
+and a corner stops it. The first map of the first file holds fifty-three
+creatures and twenty-five of them are armed.
 Numbers this game has no answer for put nothing there at all, which is why a
 map arrives without its lamps and barrels rather than with them swinging at
 you. The first map of the set this was built against places fifty-three of

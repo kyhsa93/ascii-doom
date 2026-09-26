@@ -20,17 +20,33 @@
  */
 
 import type { ActorKind } from './ai.ts'
-import { CRAWLER_KIND, DRIFTER_KIND, SENTRY_KIND } from './things.ts'
+import { CRAWLER_KIND, DRIFTER_KIND, GUNMAN_KIND, SENTRY_KIND, SHOOTER_KIND } from './things.ts'
 
 /**
  * The commonest small ones -- the things a map puts in the way rather than in
  * your path. Fast, weak, and there are a lot of them.
  */
 const LIGHT = [
-  3004, // by far the commonest humanoid in both files
   3006, // the small flying one
-  9, // the slightly tougher humanoid
 ]
+
+/**
+ * The ones that carry a rifle.
+ *
+ * 3004 is the commonest humanoid in both files at two thousand four hundred
+ * placements, and it was arriving as something that charges you. Counting what
+ * these files hold settled it: ten thousand of the bodies attack at a distance
+ * and fewer than fifteen hundred only bite, and four thousand eight hundred of
+ * those are hitscanners.
+ */
+const RIFLES = [
+  3004,
+  65, // the one that fires a stream in the original; a rifle here
+  7, // and the largest of them, which this game has no boss for
+]
+
+/** And the one with a shotgun, which is two thousand more. */
+const SHOTGUNS = [9]
 
 /**
  * The ones that do not have to reach you. This game has exactly one creature
@@ -54,7 +70,6 @@ const HEAVY = [
   67,
   68,
   16,
-  7,
 ]
 
 /**
@@ -99,6 +114,8 @@ export function creaturePictureFor(type: number): string | null {
 
 const BY_TYPE = new Map<number, ActorKind>([
   ...LIGHT.map((type) => [type, CRAWLER_KIND] as const),
+  ...RIFLES.map((type) => [type, SHOOTER_KIND] as const),
+  ...SHOTGUNS.map((type) => [type, GUNMAN_KIND] as const),
   ...THROWERS.map((type) => [type, DRIFTER_KIND] as const),
   ...HEAVY.map((type) => [type, SENTRY_KIND] as const),
 ])

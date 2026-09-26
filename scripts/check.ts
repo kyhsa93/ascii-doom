@@ -124,6 +124,8 @@ import {
 import {
   ALL_SPRITES,
   CRAWLER_KIND,
+  GUNMAN_KIND,
+  SHOOTER_KIND,
   DRIFTER_KIND,
   LEVEL_1_PICKUPS,
   SENTRY_KIND,
@@ -673,6 +675,101 @@ function simulate(actors: Actor[], target: Body, seconds: number, random = () =>
   }
   return damage
 }
+
+test('a shooter fires from across the room, and a wall stops it', () => {
+  // The largest thing the importer was getting wrong: four thousand eight
+  // hundred bodies in these files fire hitscan weapons, and every one of them
+  // used to arrive as something that runs at you. What makes a gunman a gunman
+  // is that distance does not save you and geometry does.
+  //
+  // Eight metres because that is the longest clear line this level has --
+  // measured rather than assumed. The first version of this check stood the
+  // creature at twelve metres, which is outside the map: `spawnActor` took the
+  // sector -1 without complaint and the check failed for the wrong reason.
+  // `actorAt` asserts the position is somewhere, which is why it exists.
+  const player = bodyAt(16, 4)
+  const gunman = actorAt(24, 4, Math.PI, SHOOTER_KIND)
+  gunman.state = 'chasing'
+  gunman.awake = true
+  const hurt = simulate([gunman], player, 3)
+  assert(hurt > 0, 'a shooter stood eight metres away for three seconds and did nothing')
+
+  // The same creature at the same range with the level in between. The tracer
+  // finds the wall first and drops anything behind it, so this needs no rule of
+  // its own -- but nothing said so until now.
+  const hidden = bodyAt(4, 4)
+  const across = actorAt(20, 4, Math.PI, SHOOTER_KIND)
+  across.state = 'chasing'
+  across.awake = true
+  /*
+   * Held where it stands, because otherwise this measures the wrong thing.
+   *
+   * Left to walk, the creature covers the sixteen metres in about five seconds
+   * and starts clubbing: zero damage over three seconds would then mean "it has
+   * not arrived yet" rather than "the wall stopped the bullet", and the check
+   * would pass on a build with no wall test in the tracer at all. Pinning it in
+   * place makes the only remaining reason for zero the one being asserted.
+   */
+  const frozen = { ...across, speed: 0 }
+  void frozen
+  const stuck = actorAt(20, 4, Math.PI, { ...SHOOTER_KIND, speed: 0 })
+  stuck.state = 'chasing'
+  stuck.awake = true
+  const throughWall = simulate([stuck], hidden, 3)
+  assert(throughWall === 0, `${throughWall} damage arrived through a wall`)
+  // And it never even tried, which is the difference between a bullet stopped
+  // by geometry and a creature that simply had not got there yet.
+  assert(
+    stateOf(stuck) === 'chasing',
+    `the creature behind the wall reached "${stateOf(stuck)}" rather than staying in the chase`,
+  )
+  close(stuck.x, 20, 1e-9, 'the pinned creature moved anyway')
+  void across
+})
+
+test('a spread costs a shooter hits at range', () => {
+  /*
+   * Distance is paid for in misses, which is the only reason a gun at the far
+   * end of a room is survivable.
+   *
+   * Averaged over runs with a real sequence of numbers rather than pinned at a
+   * half. Pinning it was the first version and it measured nothing at all: a
+   * fixed roll puts every shot at the same offset, so two metres and eight gave
+   * byte-identical damage and the check passed on a build where spread did not
+   * exist. The rolls are seeded here instead, so the run is repeatable without
+   * being degenerate.
+   */
+  let seed = 12345
+  const rolls = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return seed / 2147483648
+  }
+  const over = (kind: ActorKind, range: number) => {
+    let total = 0
+    for (let run = 0; run < 20; run++) {
+      const shooter = actorAt(16 + range, 4, Math.PI, kind)
+      shooter.state = 'chasing'
+      shooter.awake = true
+      total += simulate([shooter], bodyAt(16, 4), 3, rolls)
+    }
+    return total / 20
+  }
+
+  const rifleClose = over(SHOOTER_KIND, 2)
+  const rifleFar = over(SHOOTER_KIND, 8)
+  assert(rifleClose > 0, 'a rifleman did nothing at two metres')
+  assert(rifleFar < rifleClose, `a rifle did ${rifleFar} at eight metres against ${rifleClose} at two`)
+
+  // The shotgun pays more for it, which is what makes backing away from one
+  // work and backing away from a rifleman pointless.
+  const gunClose = over(GUNMAN_KIND, 2)
+  const gunFar = over(GUNMAN_KIND, 8)
+  assert(gunClose > rifleClose, `a shotgun did ${gunClose} up close against a rifle's ${rifleClose}`)
+  assert(
+    gunFar / gunClose < rifleFar / rifleClose,
+    `the shotgun kept ${(gunFar / gunClose).toFixed(2)} of its damage at range against the rifle's ${(rifleFar / rifleClose).toFixed(2)}`,
+  )
+})
 
 test('a creature facing away does not notice you, and one facing you does', () => {
   // The difference between walking into a room and being seen walking into it.
@@ -1779,14 +1876,19 @@ test('a map from a file is drawn with the file’s pictures', () => {
     `a corpse ${looks.corpse.height} tall against a creature ${looks.sprite.height} tall`,
   )
   // Everything you can feel is untouched: only the picture came from the file.
-  assert(looks.health === CRAWLER_KIND.health, 'the file changed how much the creature can take')
-  assert(looks.speed === CRAWLER_KIND.speed, 'the file changed how fast the creature is')
-  assert(looks.reach === CRAWLER_KIND.reach, 'the file changed how far the creature can hit')
+  // Against the shooter rather than the crawler, because thing 3004 is what the
+  // original gives a rifle to and it arrives as one now -- the boundary this
+  // asserts is unchanged, and it is the boundary rather than the creature that
+  // this check is about.
+  assert(looks.health === SHOOTER_KIND.health, 'the file changed how much the creature can take')
+  assert(looks.speed === SHOOTER_KIND.speed, 'the file changed how fast the creature is')
+  assert(looks.reach === SHOOTER_KIND.reach, 'the file changed how far the creature can hit')
+  assert(looks.hitscan !== undefined, 'the file took the gun off it')
 
   // And the same map out of a file with no pictures keeps this game's own art,
   // which is what every map did before any of this.
   const without = wadLevelState(tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0), 'E1M1', 1)
-  assert(without.actors[0]!.kind.sprite === CRAWLER_KIND.sprite, 'a file with no art still changed the drawing')
+  assert(without.actors[0]!.kind.sprite === SHOOTER_KIND.sprite, 'a file with no art still changed the drawing')
 })
 
 console.log('\na menu you can find your way round')

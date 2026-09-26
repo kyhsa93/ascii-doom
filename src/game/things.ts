@@ -31,6 +31,8 @@ import type { ActorKind } from './ai.ts'
 import {
   BLUE_KEY,
   CLIP,
+  GUNNER,
+  GUNNER_DOWN,
   HOUND,
   HOUND_DOWN,
   IMP,
@@ -68,6 +70,8 @@ export const CRAWLER: Sprite = atHeight(TROOPER, 1.3)
 export const CRAWLER_DOWN: Sprite = atWidth(TROOPER_DOWN, CRAWLER.width)
 export const SENTRY: Sprite = atHeight(HOUND, 2.1)
 export const SENTRY_DOWN: Sprite = atWidth(HOUND_DOWN, SENTRY.width)
+export const GUNMAN: Sprite = atHeight(GUNNER, 1.4)
+export const GUNMAN_DOWN: Sprite = atWidth(GUNNER_DOWN, GUNMAN.width)
 export const DRIFTER: Sprite = atHeight(IMP, 1.6)
 export const DRIFTER_DOWN: Sprite = atWidth(IMP_DOWN, DRIFTER.width)
 
@@ -203,6 +207,68 @@ export const CRAWLER_KIND: ActorKind = {
   painTime: 0.3,
   painChance: 0.6,
   deathTime: 0.5,
+}
+
+/**
+ * The one with a gun, which is most of what the original puts in a room.
+ *
+ * Four thousand eight hundred bodies across the two files fire hitscan weapons
+ * and every one of them used to arrive here as something that runs at you.
+ * These numbers are deliberately gentler than the original's: a map holds
+ * fifty-five of these at the median and two hundred and sixty-seven at the
+ * worst, and the original survives that partly through geometry this renderer
+ * does not reproduce. They are a starting point to be judged by playing, not a
+ * conversion of a table.
+ *
+ * What matters more than the numbers is the shape: it shoots the instant it
+ * decides to, from across a room, and a wall is the answer rather than
+ * distance. That is the difference between a room of gunmen and a kennel.
+ */
+export const SHOOTER_KIND: ActorKind = {
+  name: 'shooter',
+  sprite: CRAWLER,
+  corpse: CRAWLER_DOWN,
+  radius: 0.4,
+  height: 1.4,
+  eye: 1.1,
+  health: 28,
+  speed: 1.9,
+  sightRange: 34,
+  reach: 0.8,
+  damage: 6,
+  windUp: 0.45,
+  recovery: 1.5,
+  painTime: 0.3,
+  painChance: 0.55,
+  deathTime: 0.5,
+  hitscan: { range: 32, shots: 1, damage: 6, spread: 0.09 },
+}
+
+/**
+ * The heavier gun: three at once, so cover matters more than distance does.
+ *
+ * Two thousand of these across the files. Fewer shots land at range because the
+ * spread is wide, which is the original's arrangement and the reason backing
+ * away from one works while backing away from a rifleman does not.
+ */
+export const GUNMAN_KIND: ActorKind = {
+  name: 'gunman',
+  sprite: GUNMAN,
+  corpse: GUNMAN_DOWN,
+  radius: 0.42,
+  height: 1.5,
+  eye: 1.15,
+  health: 40,
+  speed: 1.8,
+  sightRange: 34,
+  reach: 0.85,
+  damage: 8,
+  windUp: 0.5,
+  recovery: 1.9,
+  painTime: 0.3,
+  painChance: 0.45,
+  deathTime: 0.6,
+  hitscan: { range: 28, shots: 3, damage: 5, spread: 0.22 },
 }
 
 export const SENTRY_KIND: ActorKind = {
