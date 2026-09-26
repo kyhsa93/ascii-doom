@@ -55,7 +55,7 @@ import { taggedFrom, taggedSpecials } from '../src/game/wadswitch.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
 import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
-import { chosen, menuLayout, moveCursor, openMenu, type MenuItem } from '../src/game/menu.ts'
+import { chosen, menuLayout, menuWindow, moveCursor, openMenu, type MenuItem } from '../src/game/menu.ts'
 import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
@@ -1860,11 +1860,35 @@ test('the menu is centred, spaced and clipped like the summary', () => {
   )
   assert(placed[0]!.col === elsewhere[0]!.col, 'a line moves sideways when it becomes the selected one')
 
-  // And lines that would fall off the bottom are dropped rather than drawn
-  // past it.
+  // A grid with no room for the spacing packs the lines instead of losing
+  // them. This used to assert the opposite -- that the overflow was dropped --
+  // which was right while every menu was four items long and wrong the moment
+  // one listed a file's thirty-six maps: what fell off the bottom was most of
+  // the file, silently.
   const cramped = menuLayout(80, 12, menu, 8)
-  assert(cramped.length < ITEMS.length, `${cramped.length} lines fitted in a twelve-row grid`)
+  assert(cramped.length === ITEMS.length, `${cramped.length} of four lines fitted where all four should`)
+  assert(cramped[1]!.row - cramped[0]!.row === 1, 'the cramped grid kept the blank row between lines')
+  // What has not changed: nothing is ever drawn past the bottom.
   for (const line of cramped) assert(line.row < 12, `a line was placed on row ${line.row} of twelve`)
+
+  // And a list longer than any grid is scrolled rather than truncated, with the
+  // line under the cursor always among those drawn.
+  const long = openMenu(Array.from({ length: 36 }, (_, i) => ({
+    label: `E1M${i + 1}`,
+    action: { kind: 'map', name: `E1M${i + 1}` } as const,
+  })))
+  let walked = long
+  for (let i = 0; i < 30; i++) walked = moveCursor(walked, 1)
+  const shown = menuLayout(80, 40, walked, 20)
+  assert(shown.length > 0 && shown.length < 36, `${shown.length} of thirty-six lines were placed`)
+  assert(shown.some((line) => line.under), 'the cursor scrolled out of the part that is drawn')
+  for (const line of shown) assert(line.row < 40, `a line was placed on row ${line.row} of forty`)
+  // The marks that say the list runs on, and the cursor's own, coexisting: a
+  // window with no lead puts the cursor on the edge the scroll mark wants.
+  const tight = menuLayout(80, 33, walked, 31)
+  const carrying = tight.find((line) => line.under)
+  assert(carrying !== undefined, 'the cursor is not drawn in a two-row window')
+  assert(carrying.text.includes('>'), `the scroll mark erased the cursor: "${carrying.text}"`)
 })
 
 console.log('\na status bar laid out like the original')
@@ -4004,6 +4028,72 @@ test('a map with no teleport line brings no teleports', () => {
   // passes on a build that hands every line a teleport.
   const bytes = tinyWad('E1M1', true, '', [[192, 64, 90, 14]], 0, false, 90, 7, 0)
   assert(wadLevelState(bytes, 'E1M1').teleportLines.size === 0, 'a map with no teleport line got one')
+})
+
+/** Thirty-six of them, which is what a file holds and what no grid can show. */
+const MANY: MenuItem[] = Array.from({ length: 36 }, (_, i) => ({
+  label: `E${i}`,
+  action: { kind: 'level', index: i } as const,
+}))
+
+test('a long menu scrolls rather than losing its bottom half', () => {
+  // The grid under the logo has nineteen rows on a desk and seventeen lying
+  // down; a file holds thirty-six maps. Drawing the list and letting the rest
+  // fall off the bottom is what the layout does by itself, and it would leave
+  // most of a file unreachable while looking like a menu.
+  let menu = openMenu(MANY)
+  const first = menuWindow(menu, 10)
+  assert(first.from === 0, `the window opened at ${first.from} rather than the top`)
+  assert(first.count === 10, `${first.count} of ten rows were used`)
+  assert(!first.moreAbove && first.moreBelow, 'the marks do not say the list runs on below')
+
+  // Walking to the end brings the last item into view, and keeps the window
+  // full rather than running past the end of the list.
+  for (let i = 0; i < MANY.length - 1; i++) menu = moveCursor(menu, 1)
+  const last = menuWindow(menu, 10)
+  assert(menu.cursor === MANY.length - 1, `the cursor is at ${menu.cursor}`)
+  assert(
+    menu.cursor >= last.from && menu.cursor < last.from + last.count,
+    `the cursor at ${menu.cursor} is outside the window ${last.from}..${last.from + last.count - 1}`,
+  )
+  assert(last.from === MANY.length - 10, `the window ran to ${last.from} rather than the end`)
+  assert(last.moreAbove && !last.moreBelow, 'the marks do not say the list runs on above')
+})
+
+test('the window keeps some lead ahead of the cursor', () => {
+  // A list that only scrolls once the cursor is already on the last visible
+  // line gives no warning that there is more.
+  let menu = openMenu(MANY)
+  for (let i = 0; i < 5; i++) menu = moveCursor(menu, 1)
+  const window = menuWindow(menu, 10)
+  assert(
+    menu.cursor + 2 < window.from + window.count,
+    `the cursor at ${menu.cursor} has no lead inside ${window.from}..${window.from + window.count - 1}`,
+  )
+})
+
+test('a window bigger than the list, and one with no room at all', () => {
+  const few = openMenu(MANY.slice(0, 4))
+  const all = menuWindow(few, 10)
+  assert(all.count === 4 && all.from === 0, `four items came back as ${all.from}..${all.count}`)
+  assert(!all.moreAbove && !all.moreBelow, 'a list that fits claims something is hidden')
+
+  // Three rows: no room for lead, so the cursor sits in the middle rather than
+  // being pinned to an edge.
+  let menu = openMenu(MANY)
+  for (let i = 0; i < 10; i++) menu = moveCursor(menu, 1)
+  const tight = menuWindow(menu, 3)
+  assert(tight.count === 3, `${tight.count} rows used of three`)
+  assert(
+    menu.cursor >= tight.from && menu.cursor < tight.from + tight.count,
+    'the cursor fell outside a three-row window',
+  )
+
+  // And no room at all: everything is below, because nothing has been scrolled
+  // past. Saying "more above" here would point the marks the wrong way.
+  const none = menuWindow(openMenu(MANY), 0)
+  assert(none.count === 0, `${none.count} rows drawn in no space`)
+  assert(!none.moreAbove && none.moreBelow, 'an empty window points at the wrong end of the list')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

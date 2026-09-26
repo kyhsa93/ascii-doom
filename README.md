@@ -333,8 +333,19 @@ same hazard rules the maps here already use, because the original marks them
 with a sector type this engine now reads. Dying in one puts you back at its
 start rather than in the campaign.
 
-The first map only. Choosing between the thirty-odd in a file wants a menu, and
-this wanted to work.
+Every map in it, not just the first. Opening a file puts its maps on the title
+screen and you pick one -- thirty-six in one of these files, thirty-two in the
+other. It used to open the first and stop, which made thirty-five of the
+thirty-six unreachable: the same shape of fault as the picker that was hidden on
+a phone, where everything worked and almost none of it could be got at.
+
+A list that long does not fit. There are nineteen rows under the logo on a desk
+and seventeen with the phone lying down, so the menu scrolls: it packs the lines
+when the spacing will not fit, shows the part around the cursor, and marks each
+end that has more behind it. The mark goes where the leading space is so the
+centred line does not shift -- except on the line under the cursor, where it
+goes on the tail instead, because losing the hint that the list runs on costs
+less than losing the cursor.
 
 Two things made it possible, both of them changes to the engine rather than to
 the importer. A sector is defined by its boundary rather than by an ordered

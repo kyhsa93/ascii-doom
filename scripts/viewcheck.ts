@@ -902,6 +902,7 @@ function readOpened(page: Page) {
       doorState: (probe.doorState as string | null) ?? null,
       liftFloor: (probe.liftFloor as number | null) ?? null,
       complete: probe.complete === true,
+      titleUp: probe.titleUp === true,
     }
   })
 }
@@ -1041,6 +1042,28 @@ await picker.setInputFiles('#wad', goodWad)
 // once here on a loaded machine, passed twice straight after, and could not be
 // reproduced; the assertions below are unchanged, so a feature that is actually
 // broken still fails them, only now it fails them for being broken.
+// Waited on rather than budgeted for, as before -- but what is waited for has
+// changed. Choosing a file used to drop you into its first map; it now offers
+// the file's maps and waits, so the thing that says the bytes arrived is the
+// title coming back up with names on it.
+await picker
+  .waitForFunction(
+    () => {
+      const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom
+      const screen = document.getElementById('screen')?.textContent ?? ''
+      return probe?.titleUp === true && screen.includes('E1M1')
+    },
+    undefined,
+    { timeout: 5000 },
+  )
+  .catch(() => undefined)
+const offered = await readOpened(picker)
+const offeredText = await picker.evaluate(() => document.getElementById('screen')?.textContent ?? '')
+
+// And taking one, with the key a player would use rather than through a hatch.
+await picker.keyboard.down('e')
+await picker.waitForTimeout(120)
+await picker.keyboard.up('e')
 await picker
   .waitForFunction(
     () => ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.level as string) === 'E1M1',
@@ -1061,9 +1084,19 @@ const afterJunk = await picker.evaluate(() => ({
   level: ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.level as string) ?? '',
 }))
 
-check('a person can open a map with the file picker', () => {
+check('opening a file offers the maps in it', () => {
+  // It used to open the first map and stop, which left thirty-five of a file's
+  // thirty-six with no way of being reached. What a person gets now is the
+  // title back with the file's maps on it, so this asserts the offer rather
+  // than the arrival -- the arrival is the check below.
   assert(beforePick.level !== 'E1M1', `the page was already showing "${beforePick.level}" before any file was chosen`)
+  assert(offered.titleUp, 'choosing a file went straight into a map instead of offering them')
+  assert(offeredText.includes('E1M1'), 'the file was opened but its maps are not on screen')
+})
+
+check('a person can open a map with the file picker', () => {
   assert(afterPick.level === 'E1M1', `after choosing a WAD the level is "${afterPick.level}"`)
+  assert(!afterPick.titleUp, 'picking a map left the title up')
   assert(afterPick.lines === 7, `the page built ${afterPick.lines} lines from a seven-line map`)
   assert(afterPick.levelIndex === -1, `a map from a file reports campaign index ${afterPick.levelIndex}`)
   assert(afterPick.cols > 20, `the grid came back ${afterPick.cols} columns wide`)

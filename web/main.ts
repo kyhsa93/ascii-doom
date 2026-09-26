@@ -206,6 +206,15 @@ let doors: readonly Mover[] = []
  */
 let wadSource: { bytes: Uint8Array; mapName: string } | null = null
 
+/**
+ * The file somebody opened, kept for the menu that lists what is in it.
+ *
+ * Separate from `wadSource`, which is about the map being played and is what a
+ * death restarts from. This is about the file: it outlives any one map, because
+ * the point of listing them is going back for another.
+ */
+let opened: Uint8Array | null = null
+
 function startLevel(index: number): void {
   // What carries between levels and what does not is decided in `campaign.ts`,
   // where a check can ask about it. What is left here is what only the page
@@ -473,6 +482,9 @@ function step(): void {
       } else if (action?.kind === 'level') {
         titleUp = false
         startLevel(action.index)
+      } else if (action?.kind === 'map' && opened !== null) {
+        titleUp = false
+        enterWad(opened, action.name)
       }
     }
     choosing = pressing
@@ -1214,9 +1226,20 @@ wadInput?.addEventListener('change', () => {
     .then((buffer) => {
       const bytes = new Uint8Array(buffer)
       const names = mapNames(bytes)
-      const first = names[0]
-      if (first === undefined) throw new Error('that file has no maps in it')
-      enterWad(bytes, first)
+      if (names.length === 0) throw new Error('that file has no maps in it')
+
+      /*
+       * The file's maps, offered rather than assumed.
+       *
+       * It used to open the first one and stop. A file holds thirty-six, so
+       * thirty-five of them had no way of being reached -- the same shape of
+       * fault as the picker that was hidden on a phone: everything worked and
+       * most of it could not be got at.
+       */
+      opened = bytes
+      titleUp = true
+      menu = openMenu(names.map((name) => ({ label: name, action: { kind: 'map', name } })))
+      say(`${names.length} maps — pick one`)
     })
     .catch((error: unknown) => say((error as Error).message))
 })
