@@ -2493,6 +2493,15 @@ test('every tagged special arrives, under the table that matches how it works', 
     return level
   }
   const raisedRoom = () => plainLevel([0, 3], [[0, 1]])
+  /*
+   * A third shape, for the floors that rise to the next step up.
+   *
+   * The two above cannot test that target at all: in both of them the room
+   * being named is the higher of the pair, so there is no floor above it to
+   * stop at and the machine is correctly refused. Special 18 failed this check
+   * on its first run for exactly that reason -- the fixture, not the importer.
+   */
+  const sunkenRoom = () => plainLevel([3, 0], [[0, 1]])
 
   /*
    * Written out here rather than read from the table being checked.
@@ -2506,7 +2515,10 @@ test('every tagged special arrives, under the table that matches how it works', 
   // The locked switches are deliberately absent: every colour was tried for 133
   // and 137 against all sixty-eight maps and none of the nine combinations beat
   // leaving them out. The reasoning is in `wadswitch.ts`.
-  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 2, 109, 38, 37, 19, 36]
+  //
+  // 18 and 20 raise a floor to the next step above it rather than to the
+  // highest one -- a fourth target, added for them.
+  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 18, 20, 2, 109, 38, 37, 19, 36]
   const table = taggedSpecials()
   for (const special of EXPECTED) {
     assert(table.includes(special), `special ${special} has gone out of the tagged table`)
@@ -2522,10 +2534,12 @@ test('every tagged special arrives, under the table that matches how it works', 
     // them must produce exactly one machine.
     const asDoor = taggedFrom(shutRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
     const asFloor = taggedFrom(raisedRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
-    const made = asDoor.movers.length === 1 ? asDoor : asFloor
+    const asStep = taggedFrom(sunkenRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
+    const made =
+      asDoor.movers.length === 1 ? asDoor : asFloor.movers.length === 1 ? asFloor : asStep
     assert(
       made.movers.length === 1,
-      `special ${special} is in the table and makes no machine in either shape`,
+      `special ${special} is in the table and makes no machine in any of the three shapes`,
     )
     // And it is filed under exactly one of the two ways of working it, because
     // the page asks two different questions -- what am I facing, and what did
@@ -2551,6 +2565,31 @@ test('a switch opens the door its tag names', () => {
   assert(mover.kind.open > mover.kind.shut, 'the door would open downwards')
   assert(made.pressed.get(line.line)?.length === 1, 'the wall works nothing when pressed')
   assert(made.crossed.size === 0, 'a switch arrived as something you walk across')
+})
+
+test('a floor that rises to the next step stops at the nearest one above', () => {
+  /*
+   * The difference between "next" and "highest", which is the whole reason this
+   * target exists. A room with neighbours at four and nine should stop at four;
+   * sent to the highest it would jump the whole way and the step in between
+   * would be pointless.
+   *
+   * Three rooms: the named one at zero, and two above it.
+   */
+  const level = plainLevel([0, 4, 9], [[0, 1], [0, 2]])
+  const made = taggedFrom(level, [spec(18, null, 5)], new Map([[5, [0]]]))
+  assert(made.movers.length === 1, `${made.movers.length} machines came off one switch`)
+  const mover = made.movers[0]!
+  assert(mover.kind.surface === 'floor', 'the switch moves the ceiling rather than the floor')
+  close(mover.kind.open, 4, 1e-9, 'the floor stopped at the nearest step above rather than the highest')
+  assert(mover.kind.open < 9, 'the floor went all the way to the highest neighbour')
+
+  // And a room with nothing above it is refused rather than moved nowhere.
+  const top = plainLevel([9, 4, 0], [[0, 1], [0, 2]])
+  assert(
+    taggedFrom(top, [spec(18, null, 5)], new Map([[5, [0]]])).movers.length === 0,
+    'a floor with no step above it was given a machine anyway',
+  )
 })
 
 test('a room already where it would move to is refused', () => {

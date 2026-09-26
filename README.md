@@ -420,6 +420,24 @@ price there was no reason to drop the firing frames or shave the height. The
 chaingun, plasma rifle and BFG are in the file and are not baked -- there is
 nothing here to fire them with, and a picture of a gun you cannot use is weight.
 
+Two more floor switches arrive, and they needed a fourth kind of target. 18 and
+20 raise the room they name to the *next* floor above it rather than to the
+highest one around -- send them to the highest and a staircase built out of
+three switches becomes one jump. Every one of their thirty-nine lines across the
+two files carries a switch plate, which is how the file says "you press this"
+rather than "you walk through it"; thirty-six of 18's forty-three rooms and all
+twenty-one of 20's have a step above them to stop at, and the seven that do not
+are refused like every other machine here that would not move. Between them they
+take the tagged machines from twelve hundred and eighteen to twelve hundred and
+sixty-three, across sixty-six of the sixty-eight maps.
+
+The check for the whole table failed the first time this went in, and the
+fixture was at fault rather than the importer: both shapes it tried put the
+named room at the top of the map, so there was no step above it and the machine
+was correctly refused. There is a third shape now, a sunken room with two
+neighbours above it, which is also what pins "next" against "highest" -- with
+floors at four and nine above, stopping at nine fails.
+
 The switches that want a key before they open something are still out, and they
 were briefly in. Trying every colour for the two commonest of them against all
 sixty-eight maps gave seven to eleven maps left with a lock no key of theirs can

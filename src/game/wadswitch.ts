@@ -50,7 +50,7 @@ const TAGGED = new Map<
   number,
   {
     surface: 'floor' | 'ceiling'
-    target: 'lowestCeiling' | 'lowestFloor' | 'highestFloor'
+    target: 'lowestCeiling' | 'lowestFloor' | 'highestFloor' | 'nextHigherFloor'
     fast: boolean
   }
 >([
@@ -73,6 +73,23 @@ const TAGGED = new Map<
   [23, { surface: 'floor', target: 'lowestFloor', fast: false }],
   [102, { surface: 'floor', target: 'highestFloor', fast: false }],
   [71, { surface: 'floor', target: 'lowestFloor', fast: true }],
+  /*
+   * Floors that rise to the next step up rather than to the highest one.
+   *
+   * 18 and 20 are switches -- every one of their thirty-nine lines across the
+   * two files carries a switch plate, which is the file saying so rather than
+   * me remembering it -- and they raise the room they name to the nearest floor
+   * above its own. That is a fourth kind of target: "highest" would send most
+   * of them too far in one go, which is why they were left out until there was
+   * somewhere for them to go.
+   *
+   * Measured: thirty-six of 18's forty-three rooms and all twenty-one of 20's
+   * have a floor above them to stop at. The seven that do not are already the
+   * highest thing around and are refused, like every other machine here that
+   * would not move.
+   */
+  [18, { surface: 'floor', target: 'nextHigherFloor', fast: false }],
+  [20, { surface: 'floor', target: 'nextHigherFloor', fast: false }],
   // Walked across. The same rooms, reached the other way, now that a crossing
   // is something this engine can see.
   //
@@ -107,18 +124,13 @@ const TAGGED = new Map<
  *   readings that disagree mean a third thing is going on, and guessing which
  *   is how the key colours went wrong an hour earlier.
  *
- *   18 and 20 (thirty-nine lines between them) raise a floor to the *next*
- *   height above it, which is a fourth kind of target this does not have; only
- *   half their rooms even have somewhere lower, so folding them into
- *   "highestFloor" would move most of them the wrong way.
- *
  *   46 (twenty-six lines) has twenty-eight of its thirty-two rooms already at
  *   the bottom, which is what a gun-triggered door looks like from here: the
  *   trigger is the missing half, not the geometry.
  */
 
 /** Which of these are worked by pressing, rather than by walking across. */
-const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71])
+const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71, 18, 20])
 
 export interface TaggedMachines {
   /** The movers to add to the level, in the order they were made. */
@@ -208,8 +220,11 @@ export function taggedFrom(
 function targetFor(
   level: Level,
   sector: number,
-  want: 'lowestCeiling' | 'lowestFloor' | 'highestFloor',
+  want: 'lowestCeiling' | 'lowestFloor' | 'highestFloor' | 'nextHigherFloor',
 ): number | null {
+  const here = level.sectors[sector]
+  if (here === undefined) return null
+
   let found: number | null = null
   for (const line of level.lines) {
     if (line.back === null) continue
@@ -218,6 +233,14 @@ function targetFor(
     const room = level.sectors[other]
     if (room === undefined) continue
     const value = want === 'lowestCeiling' ? room.ceiling : room.floor
+    // The next step up is the lowest neighbour that is still above this room,
+    // so neighbours at or below it are not candidates at all. Everything else
+    // takes every neighbour and then picks an end.
+    if (want === 'nextHigherFloor') {
+      if (value <= here.floor) continue
+      found = found === null ? value : Math.min(found, value)
+      continue
+    }
     if (found === null) found = value
     else if (want === 'highestFloor') found = Math.max(found, value)
     else found = Math.min(found, value)
