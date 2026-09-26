@@ -14,7 +14,7 @@
  * then the same shape as one, and replaying is simply loading again.
  */
 
-import { buildLevel, sectorAt, type Level, type SectorDef } from '../columns/level.ts'
+import { buildLevel, sectorAt, type Level, type SectorDef, type Line } from '../columns/level.ts'
 import { spawnActor, type Actor, type ActorKind } from './ai.ts'
 import { makeGoal, type Goal } from './exit.ts'
 import { makeMover, type Mover, type MoverKind } from './movers.ts'
@@ -58,6 +58,16 @@ export interface LevelState {
   readonly pickups: Pickup[]
   readonly movers: Mover[]
   readonly goal: Goal
+  /**
+   * Lines that end the level when pressed.
+   *
+   * Empty for every level written here, which end on a room you walk into.
+   * A map read from a file may end on a switch instead -- a piece of wall you
+   * face and press, often with nothing behind it -- and that cannot be said as
+   * a sector. Given to every level rather than to some, so nothing has to ask
+   * whether the field is there.
+   */
+  readonly exitLines: ReadonlySet<Line>
   /** Sectors that carry you when you stand on them, for calling a lift. */
   readonly liftSectors: readonly number[]
 }
@@ -112,5 +122,6 @@ export function loadLevel(def: LevelDef): LevelState {
     liftSectors: movers
       .filter((mover) => mover.kind.surface === 'floor')
       .map((mover) => mover.sector),
+    exitLines: new Set<Line>(),
   }
 }

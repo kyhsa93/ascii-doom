@@ -34,6 +34,16 @@ export function tinyWad(
    * to whatever the special implies, which keeps every existing caller exact.
    */
   shutBack = lineSpecial !== 0,
+  /**
+   * Which way the player starts facing, in degrees counter-clockwise from east.
+   *
+   * Ninety by default, which is north, because that is what this fixture has
+   * always said and a parser check asserts it. A check that has to walk into
+   * the wall between the rooms wants zero instead -- walking is the only way to
+   * get within arm's reach of a switch, and no amount of it helps if you set
+   * off at right angles to the thing.
+   */
+  startAngle = 90,
 ): Uint8Array {
   const VERTEXES: [number, number][] = [
     [0, 0],
@@ -71,7 +81,7 @@ export function tinyWad(
   // x, y, angle, type. Type 1 is the first player's start. A file is free to
   // have none, which is a thing worth being able to write down here.
   const THINGS: [number, number, number, number][] = [
-    ...(withStart ? ([[64, 64, 90, 1]] as [number, number, number, number][]) : []),
+    ...(withStart ? ([[64, 64, startAngle, 1]] as [number, number, number, number][]) : []),
     ...extraThings,
   ]
 

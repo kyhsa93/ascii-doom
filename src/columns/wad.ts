@@ -142,6 +142,15 @@ export interface LineSpecial {
   readonly tag: number
   readonly front: number
   readonly back: number | null
+  /**
+   * The line itself, as the renderer and the ray caster know it.
+   *
+   * Carried because not every special can be reduced to a sector. A door is
+   * the room behind its line and an exit you walk over is the room across it,
+   * but a switch is the line -- you face that piece of wall and press it, and
+   * there may be nothing behind it at all.
+   */
+  readonly line: Line
 }
 
 export interface WadMap {
@@ -256,7 +265,7 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
 
     const front = sideSector(right)
     const back = left === 0xffff ? null : sideSector(left)
-    lines.push({
+    const line: Line = {
       ax,
       ay,
       bx,
@@ -266,8 +275,12 @@ export function readMap(bytes: Uint8Array, name: string): WadMap {
       material: 'wall',
       // Bit 0 is Doom's "blocks players and monsters".
       blocking: (flags & 1) !== 0,
-    })
-    if (special !== 0) specials.push({ special, tag, front, back })
+    }
+    lines.push(line)
+    // The same object the renderer and the ray caster will see, so a special
+    // that is about a piece of wall rather than about a room can be found by
+    // what the player is facing.
+    if (special !== 0) specials.push({ special, tag, front, back, line })
     for (const side of [front, back]) {
       if (side === null || side < 0 || side >= sectors.length) continue
       edges[side]!.push([ax, ay, bx, by])

@@ -7,16 +7,18 @@
  * of them fits what is here: crossing a line means arriving in the room beyond
  * it, and arriving in a room is a question this game already asks every step.
  *
- * So the walk-over exits come across and the switches do not, which is worth
- * being plain about because it is half the maps. Counted across the two files
- * this was built against: thirty-six of the sixty-eight end on a line you walk
- * over, thirty-two on a switch you press, and no map has neither. A switch exit
- * wants a way to press a line rather than a sector, which this game has no
- * notion of yet.
+ * Both come across now, by two different routes. A walk-over exit becomes the
+ * room across the line, because arriving there is what crossing it means. A
+ * switch is the line itself: you face that piece of wall and press it, and
+ * thirty-two of the thirty-five such lines here have nothing behind them at
+ * all, so there is no room to name. Counted across the two files this was
+ * built against: thirty-six of the sixty-eight maps end on a line you walk
+ * over, thirty-two on one you press, and no map has neither.
  *
  * Secret exits are treated as exits. There is nothing secret to go to.
  */
 
+import type { Line } from '../columns/level.ts'
 import type { LineSpecial } from '../columns/wad.ts'
 
 /**
@@ -51,4 +53,35 @@ export function exitSectorFrom(specials: readonly LineSpecial[]): number | null 
 /** Every special this importer can finish a level on, for checks to count against. */
 export function walkOverExitSpecials(): number[] {
   return [...WALK_OVER]
+}
+
+/**
+ * The specials that end a level by being pressed.
+ *
+ * 11 is the ordinary one, 51 the secret variant. Thirty-two of the sixty-eight
+ * maps here end this way, which is why leaving them out left half the set
+ * unfinishable.
+ */
+const SWITCHED = new Set([11, 51])
+
+/**
+ * The pieces of wall that end the level when pressed.
+ *
+ * The line itself rather than a sector, and no requirement that anything lie
+ * behind it: of the thirty-five such lines across these files, thirty-two have
+ * nothing on their far side. That is the whole reason this needed a way to
+ * face a *line* -- the machinery that finds doors looks for the room across
+ * the line you are facing, and for a switch there is no room.
+ */
+export function switchExitLines(specials: readonly LineSpecial[]): Set<Line> {
+  const lines = new Set<Line>()
+  for (const entry of specials) {
+    if (SWITCHED.has(entry.special)) lines.add(entry.line)
+  }
+  return lines
+}
+
+/** Every special this importer finishes a level on when pressed, for checks. */
+export function switchExitSpecials(): number[] {
+  return [...SWITCHED]
 }

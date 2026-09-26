@@ -132,16 +132,17 @@ Nothing is bundled: thirty megabytes of someone else's work has no business in
 a page that is thirty kilobytes and caches itself for offline use, and the file
 never leaves your machine.
 
-Be clear about what arrives. Some of these can be finished and some cannot. An
-exit in the original is a line rather than a room — either one you walk across
-or one you press like a switch — and only the first has anything to map onto
-here, because crossing a line means arriving in the room beyond it and arriving
-somewhere is a question this game already asks every step. So a map that ends
-on a line you walk over can be finished, and a map that ends on a switch keeps
-running. Across the two files this was built against that splits thirty-six to
-thirty-two, and it splits unevenly: thirteen of the first file's thirty-six
-maps end on a line you can cross, against twenty-three of the second file's
-thirty-two.
+An exit in the original is a line rather than a room, and there are two kinds:
+one you walk across and one you press like a switch. Both come across, by two
+different routes — crossing a line means arriving in the room beyond it, which
+this game already notices, while a switch is the piece of wall itself, so the
+page asks what you are facing instead. Thirty-two of the thirty-five switch
+lines in these files have nothing behind them at all, which is why they needed
+the second route rather than the first.
+
+Sixty-five of the sixty-eight maps can be finished. The three that cannot are
+the ones the original ends by killing what is standing in the room, and no line
+in them says so.
 
 The doors you open by pressing come across. In the original a door is not a
 property of a room but a number on a line, and there are two families: a line

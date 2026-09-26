@@ -48,6 +48,23 @@ export function reachExit(goal: Goal, sector: number, dt: number): boolean {
   return true
 }
 
+/**
+ * Ends the level from somewhere other than a sector.
+ *
+ * Some maps finish on a switch rather than on a room you walk into: you face a
+ * piece of wall and press it. That cannot be phrased as "which sector is the
+ * body in", so it needs its own way in -- but not its own idea of what being
+ * finished means. This keeps the one-off where `reachExit` keeps it, so that
+ * two ways of ending a level cannot disagree about whether it has ended.
+ *
+ * Returns true only on the call that ends it, the same as `reachExit`.
+ */
+export function finishNow(goal: Goal): boolean {
+  if (goal.reached) return false
+  goal.reached = true
+  return true
+}
+
 /** What the summary shows. Assembled by the caller, which is what holds the counts. */
 export interface Tally {
   readonly seconds: number

@@ -1075,6 +1075,100 @@ check('a map from a file can be finished, and finishing it stays there', () => {
   )
 })
 
+// Ending a map by pressing a switch, which is the half of them a room cannot
+// describe. This one goes through the `use` key on a page, because that is the
+// only place the press exists at all.
+// Facing east, towards the wall the switch is on, and with that wall shut.
+//
+// Both of those were wrong to begin with, and neither fault was in the game.
+// The fixture normally starts you looking north, so the first version walked
+// away from the switch. The second version faced it but left the way through
+// open, so the body walked clean past the line and stood beyond it looking at
+// the far wall. A switch is a wall you press: thirty-two of the thirty-five in
+// these files have nothing behind them at all, and shutting this one is what
+// makes the fixture resemble the thing it stands for.
+const switchWad = [...tinyWad('E1M1', true, '', [], 11, true, 0)]
+const openedSwitch = await wadPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [switchWad, 'E1M1'] as [number[], string],
+)
+await wadPage.waitForTimeout(300)
+const beforePress = await readOpened(wadPage)
+
+// Walk up to the wall between the rooms, then press it. Held rather than
+// tapped: `use` is read once per simulation step, so a tap can fall between two
+// steps and never be seen -- the same trap the map key fell into earlier.
+await wadPage.keyboard.down('w')
+await wadPage.waitForTimeout(1200)
+await wadPage.keyboard.up('w')
+await wadPage.waitForTimeout(200)
+const atTheWall = await readOpened(wadPage)
+await wadPage.keyboard.down('e')
+await wadPage.waitForTimeout(300)
+await wadPage.keyboard.up('e')
+await wadPage.waitForTimeout(400)
+const afterPress = await readOpened(wadPage)
+await wadPage.waitForTimeout(4200)
+const wellAfter = await readOpened(wadPage)
+
+check('a map that ends on a switch can be ended by pressing it', () => {
+  assert(openedSwitch, 'the page would not take the switch map')
+  assert(beforePress.level === 'E1M1', `the switch map came up as "${beforePress.level}"`)
+  assert(!beforePress.complete, 'the map arrived already finished')
+  assert(!atTheWall.complete, 'walking towards the switch finished the map without pressing it')
+  assert(afterPress.complete, 'pressing the switch did not finish the map')
+  // And it stays where it is, the same as the walk-over kind.
+  assert(
+    wellAfter.level === 'E1M1',
+    `after the pause the page was showing "${wellAfter.level}" instead of the map that was open`,
+  )
+})
+
+// Opening a door through the page, which turns out to be a path nothing
+// watched. Taking `moverInFront` out of the use branch broke no check at all --
+// the door checks in Node call the rules directly and never come through here,
+// so the page could have stopped opening doors and the suite would have
+// shrugged.
+const doorWad = [...tinyWad('E1M1', true, '', [], 1, true, 0)]
+await wadPage.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [doorWad, 'E1M1'] as [number[], string],
+)
+await wadPage.waitForTimeout(300)
+const beforeOpening = await readOpened(wadPage)
+// East, into the shut room, then press. Held rather than tapped: `use` is read
+// once a step, and a tap can fall between two of them.
+await wadPage.keyboard.down('w')
+await wadPage.waitForTimeout(1200)
+await wadPage.keyboard.up('w')
+await wadPage.waitForTimeout(150)
+const atTheDoor = await readOpened(wadPage)
+await wadPage.keyboard.down('e')
+await wadPage.waitForTimeout(300)
+await wadPage.keyboard.up('e')
+await wadPage.waitForTimeout(500)
+const afterPressing = await readOpened(wadPage)
+
+check('a door in a map from a file opens when the page is told to open it', () => {
+  assert(beforeOpening.doorState === 'shut', `the door arrived as "${beforeOpening.doorState}"`)
+  assert(atTheDoor.doorState === 'shut', 'walking up to the door opened it without being asked')
+  assert(
+    afterPressing.doorState !== 'shut',
+    `pressing the door left it "${afterPressing.doorState}"`,
+  )
+  // And the map did not end: a door is not an exit, and the branch that looks
+  // for a switch must not fire when a door was found.
+  assert(!afterPressing.complete, 'opening a door finished the level')
+})
+
 check('pushing the stick walks the player', () => {
   // The whole point of the touch work: without this the controls could be
   // drawn, styled and wired to nothing, and every other check would still pass

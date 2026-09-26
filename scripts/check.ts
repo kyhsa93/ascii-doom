@@ -20,6 +20,7 @@ import {
   buildLevel,
   castRay,
   insideSector,
+  lineInFront,
   lineOfSight,
   sectorAt,
   type Line,
@@ -35,7 +36,7 @@ import {
   rowOfHeight,
   type View,
 } from '../src/columns/render.ts'
-import { UNITS_PER_METRE, mapNames, readMap } from '../src/columns/wad.ts'
+import { UNITS_PER_METRE, mapNames, readMap, type LineSpecial } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
 import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
@@ -55,7 +56,7 @@ import {
   restartLevel,
   startLevel,
 } from '../src/game/campaign.ts'
-import { makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import { finishNow, makeGoal, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { HURT_INTERVAL, bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
 import { DEADZONE, IDLE, keyboardIntent, mergeIntents, touchIntent } from '../src/game/input.ts'
 import { loadLevel } from '../src/game/levels.ts'
@@ -1536,21 +1537,94 @@ test('a map whose exit is a switch stays unfinishable, and says so by staying sh
   assert(!reachExit(switched.goal, -1, 1 / 60), 'walking off the edge of the map finished it')
 })
 
+/**
+ * A line special, for checks that only care about the number on it.
+ *
+ * `LineSpecial` carries the line itself now, because a switch is a piece of
+ * wall rather than a room and has to be found by what you are facing. Nothing
+ * below needs that: `doorsFrom` and `exitSectorFrom` read the special, the tag
+ * and what lies behind, and never the geometry. So the line here is a stub, and
+ * saying so is the point -- an assertion that came to depend on these
+ * coordinates would be resting on nothing.
+ */
+function spec(special: number, back: number | null, tag = 0): LineSpecial {
+  return {
+    special,
+    tag,
+    front: 0,
+    back,
+    line: { ax: 0, ay: 0, bx: 1, by: 0, front: 0, back, material: 'wall', blocking: false },
+  }
+}
+
 test('only a line with somewhere beyond it can be the way out', () => {
-  assert(exitSectorFrom([{ special: 52, tag: 0, front: 0, back: 1 }]) === 1, 'a walk-over exit leads nowhere')
+  assert(exitSectorFrom([spec(52, 1)]) === 1, 'a walk-over exit leads nowhere')
   assert(
-    exitSectorFrom([{ special: 52, tag: 0, front: 0, back: null }]) === null,
+    exitSectorFrom([spec(52, null)]) === null,
     'a line with nothing on its far side became the way out',
   )
-  assert(exitSectorFrom([{ special: 11, tag: 0, front: 0, back: 1 }]) === null, 'a switch became a walk-over exit')
+  assert(exitSectorFrom([spec(11, 1)]) === null, 'a switch became a walk-over exit')
   assert(exitSectorFrom([]) === null, 'a map with no specials at all found an exit')
 
   for (const special of walkOverExitSpecials()) {
     assert(
-      exitSectorFrom([{ special, tag: 0, front: 0, back: 1 }]) === 1,
+      exitSectorFrom([spec(special, 1)]) === 1,
       `special ${special} is in the table and finishes nothing`,
     )
   }
+})
+
+test('a map whose exit is a switch collects the wall you press', () => {
+  // Here the identity of the line matters, which is why this cannot use the
+  // stub above: the page finds a switch by asking what the body is facing and
+  // comparing it against this set, so it has to be the very object the ray
+  // caster will hand back.
+  const bytes = tinyWad('E1M1', true, '', [], 11, false)
+  const state = wadLevelState(bytes, 'E1M1')
+
+  assert(state.exitLines.size === 1, `one switch in the file, ${state.exitLines.size} collected`)
+  const pressed = [...state.exitLines][0]!
+  // Within one parse, and that matters: reading the same bytes twice builds
+  // two sets of line objects, so a line from one can never be found among the
+  // other's. That is how this check failed first time round, while the code
+  // it was written to watch was correct all along.
+  assert(state.level.lines.includes(pressed), 'the collected line is not one of the map’s own')
+
+  // And it is not a walk-over exit, so nothing finishes by wandering about.
+  assert(state.goal.exitSector < 0, 'a switch exit also became a room you can walk into')
+  assert(!reachExit(state.goal, 0, 1 / 60), 'a switch map finished by standing somewhere')
+  assert(!reachExit(state.goal, 1, 1 / 60), 'a switch map finished by standing somewhere else')
+})
+
+test('a switch is found by facing it, not by what lies behind it', () => {
+  // The reason this needed something new. `moverInFront` answers "which room is
+  // across the line you face", and thirty-two of the thirty-five switch lines
+  // in these files have no room across them at all.
+  const bytes = tinyWad('E1M1', true, '', [], 11, false)
+  const state = wadLevelState(bytes, 'E1M1')
+  const player = state.player
+
+  // The wall between the rooms runs north from (128, 0); the start is west of
+  // it looking east.
+  const facing = lineInFront(state.level, player.x, player.y, 0, 40)
+  assert(facing !== null, 'looking down the room found no wall at all')
+  assert(state.exitLines.has(facing), 'the wall in front is not the switch the map placed')
+
+  // Behind is a different answer, and for most switches there is no answer.
+  const behind = lineInFront(state.level, player.x, player.y, Math.PI, 40)
+  assert(behind !== facing, 'facing the other way found the same line')
+})
+
+test('a level ends once, however it is ended', () => {
+  // `finishNow` exists so that pressing a switch and walking into a room do not
+  // become two different ideas of what being finished means. It keeps the
+  // one-off `reachExit` keeps.
+  const state = wadLevelState(tinyWad('E1M1', true, '', [], 11, false), 'E1M1')
+  assert(!state.goal.reached, 'the map arrived already finished')
+  assert(finishNow(state.goal), 'pressing the switch did not finish the map')
+  assert(state.goal.reached, 'the map does not know it was finished')
+  assert(!finishNow(state.goal), 'the map finished a second time')
+  assert(!reachExit(state.goal, 1, 1 / 60), 'walking in afterwards finished it again')
 })
 
 test('a door in a file becomes a door here', () => {
@@ -1612,14 +1686,14 @@ test('only the line specials this game can honour become doors', () => {
   // the table resolves, so a typo is not a door that silently never appears.
   const level = wadLevelState(tinyWad('E1M1', true, '', [], 1), 'E1M1').level
   assert(
-    doorsFrom(level, [{ special: 1, tag: 7, front: 0, back: 1 }]).length === 0,
+    doorsFrom(level, [spec(1, 1, 7)]).length === 0,
     'a tagged line was treated as a door behind itself',
   )
   assert(
-    doorsFrom(level, [{ special: 1, tag: 0, front: 0, back: null }]).length === 0,
+    doorsFrom(level, [spec(1, null)]).length === 0,
     'a line with nothing behind it became a door',
   )
-  assert(doorsFrom(level, [{ special: 97, tag: 0, front: 0, back: 1 }]).length === 0, 'a teleport became a door')
+  assert(doorsFrom(level, [spec(97, 1)]).length === 0, 'a teleport became a door')
   assert(manualDoorSpecials().length > 0, 'no specials are treated as doors at all')
 })
 
@@ -1633,10 +1707,7 @@ test('a room gets one door however many of its lines carry the special', () => {
   // This existed as a guard with nothing behind it until a falsifying run
   // removed it and every check stayed green.
   const level = wadLevelState(tinyWad('E1M1', true, '', [], 1), 'E1M1').level
-  const twice = doorsFrom(level, [
-    { special: 1, tag: 0, front: 0, back: 1 },
-    { special: 1, tag: 0, front: 0, back: 1 },
-  ])
+  const twice = doorsFrom(level, [spec(1, 1), spec(1, 1)])
   assert(twice.length === 1, `one room, two lines, ${twice.length} doors`)
 })
 
@@ -1649,7 +1720,7 @@ test('a door that would open downward is not made', () => {
   // The fixture without a door has both rooms at the same ceiling, which is
   // exactly that case.
   const flat = wadLevelState(tinyWad('E1M1'), 'E1M1').level
-  const made = doorsFrom(flat, [{ special: 1, tag: 0, front: 0, back: 1 }])
+  const made = doorsFrom(flat, [spec(1, 1)])
   assert(made.length === 0, `a room with no headroom to give produced ${made.length} doors`)
 })
 

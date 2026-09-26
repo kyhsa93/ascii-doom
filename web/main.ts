@@ -14,7 +14,7 @@ import { vec3 } from '../vendor/ascii-engine/src/core/vec3.ts'
 import { PreSurface } from '../vendor/ascii-engine/src/web/pre.ts'
 import { drawAutomap } from '../src/columns/automap.ts'
 import { bite, hurtOf, makeHazard } from '../src/game/hazard.ts'
-import { insideSector, type Line, type Sector } from '../src/columns/level.ts'
+import { insideSector, lineInFront, type Line, type Sector } from '../src/columns/level.ts'
 import { DEFAULT_FOV_Y, renderView, type View } from '../src/columns/render.ts'
 import { drawBillboards, type Billboard } from '../src/columns/sprite.ts'
 import { billboardOf, damageActor, isAlive, provoke, updateActors } from '../src/game/ai.ts'
@@ -27,7 +27,7 @@ import {
   restartLevel,
   startLevel as beginLevel,
 } from '../src/game/campaign.ts'
-import { deathLines, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
+import { deathLines, finishNow, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import { keyboardIntent, mergeIntents, touchIntent, type TouchState } from '../src/game/input.ts'
 import { loadLevel, type LevelState } from '../src/game/levels.ts'
@@ -441,8 +441,24 @@ function step(): void {
   // The lock is on the door rather than here, so this cannot forget to check.
   if (intent.use) {
     const target = moverInFront(level, movers, player.sector, player.x, player.y, player.angle)
-    if (target && !activate(target, carrier.keys)) {
-      say(`locked — needs the ${target.kind.requiresKey} key`)
+    if (target) {
+      if (!activate(target, carrier.keys)) say(`locked — needs the ${target.kind.requiresKey} key`)
+    } else if (state.exitLines.size > 0) {
+      // A door is looked for first and this is the fallback. That ordering is
+      // belt and braces rather than a rule anybody can observe: one line
+      // carries one special, so a press finds a door or a switch and never
+      // both. Taking the door branch away does not prove the order -- it just
+      // leaves nothing to do -- and there is no fixture that could prove it,
+      // because the format cannot produce the case.
+      //
+      // A switch is the piece of wall itself rather than the room behind it --
+      // most of them have no room behind them -- so this asks what is being
+      // faced rather than what lies across it.
+      const facing = lineInFront(level, player.x, player.y, player.angle)
+      if (facing && state.exitLines.has(facing) && finishNow(goal)) {
+        advanceIn = 3.5
+        say('that was the last of them')
+      }
     }
   }
   // A lift is called by standing on it. Nothing else needs a button, and a

@@ -214,6 +214,29 @@ export function buildLevel(defs: readonly SectorDef[]): Level {
 }
 
 /** Whether a map point lies inside a sector's outline. */
+/** Reused so that facing a wall every frame does not allocate. */
+const facingHits: RayHit[] = []
+
+/**
+ * The line a body is looking straight at, within arm's reach.
+ *
+ * `moverInFront` answers a related but different question -- which *room* lies
+ * across the line you are facing -- and that is no use for a piece of wall with
+ * nothing behind it. A switch is one of those: you press the wall itself. On
+ * the maps this was written for, thirty-two of the thirty-five lines that end a
+ * level by being pressed have no room behind them at all.
+ */
+export function lineInFront(
+  level: Level,
+  x: number,
+  y: number,
+  angle: number,
+  reach = 1.8,
+): Line | null {
+  castRay(level, x, y, Math.cos(angle), Math.sin(angle), reach, facingHits)
+  return facingHits[0]?.line ?? null
+}
+
 export function insideSector(sector: Sector, x: number, y: number): boolean {
   if (x < sector.minX || x > sector.maxX || y < sector.minY || y > sector.maxY) return false
   // Crossing count along +x. Points exactly on an edge are not worth special

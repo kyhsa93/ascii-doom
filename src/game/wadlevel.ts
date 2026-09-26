@@ -2,11 +2,16 @@
  * A map read from a WAD, as something this game can run.
  *
  * The parser hands back geometry and a place to stand. This wraps that in the
- * state the page steps every frame -- which mostly means being honest about
- * everything a WAD map does not have here: no creatures, no supplies, no doors
- * and no way to finish. It is a place to walk around in, and saying so in the
- * types rather than in a comment is why the lists below are empty rather than
- * absent.
+ * state the page steps every frame, filling in what each importer can answer
+ * for: the creatures, the supplies, the doors you press open, and the two ways
+ * a map can end. What none of them can answer for is left empty rather than
+ * guessed at -- there are no lifts, no switches that act on a tagged room, and
+ * no map that arrives with something this game has no notion of.
+ *
+ * This comment said "no creatures, no supplies, no doors and no way to finish"
+ * for four rounds after each of those stopped being true. Kept as a note to
+ * whoever writes the next importer: the header is the first thing to go stale
+ * and the last thing anybody reads.
  *
  * The player is built by the same `spawnPlayer` the authored levels use. A body
  * made a second way here would drift from that one -- a different radius, a
@@ -22,7 +27,7 @@ import { makeMover } from './movers.ts'
 import type { Pickup } from './pickups.ts'
 import { spawnPlayer } from './player.ts'
 import { doorsFrom } from './waddoors.ts'
-import { exitSectorFrom } from './wadexit.ts'
+import { exitSectorFrom, switchExitLines } from './wadexit.ts'
 import { supplyFor } from './waditems.ts'
 import { creatureFor } from './wadthings.ts'
 
@@ -127,6 +132,13 @@ export function wadLevelState(bytes: Uint8Array, mapName: string): LevelState {
      * keeps the sentinel and stays unfinishable, which is half of them.
      */
     goal: makeGoal(exitSectorFrom(map.specials) ?? NO_EXIT),
+    /**
+     * And the ones that end it by being pressed, which a sector cannot say.
+     *
+     * A map may have both kinds or neither; the two are read separately and
+     * neither stands in for the other.
+     */
+    exitLines: switchExitLines(map.specials),
     liftSectors: [],
   }
 }
