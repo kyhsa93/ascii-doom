@@ -36,7 +36,22 @@ export interface SectorDef {
 }
 
 export interface Sector {
+  /**
+   * The outline as authored. Kept for reference; nothing reads it to decide
+   * anything, and a level built from a file rather than from source may leave
+   * it empty.
+   */
   readonly polygon: readonly (readonly [number, number])[]
+  /**
+   * The sector's boundary, as unordered segments.
+   *
+   * What "inside" is actually decided by. A crossing count does not care which
+   * segment belongs to which loop, so this can describe a room with a pillar in
+   * it -- several closed rings -- where an ordered outline can only describe
+   * one. Rooms of that shape are a fifth to a quarter of the sectors in a real
+   * Doom map, so the distinction is not hypothetical.
+   */
+  readonly edges: readonly (readonly [number, number, number, number])[]
   floor: number
   ceiling: number
   light: number
@@ -125,6 +140,10 @@ export function buildLevel(defs: readonly SectorDef[]): Level {
     }
     return {
       polygon: def.polygon,
+      edges: def.polygon.map((point, i) => {
+        const next = def.polygon[(i + 1) % def.polygon.length]!
+        return [point[0], point[1], next[0], next[1]] as const
+      }),
       floor: def.floor,
       ceiling: def.ceiling,
       light: def.light,
@@ -186,12 +205,14 @@ export function insideSector(sector: Sector, x: number, y: number): boolean {
   if (x < sector.minX || x > sector.maxX || y < sector.minY || y > sector.maxY) return false
   // Crossing count along +x. Points exactly on an edge are not worth special
   // handling: the player has a radius and never stands on a mathematical line.
-  const poly = sector.polygon
+  //
+  // Over the edges rather than an ordered outline, which is what lets a room
+  // with a pillar in it answer correctly: the count runs over every ring the
+  // sector has, so standing where the pillar is comes out even, and even is
+  // outside.
   let inside = false
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i]!
-    const [xj, yj] = poly[j]!
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside
+  for (const [ax, ay, bx, by] of sector.edges) {
+    if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside
   }
   return inside
 }

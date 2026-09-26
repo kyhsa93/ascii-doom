@@ -19,9 +19,11 @@ import {
   acrossFrom,
   buildLevel,
   castRay,
+  insideSector,
   lineOfSight,
   sectorAt,
   type Line,
+  type Sector,
   type SectorDef,
 } from '../src/columns/level.ts'
 import {
@@ -1448,6 +1450,52 @@ const SLUDGE_ROOM: SectorDef[] = [
     floorMaterial: 'sludge',
   },
 ]
+
+test('a room with a pillar in it knows the pillar is not part of the room', () => {
+  // The capability an ordered outline cannot have. A sector is its boundary,
+  // and a boundary can be several closed rings -- an outer wall and a column
+  // standing in the middle of the floor. A crossing count over all of them
+  // comes out even inside the column, and even is outside.
+  //
+  // Built here rather than authored, because `SectorDef` takes one outline and
+  // there is deliberately no sugar yet for a second ring: a level read from a
+  // file supplies edges directly and never needs it.
+  const withPillar: Sector = {
+    // The outer ring is given as an outline as well, so that taking the edges
+    // away leaves a sector an ordered outline *can* describe. Without that,
+    // reverting this rule fails on the first assertion -- everything outside --
+    // and never reaches the one about the pillar, which is the claim.
+    polygon: [
+      [0, 0],
+      [10, 0],
+      [10, 10],
+      [0, 10],
+    ],
+    edges: [
+      // The room.
+      [0, 0, 10, 0], [10, 0, 10, 10], [10, 10, 0, 10], [0, 10, 0, 0],
+      // The pillar standing in it.
+      [4, 4, 6, 4], [6, 4, 6, 6], [6, 6, 4, 6], [4, 6, 4, 4],
+    ],
+    floor: 0,
+    ceiling: 3,
+    light: 1,
+    floorMaterial: 'floor',
+    ceilingMaterial: 'ceiling',
+    hurt: 0,
+    tag: null,
+    minX: 0,
+    minY: 0,
+    maxX: 10,
+    maxY: 10,
+  }
+
+  assert(insideSector(withPillar, 2, 2), 'a corner of the room was not in the room')
+  assert(insideSector(withPillar, 8, 8), 'the far side of the room was not in the room')
+  assert(!insideSector(withPillar, 5, 5), 'the middle of the pillar counts as floor you can stand on')
+  assert(!insideSector(withPillar, -1, 5), 'a point outside the room was inside it')
+  assert(!insideSector(withPillar, 20, 5), 'the bounding box let a distant point through')
+})
 
 test('a hurting floor is a property of the sector, carried through the build', () => {
   // The definition is a template and the level is built from it, so a field

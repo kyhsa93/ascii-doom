@@ -632,11 +632,14 @@ function frame(now: number): void {
 function somewhereInside(sector: Sector): { x: number; y: number } | null {
   let sx = 0
   let sy = 0
-  for (const [px, py] of sector.polygon) {
-    sx += px
-    sy += py
+  // Over the edges rather than the outline, because a sector built from a file
+  // has edges and no outline, and the average of the corners is the same number
+  // either way for a closed ring.
+  for (const [ax, ay] of sector.edges) {
+    sx += ax
+    sy += ay
   }
-  const middle = { x: sx / sector.polygon.length, y: sy / sector.polygon.length }
+  const middle = { x: sx / sector.edges.length, y: sy / sector.edges.length }
   if (insideSector(sector, middle.x, middle.y)) return middle
 
   const steps = 16
