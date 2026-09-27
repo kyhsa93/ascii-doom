@@ -2999,49 +2999,50 @@ for (const [label, options] of [
   reachable.push({
     name: label,
     pick: await page.evaluate(() => {
-      const el = document.getElementById('pick')
-      if (!el) return null
-      const box = el.getBoundingClientRect()
-      if (box.width === 0 || box.height === 0) return { width: 0, height: 0, topmost: 'nothing', overPicture: 0 }
-      const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+      const input = document.getElementById('wad')
       const screen = document.getElementById('screen')!.getBoundingClientRect()
-      const across = Math.max(0, Math.min(screen.right, box.right) - Math.max(screen.left, box.left))
-      const down = Math.max(0, Math.min(screen.bottom, box.bottom) - Math.max(screen.top, box.top))
-      return {
-        width: Math.round(box.width),
-        height: Math.round(box.height),
-        // What a finger landing there would actually hit, which on a touch
-        // screen is the question: the controls cover the whole viewport.
-        topmost: top === null ? 'nothing' : `${top.tagName.toLowerCase()}#${top.id}`,
-        overPicture: Math.round(across * down),
+      /*
+       * Anything sitting on top of the picture, whatever it is.
+       *
+       * This used to measure one named button, because there was one: a file
+       * picker that spent a while being moved around the view looking for a
+       * corner nothing needed. It is a line on the title now, so what is worth
+       * asking is the general form of what was wrong with it -- is any control
+       * covering the game.
+       */
+      const over: string[] = []
+      for (const el of Array.from(document.body.querySelectorAll('*'))) {
+        if (el.id === 'screen' || el.id === 'pad' || el.id === '') continue
+        const box = el.getBoundingClientRect()
+        if (box.width === 0 || box.height === 0) continue
+        if (getComputedStyle(el).position !== 'fixed') continue
+        const across = Math.max(0, Math.min(screen.right, box.right) - Math.max(screen.left, box.left))
+        const down = Math.max(0, Math.min(screen.bottom, box.bottom) - Math.max(screen.top, box.top))
+        if (across * down > 0) over.push(`${el.tagName.toLowerCase()}#${el.id}`)
       }
+      return { input: input === null ? 'missing' : 'present', over }
     }),
   })
   await ctx.close()
 }
 
-check('a player can reach the file picker on any screen', () => {
+check('a file of your own can still be opened, without a button over the game', () => {
+  /*
+   * The picker is the browser's own and the page only asks for it, so what
+   * there is to check here is that the input is still in the page for the title
+   * line to click -- and that nothing is sitting on the picture.
+   *
+   * It was a button in a corner of the view. That was worth removing rather
+   * than moving again: a game does not put a file picker on top of itself, and
+   * choosing what to play already lives on the title.
+   */
   for (const { name, pick } of reachable) {
-    const seen = pick as { width: number; height: number; topmost: string; overPicture: number } | null
-    assert(seen !== null, `${name}: there is no file picker in the page at all`)
+    const seen = pick as { input: string; over: string[] }
+    assert(seen.input === 'present', `${name}: there is no file input in the page at all`)
     assert(
-      seen.width > 0 && seen.height > 0,
-      `${name}: the file picker is ${seen.width} by ${seen.height}, so there is no way to open a WAD`,
+      seen.over.length === 0,
+      `${name}: ${seen.over.join(', ')} ${seen.over.length === 1 ? 'is' : 'are'} sitting over the picture`,
     )
-    assert(
-      seen.topmost === 'label#pick',
-      `${name}: a tap in the middle of the file picker lands on ${seen.topmost} instead`,
-    )
-  }
-})
-
-check('the file picker keeps off the picture on a phone', () => {
-  // A desktop has a row at the foot of the page for this and the overlap there
-  // is that row. A touch screen has no such row, and a button sitting over the
-  // view would be covering the game to offer something you use once.
-  for (const { name, pick } of reachable.filter((entry) => entry.name !== 'desktop')) {
-    const seen = pick as { overPicture: number }
-    assert(seen.overPicture === 0, `${name}: the file picker covers ${seen.overPicture} square pixels of the view`)
   }
 })
 
@@ -3205,14 +3206,18 @@ check('a screen with room for the bar gets it', () => {
   const desktop = fronts.find((f) => f.name === 'desktop')!
   const phone = fronts.find((f) => f.name === 'phone')!
   /*
-   * Seven, which is the original's bar: the ammunition, the health, the arms you
-   * are holding, the armour, the keys, the four reserves, and -- this game's own
-   * -- what you are under.
+   * Eight, which is the original's bar: the ammunition, the health, the arms you
+   * are holding, the face, the armour, the keys, the four reserves, and -- this
+   * game's own -- what you are under.
    *
-   * The level's name is no longer among them. The original does not put it on the
-   * bar, and the panel it had been using is the one the arms display needed.
+   * The face is the only one with no label over it. It is the one panel that
+   * says what it is by being itself, and a word above a face is a word
+   * explaining a face.
+   *
+   * The level's name is not among them. The original does not put it on the bar,
+   * and the panel it had been using is the one the arms display needed.
    */
-  assert(desktop.playing.panels === 7, `a 163-column grid drew ${desktop.playing.panels} panels`)
+  assert(desktop.playing.panels === 8, `a 163-column grid drew ${desktop.playing.panels} panels`)
   // A phone used to keep the single line because 49 columns cannot hold four
   // panels. Its characters are smaller now and its grid is 80 wide, which is
   // over the seventy-two the bar needs -- so it gets the bar too. The claim
@@ -3235,8 +3240,19 @@ check('a screen with room for the bar gets it', () => {
     desktop.playing.foot.includes('HEALTH') && desktop.playing.foot.includes('ARMS'),
     `the foot of the screen reads "${desktop.playing.foot}"`,
   )
+  /*
+   * Wall glyphs showing through the bar, which is what an unwiped bar looks
+   * like: HEALTH and 93 tangled into a stripe of per-cent signs.
+   *
+   * Four in a row used to be the signal and is not any more, because the face
+   * is made of the same characters -- its widest row is `=####%+`, which is four
+   * of them. Eight, because a wall bleeding through does not produce a run of
+   * eight, it produces a run the width of the panel: the wall family is dense at
+   * every step a lit surface reaches, so the failure this catches fills whole
+   * rows rather than making a smudge seven columns wide.
+   */
   assert(
-    !/[%#]{4}/.test(desktop.playing.foot),
+    !/[%#]{8}/.test(desktop.playing.foot),
     `the bar has wall glyphs run through it: "${desktop.playing.foot}"`,
   )
 })

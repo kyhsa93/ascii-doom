@@ -22,6 +22,7 @@ import type { AddressInfo } from 'node:net'
 import { extname, join, normalize, resolve } from 'node:path'
 import { chromium } from 'playwright'
 import { wadLevelState } from '../src/game/wadlevel.ts'
+import { sectorAt } from '../src/columns/level.ts'
 
 const DIST = resolve(process.cwd(), 'dist')
 const SHOTS = resolve(process.cwd(), 'shots')
@@ -46,16 +47,49 @@ const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}${BASE_P
 
 const map = process.argv[2] ?? 'MAP03'
 const want = process.argv[3] ?? 'tallest'
+/** A phone, when asked for one: the shots are of the thing most people hold. */
+const onPhone = process.argv[4] === 'phone'
+const size = onPhone ? { width: 390, height: 844 } : { width: 1000, height: 680 }
 
 // Worked out here, where the level can be built without a browser: which piece
 // of furniture to walk up to, and where it is.
 const built = wadLevelState(new Uint8Array(readFileSync(`web/public/maps/${map}.wad`)), map, 3)
 const spawn = built.player
+/**
+ * Somewhere under an open sky, when asked for one.
+ *
+ * Found from the lines that touch a sky sector rather than from its shape: a
+ * sector's polygon is empty for most of what a file brings, which is how an
+ * earlier attempt at this put the camera nowhere and measured nothing.
+ */
+function underTheSky(): { x: number; y: number; sprite: { height: number }; radius: number; z: number } | null {
+  for (const line of built.level.lines) {
+    for (const side of [line.front, line.back]) {
+      if (side === null || side < 0 || !built.level.sectors[side]?.sky) continue
+      const mx = (line.ax + line.bx) / 2
+      const my = (line.ay + line.by) / 2
+      const ex = line.bx - line.ax
+      const ey = line.by - line.ay
+      const len = Math.hypot(ex, ey) || 1
+      for (const push of [0.8, 1.6, 3, -0.8, -1.6, -3]) {
+        const x = mx + (-ey / len) * push
+        const y = my + (ex / len) * push
+        if (sectorAt(built.level, x, y) === side) return { x, y, sprite: { height: 0 }, radius: 0, z: 0 }
+      }
+    }
+  }
+  return null
+}
+
 const ranked = built.decor
   .map((d) => ({ d, dist: Math.hypot(d.x - spawn.x, d.y - spawn.y) }))
   .filter((n) => n.dist > 1.5 && n.dist < 30)
   .sort((a, b) => (want === 'tallest' ? b.d.sprite.height - a.d.sprite.height : a.dist - b.dist))
-const target = ranked[0]
+const sky = want === 'sky' ? underTheSky() : null
+const target =
+  sky === null
+    ? ranked[0]
+    : { d: sky as unknown as (typeof built.decor)[number], dist: Math.hypot(sky.x - spawn.x, sky.y - spawn.y) }
 if (target === undefined) { console.log(`${map}: nothing within reach`); process.exit(0) }
 const bearing = Math.atan2(target.d.y - spawn.y, target.d.x - spawn.x)
 console.log(
@@ -64,7 +98,10 @@ console.log(
 )
 
 const browser = await chromium.launch()
-const page = await browser.newPage({ viewport: { width: 1000, height: 680 } })
+const page = await browser.newPage({
+  viewport: size,
+  ...(onPhone ? { hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : {}),
+})
 page.on('pageerror', (e) => console.error('page error:', e.message))
 await page.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(1200)
@@ -97,11 +134,11 @@ for (let tries = 0; tries < 40; tries++) {
   await page.waitForTimeout(60)
 }
 await page.waitForTimeout(200)
-await page.screenshot({ path: join(SHOTS, `${map}-facing.png`) })
+await page.screenshot({ path: join(SHOTS, `${map}${onPhone ? '-phone' : ''}-facing.png`) })
 console.log('facing it:', JSON.stringify(await where()))
 
 // And closer, stopping when the thing itself stops us.
-for (let step = 0; step < 60; step++) {
+for (let step = 0; step < 120; step++) {
   await page.keyboard.down('w'); await page.waitForTimeout(150); await page.keyboard.up('w')
   await page.waitForTimeout(60)
   const now = await where()
@@ -113,6 +150,6 @@ console.log(
   `ended ${Math.hypot(target.d.x - ended.x, target.d.y - ended.y).toFixed(2)}m from it ` +
     `(its radius is ${target.d.radius.toFixed(2)}, yours 0.35)`,
 )
-await page.screenshot({ path: join(SHOTS, `${map}-close.png`) })
+await page.screenshot({ path: join(SHOTS, `${map}${onPhone ? '-phone' : ''}-close.png`) })
 await browser.close()
 server.close()

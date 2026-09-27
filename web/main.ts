@@ -62,7 +62,7 @@ import {
   TWINBORE_FIRING,
   TWINBORE_HELD,
 } from '../src/game/freedoomart.ts'
-import { BAR_ROWS, armsRows, centreOf, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
+import { BAR_ROWS, armsRows, centreOf, faceFor, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
@@ -398,6 +398,16 @@ function titleMenu(cursor?: number): Menu {
     { label: 'the cistern', action: { kind: 'level', index: 1 } },
     // One line rather than sixty-eight, and disabled until the list arrives.
     { label: 'the maps that ship', action: { kind: 'shipped' }, enabled: shipped.length > 0 },
+    /*
+     * And a file of your own, which used to be a button floating over the
+     * picture.
+     *
+     * It spent a while being moved around that picture -- out of the legend
+     * because the legend is hidden for touch, then into a corner no thumb needs
+     * during a fight -- and the answer was that a game does not put a file
+     * picker on top of itself. Choosing what to play already lives here.
+     */
+    { label: 'open a WAD', action: { kind: 'open' }, enabled: wadInput !== null },
     // Needs the maps for the same reason: both sides play one that ships.
     { label: 'play somebody', action: { kind: 'meet' }, enabled: shipped.length > 0 },
     /*
@@ -1557,6 +1567,12 @@ function step(): void {
         // anything else is two behaviours that drift.
         titleUp = false
         applyCheat(action.kind)
+      } else if (action?.kind === 'open') {
+        // The picker is the browser's, so all this does is ask for it. What
+        // comes back arrives at the input's own listener, the same way it did
+        // when a button opened it.
+        wadInput?.click()
+        say('choose a file')
       } else if (action?.kind === 'shipped') {
         // The same shape the file picker produces, so picking a map that ships
         // and picking one out of a file you opened look and behave alike.
@@ -2502,6 +2518,13 @@ function frame(now: number): void {
     { label: weapon.name.toUpperCase(), value: reserve, priority: 6 },
     { label: 'HEALTH', value: `${carrier.health}%`, priority: 7 },
     { label: 'ARMS', value: '', lines: armsRows(carrier.weapons), priority: 3 },
+    /*
+     * The face, in the middle, where the original puts it.
+     *
+     * No label over it: it is the one panel that says what it is by being
+     * itself, and a word above a face is a word explaining a face.
+     */
+    { label: '', value: '', face: faceFor(carrier.health, carrier.maxHealth, godly), priority: 6 },
     { label: 'ARMOR', value: `${Math.round(carrier.armour)}%`, priority: 5 },
     { label: 'KEYS', value: '', lines: keyRows(carrier.keys), priority: 4 },
     { label: 'STOCK', value: '', lines: stockRows(carrier), priority: 2 },
@@ -2527,6 +2550,20 @@ function frame(now: number): void {
     drawText(fb, 0, bar.top, rule, { color: vec3(0.32, 0.3, 0.34) })
     for (const panel of bar.panels) {
       const middleOf = centreOf(panel)
+      if (panel.face !== undefined) {
+        // Drawn rather than written, and centred on the whole bar below the
+        // rule: it is a picture, so it carries a colour a cell at a time and
+        // `drawText` would flatten it to one.
+        const wide = panel.face.rows[0]?.length ?? 0
+        drawSprite(fb, panel.face, middleOf - Math.floor(wide / 2), bar.top + 1)
+        if (panel.col > 0) {
+          for (let r = 1; r < bar.rows; r++) {
+            const row = bar.top + r
+            if (row >= 0 && row < fb.height) fb.chars[row * fb.width + panel.col] = 124
+          }
+        }
+        continue
+      }
       drawText(fb, middleOf, bar.top + 1, panel.label, { color: vec3(0.5, 0.48, 0.44), align: 'center' })
       for (let extra = 0; extra < panel.lines.length; extra++) {
         const line = panel.lines[extra]!

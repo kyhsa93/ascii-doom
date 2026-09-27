@@ -57,7 +57,16 @@ import { lightsFrom, lightSpecials } from '../src/game/wadlights.ts'
 import { stairsFrom, stairSpecials } from '../src/game/wadstairs.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
-import { BAR_ROWS, NARROWEST, armsRows, centreOf, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
+import {
+  BAR_ROWS,
+  NARROWEST,
+  armsRows,
+  centreOf,
+  faceFor,
+  keyRows,
+  layoutBar,
+  stockRows,
+} from '../src/game/statusbar.ts'
 import { chosen, menuLayout, menuWindow, moveCursor, openMenu, type MenuItem } from '../src/game/menu.ts'
 import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { TROOPER } from '../src/game/freedoomart.ts'
@@ -1544,14 +1553,24 @@ test('an outdoor room is read as open air, not as a ceiling', () => {
   assert(!unnamed.level.sectors[0]!.sky, 'a sector with no flat named at all came back as sky')
 })
 
-test('sky is drawn as nothing, and takes its rows with it', () => {
-  // The behaviour, not the flag. Same map, same light, same geometry -- the
-  // only difference is what the ceiling claims to be, so anything that changes
-  // in the frame is that claim and nothing else.
-  //
-  // Counting drawn cells rather than measuring rows: the rows a ceiling owns
-  // are still owned when it is sky, because everything nearer has to keep
-  // clipping against them. What changes is whether they are painted.
+test('sky is drawn as sky, and still takes its rows with it', () => {
+  /*
+   * This said "drawn as nothing" for most of this project's life, and the
+   * reasoning under it was in two halves. The half that matters is that the
+   * rows a ceiling owns are still owned when it is sky, because everything
+   * nearer has to keep clipping against them. The other half -- that a sky is
+   * not a surface, so nothing is the honest thing to draw -- costs a fifth of
+   * the picture on a map with a courtyard: standing in a sky sector on MAP02
+   * and looking one way left twenty per cent of the frame blank, and on E1M1
+   * eleven.
+   *
+   * So it is painted now, flat, in a family of its own, and with no depth
+   * written -- which is how the half that matters survives: a sky is infinitely
+   * far, so everything drawn afterwards is in front of it.
+   *
+   * The behaviour, not the flag. Same map, same light, same geometry -- the
+   * only difference is what the ceiling claims to be.
+   */
   const shot = (sky: boolean) => {
     const map = readMap(tinyWad('E1M1', true, sky ? 'F_SKY1' : 'FLOOR4_8'), 'E1M1')
     const spawn = map.spawn!
@@ -1565,16 +1584,33 @@ test('sky is drawn as nothing, and takes its rows with it', () => {
       {},
     )
     let drawn = 0
+    let depthless = 0
+    const seen = new Set<string>()
     for (let i = 0; i < fb.width * fb.height; i++) {
-      if ((fb.chars[i] ?? 32) !== 32 && (fb.chars[i] ?? 0) !== 0) drawn++
+      const ch = fb.chars[i] ?? 32
+      if (ch !== 32 && ch !== 0) {
+        drawn++
+        seen.add(String.fromCharCode(ch))
+      }
+      if ((fb.depth[i] ?? 0) === 0) depthless++
     }
-    return drawn
+    return { drawn, depthless, glyphs: [...seen].sort().join('') }
   }
 
   const roofed = shot(false)
   const open = shot(true)
-  assert(roofed > 0, 'the indoor version drew nothing, so there is nothing to compare')
-  assert(open < roofed, `open air drew ${open} cells against a ceiling's ${roofed}`)
+  assert(roofed.drawn > 0, 'the indoor version drew nothing, so there is nothing to compare')
+  // Both are painted, so this can no longer ask for fewer cells. What it asks
+  // instead is that the claim changed something: a sky ceiling and a solid one
+  // do not come out of the renderer looking the same.
+  assert(open.drawn > 0, 'open air drew nothing at all, so the sky is still a hole')
+  assert(
+    open.glyphs !== roofed.glyphs,
+    `a sky ceiling and a solid one drew the same characters: ${open.glyphs}`,
+  )
+  // And the rows are still owned, which is the half of the old reasoning that
+  // was load-bearing: nothing nearer may be overdrawn by what is behind it.
+  assert(open.depthless > roofed.depthless, 'the sky wrote a depth, so things behind it would draw in front')
 })
 
 test('a file that is not a WAD is refused rather than misread', () => {
@@ -4910,6 +4946,16 @@ test('surface classes are drawn with different glyphs', () => {
   assert(clashes.length === 0, clashes.join('; '))
 })
 
+/**
+ * The one entry in the material table that is not a surface.
+ *
+ * Two of the rules below are about how a surface changes as it gets further
+ * away, and the sky does not get further away: it is the same sky over a room
+ * ten paces off as over one a hundred, which is why it is drawn at a fixed step
+ * with no falloff at all. So it is exempt from both, by name.
+ */
+const NOT_A_SURFACE = 'sky'
+
 test('no two materials share a glyph, and none repeats one within itself', () => {
   /*
    * The second half is new and is the one that caught me.
@@ -4925,6 +4971,10 @@ test('no two materials share a glyph, and none repeats one within itself', () =>
       new Set(glyphs).size === glyphs.length,
       `${name} repeats a glyph in ${JSON.stringify(material.ramp)}`,
     )
+    // The sky spends nothing on distance, because it has none. Named rather
+    // than filtered, so the exemption reads as a claim about the sky instead of
+    // looking like somewhere the rule was quietly relaxed.
+    if (name === NOT_A_SURFACE) continue
     assert(glyphs.length >= 3, `${name} has only ${glyphs.length} glyphs to spend on distance`)
   }
 })
@@ -4935,6 +4985,7 @@ test('within one class, distance shows as a change of glyph', () => {
   // the family has to be wide enough that the light actually moves through it.
   const thin: string[] = []
   for (const [name, material] of Object.entries(MATERIALS)) {
+    if (name === NOT_A_SURFACE) continue
     const seen = new Set<number>()
     for (const distance of [1, 2, 4, 8, 16, 32]) {
       seen.add(rampChar(material.ramp, lightAt(1, distance)))
@@ -6951,6 +7002,49 @@ test('every thing the shipped maps place is answered by one of the tables', () =
 
 
 console.log('\nthe bar the original has')
+
+test('the face says how you are doing, and is not a fifth picture pretending to be one', () => {
+  /*
+   * The one thing on this bar that is not lettering, and it took three goes.
+   *
+   * It was measured as illegible, and that measurement was made by reading the
+   * baked rows as text -- which throws away the colour a cell at a time that
+   * carries most of a baked picture. Looked at again, on screen, in colour: it
+   * is still a warm blob with no eyes. What it does carry is *change*, and that
+   * is what this checks, because a face that never changes is a decoration.
+   */
+  const well = faceFor(100, 100, false)
+  const dying = faceFor(10, 100, false)
+  const dead = faceFor(0, 100, false)
+  const untouchable = faceFor(100, 100, true)
+
+  assert(well.rows.length > 0, 'the face is an empty picture')
+  assert(dying.rows.join('') !== well.rows.join(''), 'a dying face looks exactly like a healthy one')
+  assert(dead.rows.join('') !== dying.rows.join(''), 'a dead face looks exactly like a dying one')
+  assert(
+    untouchable.rows.join('') !== well.rows.join(''),
+    'nothing being able to touch you looks exactly like ordinary good health',
+  )
+  // Dead beats untouchable, because being dead is not a quantity of health.
+  assert(faceFor(0, 100, true).rows.join('') === dead.rows.join(''), 'a dead player was drawn as untouchable')
+
+  /*
+   * And how many the five bands actually amount to, stated rather than assumed.
+   *
+   * Four, at this size: the original separates its healthiest two by an eyebrow
+   * and there is no eyebrow in five rows of characters. The bands stay, because
+   * the arithmetic is the original's and taller art would separate them on its
+   * own -- but a check that said "five" would be describing the intention
+   * instead of the picture.
+   */
+  const bands = new Set<string>()
+  for (let health = 1; health <= 100; health++) bands.add(faceFor(health, 100, false).rows.join('|'))
+  assert(bands.size === 4, `the five health bands come out as ${bands.size} pictures rather than four`)
+
+  // Every band is reachable: the top one has to include the maximum itself, or
+  // a share of exactly one would index past the end of the list.
+  assert(faceFor(100, 100, false).rows.length > 0, 'full health indexes past the end of the faces')
+})
 
 test('the arms display says which slots you have something in, and leaves out the one you always do', () => {
   /*

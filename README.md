@@ -21,6 +21,25 @@ build themselves, keys and the doors that ask for them, a status bar laid out
 the way the original's is, and an exit that ends a level, tallies what you did
 and hands you to the next one.
 
+The sky is painted. It was left as cleared pixels for most of this project's
+life, on the reasoning that a sky is not a surface and the rows it owns are
+owned either way. The second half of that is load-bearing — everything nearer
+still has to clip against those rows — and the first half cost a fifth of the
+picture on a map with a courtyard in it: standing in a sky sector on MAP02 and
+looking one way left twenty per cent of the frame blank, and on E1M1 eleven.
+It is drawn flat now, in a family of its own, with no depth written, which is
+how the half that matters survives: a sky is infinitely far, so everything drawn
+afterwards is in front of it. The same four views come back at two and three per
+cent, and what is left there is where a ray leaves the map altogether, which is
+a different thing and still nothing.
+
+That fix needed the floor's brightest step. Thirteen families of glyphs had used
+up every character that reads as "almost nothing", and a sky has to be drawn in
+one of them — it is a flat band with no shading, so it needs exactly one glyph
+and that glyph has to look like air. The floor can spare its brightest: that step
+is reached only within a stride of the camera, where the floor is also the thing
+you are least looking at.
+
 There is an automap, drawn from what you have actually been able to see rather
 than from the level file: the renderer marks a wall the moment a column of the
 view reaches it, which costs nothing because those rays were cast to draw the
@@ -108,12 +127,21 @@ with every number composited onto it at runtime; averaged down to rows of
 characters it is a stripe of `=` and `%` with nothing legible on it — a
 photograph of an interface, which is worse than an interface.
 
-The face is the one element of the original's bar that this medium refuses, and
-it was measured rather than assumed. Baked at four rows it is a six-column blob;
-at six rows a head-shaped mass with no features; at nine — a fifth of the screen
-— still a mass with no eyes. It is the same property that decides `STBAR` and
-the small font: large flat lettering survives being averaged into characters and
-a painting does not, and a mugshot is a painting.
+The face is on it, and the honest thing to say about it is that it is a warm
+blob. It was measured as illegible once — four rows a six-column smear, six a
+head-shaped mass, nine still a mass with no eyes — and that measurement was made
+by reading the baked rows as text, which throws away the colour a cell at a time
+that carries most of a baked picture. Looked at again on screen, in colour, at
+the five rows a six-row bar can give it: still no eyes.
+
+What it does carry is *change*, which is most of what the original's face is
+for. Five health bands, the dead face, and the one for nothing being able to
+touch you. Measured, those five bands come out as four pictures: the original
+separates its healthiest two by an eyebrow and there is no eyebrow in five rows
+of characters. The bands are kept anyway, because the arithmetic is the
+original's and taller art would separate them on its own — but a check says
+four, because saying five would be describing the intention instead of the
+picture.
 
 What is taken instead is everything that is lettering. The arms display is the
 original's two rows of slot numbers, a digit for a slot you have something in
@@ -125,13 +153,22 @@ box of shells is worth walking to — and the ceiling moves when the pack is
 found.
 
 A narrow grid drops panels from the lowest priority up, so a phone loses the
-powerup clock first and keeps what the original would. Below seventy-two columns
-there is no bar at all and a single line takes over, which says more in one row
-than a cramped bar says in six.
+powerup clock first, then the reserves, and keeps what the original would.
+Below seventy-two columns there is no bar at all and a single line takes over,
+which says more in one row than a cramped bar says in six.
 
 The level's name is not on the bar. The original does not put it there — it is
 on the automap — and the panel it had been using is the one the arms display
 needed.
+
+Nothing floats over the picture. Opening a file of your own was a button in a
+corner of the view for a long time, and it spent that time being moved around
+looking for a corner nothing needed: out of the legend because the legend is
+hidden for touch, then above the stick where no thumb goes during a fight. The
+answer was that a game does not put a file picker on top of itself. It is a line
+on the title now, where choosing what to play already lives, and a check asks the
+general form of the question rather than the old specific one — is anything
+fixed sitting over the grid.
 
 ## Controls
 

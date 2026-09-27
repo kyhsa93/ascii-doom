@@ -45,6 +45,8 @@ export type MenuAction =
    * that cycles.
    */
   | { readonly kind: 'shipped' }
+  /** A file of the player's own, which the page asks the browser for. */
+  | { readonly kind: 'open' }
   /**
    * Play somebody else, which needs a string carried between two browsers.
    *

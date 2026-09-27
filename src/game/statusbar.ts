@@ -26,6 +26,16 @@
  * look.
  */
 
+import type { Sprite } from '../columns/sprite.ts'
+import {
+  FACE_BAD,
+  FACE_DEAD,
+  FACE_DYING,
+  FACE_HURT,
+  FACE_UNTOUCHABLE,
+  FACE_WELL,
+  FACE_WORSE,
+} from './freedoomart.ts'
 import { capacityOf, heldOf, type Carrier } from './pickups.ts'
 import { AMMO_KINDS } from './ammo.ts'
 import { SLOTS } from './weapons.ts'
@@ -46,12 +56,22 @@ export interface Panel {
    * rather than running into the next.
    */
   readonly lines?: readonly string[]
+  /**
+   * A picture drawn in the panel instead of any of the above.
+   *
+   * One panel has one: the face. It is the only thing on this bar that is not
+   * lettering, which is why it took three attempts to get onto it at all -- and
+   * why it cannot go through `lines`, which is a string and would throw away the
+   * colour a cell at a time that makes it legible.
+   */
+  readonly face?: Sprite
 }
 
 export interface PlacedPanel {
   readonly label: string
   readonly value: string
   readonly lines: readonly string[]
+  readonly face?: Sprite
   /** Leftmost column of the panel's box. */
   readonly col: number
   /** How many columns the box spans, rule included. */
@@ -128,6 +148,7 @@ export function layoutBar(width: number, height: number, panels: readonly Panel[
         label: panel.label,
         value: panel.value,
         lines: panel.lines ?? [],
+        ...(panel.face === undefined ? {} : { face: panel.face }),
         col: index * each,
         // The last panel takes whatever the division left over, so the bar
         // reaches the right-hand edge instead of stopping a column short.
@@ -174,4 +195,32 @@ export function keyRows(held: ReadonlySet<string>): string[] {
  */
 export function stockRows(kit: Carrier): string[] {
   return AMMO_KINDS.map((kind) => `${kind.slice(0, 4)} ${heldOf(kit, kind)}/${capacityOf(kit, kind)}`)
+}
+
+/**
+ * Which face to show, by the five bands the original divides health into.
+ *
+ * The bands are the original's arithmetic -- a fifth of the maximum each -- and
+ * the two states that are not a band at all come first, because being dead is
+ * not a quantity of health and neither is nothing being able to touch you.
+ *
+ * Two of the five come out of the converter as the same picture. The original
+ * separates its healthiest two faces by an eyebrow and a set of the mouth, and
+ * at five rows of characters there is no eyebrow. The bands are kept anyway,
+ * because the arithmetic is the original's and the day the art gets taller they
+ * separate on their own -- what would be wrong is pretending there are five
+ * pictures when a measurement says there are four.
+ *
+ * Here rather than in the page for the reason the rest of this file is: it is a
+ * rule with a right answer, and the page is where nothing can check it.
+ */
+export function faceFor(health: number, maxHealth: number, untouchable: boolean): Sprite {
+  if (health <= 0) return FACE_DEAD
+  if (untouchable) return FACE_UNTOUCHABLE
+  const bands = [FACE_DYING, FACE_BAD, FACE_WORSE, FACE_HURT, FACE_WELL]
+  const share = Math.max(0, Math.min(1, health / Math.max(1, maxHealth)))
+  // Five bands over the whole range, and the top one has to include the maximum
+  // itself: a share of exactly one would otherwise index past the end.
+  const band = Math.min(bands.length - 1, Math.floor(share * bands.length))
+  return bands[band]!
 }

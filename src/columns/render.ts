@@ -134,10 +134,31 @@ export const MATERIALS: Record<string, Material> = {
   wall: { tint: tint(0.80, 0.70, 0.56), ramp: ' .:#%@' },
   // Above an opening, where a far ceiling is lower than the near one.
   upper: { tint: tint(0.62, 0.58, 0.60), ramp: ' ;+*&' },
+  /*
+   * Open air, which is the one surface here that is not one.
+   *
+   * Its own family, and a cold one: everything else in this table is lit by the
+   * room it is in and shades with distance, and a sky does neither -- it is the
+   * same sky however far away the ground under it is. Drawn at a fixed step of
+   * its ramp for that reason, so the band above a horizon is flat where a wall
+   * would be graded. Flat is what says "not a surface".
+   */
+  sky: { tint: tint(0.30, 0.38, 0.66), ramp: ' ~' },
   // The face of a step up, which is the edge of a platform seen from below.
   lower: { tint: tint(0.74, 0.66, 0.48), ramp: ' _oO8' },
   // Horizontal strokes, so the ground reads as ground.
-  floor: { tint: tint(0.56, 0.52, 0.46), ramp: ' ,-=~' },
+  /*
+   * One step shorter than it was, because the sky wanted `~` and every light
+   * character in this table was already spoken for.
+   *
+   * Thirteen families is enough to have used up the punctuation that reads as
+   * "almost nothing", and a sky has to be drawn in one of them: it is a flat
+   * band with no shading, so it needs exactly one glyph and that glyph has to
+   * look like air. The floor's brightest step is the one it can spare -- it is
+   * reached only within a stride or two of the camera, where the floor is also
+   * the thing you are least looking at.
+   */
+  floor: { tint: tint(0.56, 0.52, 0.46), ramp: ' ,-=' },
   // Sparse marks overhead.
   ceiling: { tint: tint(0.42, 0.46, 0.58), ramp: ' \'"^' },
   // Ground that is not safe to stand on. Its own family of glyphs rather than a
@@ -191,6 +212,16 @@ export const MATERIALS: Record<string, Material> = {
  * distant wall stays legible as *something* rather than dropping to a space,
  * and `maxDistance` is what ends the view.
  */
+/**
+ * How brightly the sky is drawn, at every distance.
+ *
+ * A fixed step rather than anything the room decides: the sky over a dark
+ * courtyard is the same sky as the one over a lit one, and a sky that took the
+ * sector's light would go out when you walked indoors and looked back through
+ * the door.
+ */
+const SKY_SHADE = 0.5
+
 const FALLOFF = 0.085
 
 const DEFAULT_MAX_DISTANCE = 64
@@ -466,7 +497,34 @@ function paintPlane(
   draw = true,
 ): number {
   if (from > to) return fromBelow ? to + 1 : from
-  if (!draw) return fromBelow ? from - 1 : to + 1
+  /*
+   * A ceiling that is sky: painted, and with no depth written.
+   *
+   * These rows were left exactly as the frame was cleared for most of this
+   * project's life, on the reasoning that a sky is not a surface and the rows
+   * are owned either way. The first half is right and the second is the one
+   * that matters -- everything nearer still clips against them -- but leaving
+   * them blank costs a fifth of the picture on a map with a courtyard in it.
+   * Measured across the maps that ship: MAP02 loses twenty per cent of one
+   * view, E1M1 eleven.
+   *
+   * No depth, which is what keeps the old behaviour's real content: a sky is
+   * infinitely far, so anything drawn afterwards is in front of it.
+   */
+  if (!draw) {
+    const air = MATERIALS.sky!
+    const shade = SKY_SHADE
+    for (let row = from; row <= to; row++) {
+      if (row < 0 || row >= fb.height) continue
+      const index = row * fb.width + col
+      const c = index * 3
+      fb.color[c] = air.tint[0] * shade
+      fb.color[c + 1] = air.tint[1] * shade
+      fb.color[c + 2] = air.tint[2] * shade
+      fb.chars[index] = rampChar(air.ramp, shade)
+    }
+    return fromBelow ? from - 1 : to + 1
+  }
   const surface = MATERIALS[material]!
   for (let row = from; row <= to; row++) {
     const distance = distanceOfRow(height, row + 0.5, eyeZ, projScale, horizon)

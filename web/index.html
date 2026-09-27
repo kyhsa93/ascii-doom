@@ -97,33 +97,10 @@
         display: flex;
         align-items: center;
         gap: 10px;
-        /* Room on the right for the button that now floats over this row. */
-        padding: 5px 120px 5px 10px;
+        padding: 5px 10px;
         font-size: 12px;
         color: #6a6460;
         border-top: 1px solid #191922;
-      }
-      /*
-        Its own fixed corner rather than the end of the legend. It read as part
-        of the sentence there -- "E use open a WAD" -- and, worse, it went with
-        the legend when the legend was hidden for touch, which left a phone no
-        way to reach it.
-      */
-      #pick {
-        position: fixed;
-        right: max(10px, env(safe-area-inset-right));
-        bottom: max(6px, env(safe-area-inset-bottom));
-        z-index: 2;
-        padding: 3px 9px;
-        border: 1px solid #2c2c38;
-        border-radius: 6px;
-        background: rgba(20, 20, 28, 0.42);
-        color: #b9b2a6;
-        cursor: pointer;
-        white-space: nowrap;
-      }
-      #pick:hover {
-        background: rgba(60, 60, 78, 0.6);
       }
       /*
         Playing somebody else, which needs a string carried between two
@@ -200,11 +177,11 @@
         min-height: 14px;
       }
       /*
+        Hidden, and clicked by a line on the title rather than by anything here.
         The native control is the only bright thing on a near-black page and
-        brings its own "No file chosen" besides, so the label is the button and
-        this is hidden behind it. Clicking a label still opens the picker, and
-        a check can still hand it a file: `setInputFiles` sets the files on the
-        element rather than clicking it, so it does not need the input visible.
+        brings its own "No file chosen" besides. A check can still hand it a
+        file: `setInputFiles` sets the files on the element rather than clicking
+        it, so it does not need the input visible.
       */
       #wad {
         display: none;
@@ -271,17 +248,6 @@
             rather than the single line.
           */
           font-size: 8px;
-        }
-        /*
-          Above the stick, on the left, where nothing else sits in either
-          orientation -- the stick is 132 tall from the bottom inset, and the
-          buttons are all on the right. Opening a file is a thing you do once,
-          so it must not take a corner a thumb needs during a fight.
-        */
-        #pick {
-          right: auto;
-          left: max(16px, env(safe-area-inset-left));
-          bottom: calc(max(18px, env(safe-area-inset-bottom)) + 140px);
         }
       }
 
@@ -415,36 +381,30 @@
   <body>
     <pre id="screen"></pre>
     <!--
-      The legend and the file picker share one row on purpose. A new row in this
-      flex column would come out of `#screen`, which takes what is left and is
-      measured to decide how many rows of game there are; sharing costs about
-      one row on a desktop and none at all on a touch screen, where this whole
-      element is hidden.
+      The legend, which is one row and no more. A new row in this flex column
+      would come out of `#screen`, which takes what is left and is measured to
+      decide how many rows of game there are. It is hidden altogether on a touch
+      screen, where the controls say the same thing by being shaped like it.
 
-      The legend lives in its own span because the page writes it at boot, and
-      writing it into `#hint` itself would take the input with it.
+      The legend lives in its own span because the page writes it at boot.
     -->
     <div id="hint">
       <span id="keys">booting…</span>
     </div>
 
     <!--
-      Opening a file, and deliberately not inside the legend any more.
+      Opening a file, with nothing on the screen to say so.
 
-      The legend is hidden on a touch screen, and this was inside it, so on a
-      phone there was no way to open a WAD at all -- the whole importer was
-      unreachable on the one device most people would be holding.
-
-      What puts it above the controls, which cover the whole screen, is the
-      `z-index` in its rule and not where it sits here. That was worth finding
-      out: this comment said the order was doing it, and moving it back in front
-      of the controls changed nothing at all. The two together are belt and
-      braces, and the check only fails when both are gone.
+      This was a button floating in a corner of the picture, and it spent a
+      while being moved around it: out of the legend because the legend is
+      hidden for touch, then into a corner no thumb needs during a fight. The
+      answer was that a game does not put a file picker on top of itself. It is
+      a line on the title now, where choosing a level already lives, and what is
+      left here is the input the line clicks -- hidden, because the native
+      control is the only bright thing on a near-black page and brings its own
+      "No file chosen" besides.
     -->
-    <label id="pick">
-      open a WAD
-      <input id="wad" type="file" accept=".wad,application/octet-stream" />
-    </label>
+    <input id="wad" type="file" accept=".wad,application/octet-stream" />
 
     <!--
       The two halves of a handshake, carried by a person.

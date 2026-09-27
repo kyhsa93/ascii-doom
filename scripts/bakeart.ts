@@ -132,6 +132,26 @@ const SUPPLIES: readonly (readonly [string, string])[] = [
 const INTERFACE: readonly (readonly [string, string, number])[] = [
   ['M_DOOM', 'LOGO', 12],
   /*
+   * The face, which was measured as illegible once and measured wrong.
+   *
+   * The first look at it read the baked rows as text and called it a blob with
+   * no features. That judgement threw away the half of a baked picture that
+   * carries most of it: every one of these is a colour per cell, and the rest of
+   * this game's art is also "a mass of glyphs" written down and reads fine on
+   * screen. Looked at again, in colour, at the height the bar can give it.
+   *
+   * Five of the original's health bands, plus the two states that are not a
+   * band at all. Five rows each, which is what is left of a six-row bar under
+   * its label.
+   */
+  ['STFST00', 'FACE_WELL', 5],
+  ['STFST10', 'FACE_HURT', 5],
+  ['STFST20', 'FACE_WORSE', 5],
+  ['STFST30', 'FACE_BAD', 5],
+  ['STFST40', 'FACE_DYING', 5],
+  ['STFDEAD0', 'FACE_DEAD', 5],
+  ['STFGOD0', 'FACE_UNTOUCHABLE', 5],
+  /*
    * The weapon in your hands, at rest and firing.
    *
    * Fourteen rows, which is about a third of the fifty a desk draws -- the
