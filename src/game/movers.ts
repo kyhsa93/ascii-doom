@@ -43,6 +43,33 @@ export interface MoverKind {
    * eventually would not.
    */
   readonly requiresKey?: string
+  /**
+   * Seconds at the shut end before it starts over, for a machine that cycles.
+   *
+   * Absent for everything that was here first: a door reaches shut and stays
+   * shut until somebody works it again. A crusher and the original's perpetual
+   * platform never stop, and the difference between them is only how long they
+   * pause at each end.
+   */
+  readonly cycles?: number
+  /**
+   * True for something that presses rather than gives way.
+   *
+   * Everything else here backs off a body in the way, which is the right answer
+   * for a door and the wrong one for a crusher -- a ceiling that reverses off you
+   * is a ceiling you can stand under forever. What it does to the body is the
+   * caller's business, because hurting somebody is: `updateMovers` says who is
+   * being pressed and the page decides what that costs.
+   */
+  readonly crushes?: boolean
+  /**
+   * True for a machine that rests at its open end rather than its shut one.
+   *
+   * A crusher hangs at the ceiling and comes *down* when it is worked, which is
+   * the opposite way round from everything else here: a door rests shut and the
+   * far end is where it goes. Without this the room would load already crushed.
+   */
+  readonly startsOpen?: boolean
 }
 
 export interface Mover {
@@ -60,6 +87,10 @@ export interface MoverBody {
 }
 
 export function makeMover(sector: number, kind: MoverKind): Mover {
+  // A machine that rests open waits forever rather than for its own wait, or a
+  // crusher would start the first time the level drew a frame instead of the
+  // first time somebody walked into the line that works it.
+  if (kind.startsOpen === true) return { sector, kind, state: 'open', timer: Infinity }
   return { sector, kind, state: 'shut', timer: 0 }
 }
 
@@ -72,6 +103,16 @@ export function makeMover(sector: number, kind: MoverKind): Mover {
 export function activate(mover: Mover, keys: ReadonlySet<string> = NO_KEYS): boolean {
   const needed = mover.kind.requiresKey
   if (needed !== undefined && !keys.has(needed)) return false
+  /*
+   * A machine that never stops is worked once.
+   *
+   * Re-triggering a running crusher would send it back up, which is the door's
+   * rule applied to something that is not a door -- and it would make a crusher
+   * something you switch off by standing in the line that started it.
+   */
+  if (mover.kind.cycles !== undefined && !(mover.state === 'open' && mover.timer === Infinity)) {
+    return mover.state !== 'shut'
+  }
   if (mover.state === 'open') {
     mover.timer = mover.kind.wait
     return true
@@ -110,7 +151,20 @@ export function heightOf(level: Level, mover: Mover): number {
  * its own height of room, so a ceiling coming down past that — or a floor rising
  * up to meet it — sends the mover back the other way instead of squeezing.
  */
-export function updateMovers(level: Level, movers: Mover[], bodies: readonly MoverBody[], dt: number): void {
+/**
+ * Steps every machine, and says whose head a crusher is on.
+ *
+ * The indices are into `bodies` as handed in, which is how `blast` reports the
+ * same kind of thing: the caller knows what its own list means and this does not
+ * need to. Empty on almost every frame, so the array is built rather than kept.
+ */
+export function updateMovers(
+  level: Level,
+  movers: Mover[],
+  bodies: readonly MoverBody[],
+  dt: number,
+): number[] {
+  const pressed: number[] = []
   for (const mover of movers) {
     const sector = level.sectors[mover.sector]
     if (!sector) continue
@@ -137,30 +191,54 @@ export function updateMovers(level: Level, movers: Mover[], bodies: readonly Mov
 
     if (mover.state === 'closing') {
       const next = toward(current, kind.shut, kind.speed * dt)
-      if (wouldCrush(level, mover, bodies, next)) {
+      const caught = crushing(level, mover, bodies, next)
+      if (caught.length > 0 && kind.crushes !== true) {
         // Back up rather than through. The body is what decides, not a flag on
         // the door, so a creature blocks it exactly as a player does.
         mover.state = 'opening'
         continue
       }
+      // A crusher does not give way. Who it has is reported and it keeps coming,
+      // which is the whole difference between it and every door here.
+      for (const body of caught) pressed.push(body)
       applyHeight(level, mover, next)
-      if (next === kind.shut) mover.state = 'shut'
+      if (next === kind.shut) {
+        mover.state = 'shut'
+        mover.timer = kind.cycles ?? 0
+      }
+      continue
+    }
+
+    if (mover.state === 'shut') {
+      // Only a machine that cycles ever leaves this state on its own. For
+      // everything else `shut` is where it waits to be worked again.
+      if (kind.cycles === undefined) continue
+      mover.timer -= dt
+      if (mover.timer <= 0) mover.state = 'opening'
       continue
     }
   }
+  return pressed
 }
 
-/** Whether moving the surface to `next` would leave someone without headroom. */
-function wouldCrush(level: Level, mover: Mover, bodies: readonly MoverBody[], next: number): boolean {
+/**
+ * Which bodies moving the surface to `next` would leave without headroom.
+ *
+ * This answered yes or no while the only thing anybody did with the answer was
+ * back off. A crusher needs to know who, so it can be told what that costs.
+ */
+function crushing(level: Level, mover: Mover, bodies: readonly MoverBody[], next: number): number[] {
   const sector = level.sectors[mover.sector]
-  if (!sector) return false
+  if (!sector) return []
   const floor = mover.kind.surface === 'floor' ? next : sector.floor
   const ceiling = mover.kind.surface === 'ceiling' ? next : sector.ceiling
-  for (const body of bodies) {
+  const caught: number[] = []
+  for (let index = 0; index < bodies.length; index++) {
+    const body = bodies[index]!
     if (body.sector !== mover.sector) continue
-    if (ceiling - floor < body.height) return true
+    if (ceiling - floor < body.height) caught.push(index)
   }
-  return false
+  return caught
 }
 
 const reachHits: RayHit[] = []

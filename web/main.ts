@@ -147,6 +147,25 @@ let foundSecrets = new Set<number>()
  */
 let usedTeleports = new Set<Line>()
 /**
+ * Lines whose light change has already been applied.
+ *
+ * Once each, because the brightness each one sets was measured against the map as
+ * built: firing the same line again is harmless, but firing an "as bright as next
+ * door" line after next door has changed would read the wrong room. Emptied with
+ * the level, beside the teleports that only work once.
+ */
+let litLines = new Set<Line>()
+/**
+ * The teleport lines of the level being played, as a list.
+ *
+ * Kept rather than derived each tick because the creatures are checked against it
+ * every tick: a hundred and fifty of them, each against every pad line, is the
+ * one place in this loop where building the list would cost more than the test.
+ */
+let padLines: Line[] = []
+/** Where each creature stood before this tick, so a crossing can be asked about. */
+const wasAt: { x: number; y: number }[] = []
+/**
  * The lines the view has reached, which is what the automap may draw.
  *
  * Per level, and emptied with it: the set holds the level's own line objects,
@@ -465,6 +484,8 @@ function enterLevel(
   doors = next.movers.filter((mover) => mover.kind.surface === 'ceiling')
   projectiles = []
   usedTeleports = new Set<Line>()
+  litLines = new Set<Line>()
+  padLines = []
   foundSecrets = new Set<number>()
   advanceIn = 0
   deadFor = 0
@@ -1050,6 +1071,34 @@ function applyCheat(asked: Cheat): void {
  * launcher", which meant the two free weapons both went off with a rocket's
  * report the moment they existed.
  */
+/**
+ * What a ceiling coming down costs, per second under it.
+ *
+ * Enough to kill an unarmoured player in about three seconds, which is long
+ * enough to get out from under and short enough that standing there is not a
+ * plan. Per second rather than per blow because the ceiling is reported on every
+ * tick it has you, and a per-blow figure would depend on the frame rate.
+ */
+const CRUSH_DAMAGE = 34
+
+/**
+ * Turns a light line on, once.
+ *
+ * Once because the brightness each one sets was measured against the map as
+ * built: firing the same line again is harmless, but an "as bright as next door"
+ * line fired after next door has changed would read the wrong room.
+ */
+function applyLight(line: Line): void {
+  const change = state.lightLines.get(line)
+  if (change === undefined || litLines.has(line)) return
+  litLines.add(line)
+  for (let at = 0; at < change.sectors.length; at++) {
+    const room = state.level.sectors[change.sectors[at]!]
+    if (room !== undefined) room.light = change.to[at]!
+  }
+  noise('switch')
+}
+
 const SHOT_NOISE: readonly Noise[] = [
   'sidearm',
   'scattergun',
@@ -1683,6 +1732,10 @@ function step(): void {
     if (!crossed.fromFront) continue
     const where = state.teleportLines.get(crossed.line)
     if (where === undefined || usedTeleports.has(crossed.line)) continue
+    // Three hundred and seventy-three of these lines are for the creatures
+    // alone. Walking over one is the original's behaviour and not a gap: the line
+    // is how a mapper moves a monster without giving you a shortcut.
+    if (where.monstersOnly) continue
     if (where.once) usedTeleports.add(crossed.line)
 
     player.x = where.x
@@ -1695,6 +1748,15 @@ function step(): void {
     // One a step. A pad standing on another teleport line would otherwise send
     // you on again in the same frame, and arriving is not crossing.
     break
+  }
+
+  /*
+   * And the lights a crossed line changes, which move nothing and are noticed
+   * anyway: two of the three turn one on, and a corridor left dark until you
+   * crossed the line that lit it is a corridor this game gives you no torch for.
+   */
+  for (const crossed of crossings(level.lines, wasX, wasY, player.x, player.y)) {
+    if (state.lightLines.get(crossed.line)?.pressed === false) applyLight(crossed.line)
   }
 
   /*
@@ -1901,6 +1963,10 @@ function step(): void {
         for (const machine of state.switchLines.get(facing) ?? []) {
           if (activate(machine, carrier.keys)) noise('switch')
         }
+        // And one wall on one map turns a light on rather than moving anything.
+        // Worth the three lines for the reason the rest of the tail was worth
+        // its rows: on that map it is the only wall that does it.
+        applyLight(facing)
       }
     }
   }
@@ -1912,9 +1978,34 @@ function step(): void {
     if (lift) activate(lift, carrier.keys)
   }
 
-  // Bodies are the player and every creature, so a closing door reverses off
-  // either. The rule is about height, not about what kind of thing is under it.
-  updateMovers(level, movers, [player, ...actors], STEP)
+  /*
+   * Bodies are the player, the other player and every creature, so a closing
+   * door reverses off any of them. The rule is about height, not about what kind
+   * of thing is under it.
+   *
+   * What comes back is whoever a crusher has, in the order the list was handed
+   * over -- which is why the order is written out rather than spread in a loop.
+   * A crusher does not reverse; it reports and keeps coming.
+   */
+  // Filled on the first tick of a level rather than when it loads, because a
+  // level arrives from four different places and one of them would forget.
+  if (padLines.length === 0 && state.teleportLines.size > 0) padLines = [...state.teleportLines.keys()]
+
+  const bodies = mate === null ? [player, ...actors] : [player, mate, ...actors]
+  const firstActor = mate === null ? 1 : 2
+  for (const caught of updateMovers(level, movers, bodies, STEP)) {
+    const hurt = CRUSH_DAMAGE * STEP
+    if (caught === 0) {
+      hurtPlayer(hurt)
+      say('crushed')
+      continue
+    }
+    if (mate !== null && caught === 1) {
+      if (!holds(mateCarrier.powers, 'shield')) takeDamage(mateCarrier, hurt)
+      continue
+    }
+    hurtActor(caught - firstActor, hurt, -1)
+  }
 
   /*
    * Driven by this machine's own player, which is as far as the shared world
@@ -1930,10 +2021,59 @@ function step(): void {
    * Making the creatures shared would mean naming one body, on both machines, as
    * the one they hunt -- a decision about what a duel is rather than a fix.
    */
+  // Where each of them stood, before the pass that moves them. The array is
+  // reused across ticks: this runs sixty times a second against every creature
+  // in the level and a fresh one each time is a hundred and fifty allocations.
+  for (let index = 0; index < actors.length; index++) {
+    const actor = actors[index]!
+    const slot = wasAt[index]
+    if (slot === undefined) wasAt[index] = { x: actor.x, y: actor.y }
+    else {
+      slot.x = actor.x
+      slot.y = actor.y
+    }
+  }
+
   const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP, {
     random: rolls,
     aimWobble: holds(carrier.powers, 'blur') ? BLUR_WOBBLE : 0,
   })
+
+  /*
+   * And the creatures that walked onto a pad.
+   *
+   * Three hundred and seventy-three lines across forty-two maps exist for this
+   * and nothing else: a mapper puts a closet of monsters somewhere off the map
+   * and lays one across its doorway, so that crossing a line in the room you are
+   * standing in empties the closet into it. Unread, those monsters spend the
+   * level in a cupboard.
+   *
+   * Against the pad lines alone rather than against every line in the map. The
+   * player's crossings are asked of `level.lines`, which is two thousand of them
+   * -- fine once a tick and not fine a hundred and fifty times.
+   */
+  if (padLines.length > 0) {
+    for (let index = 0; index < actors.length; index++) {
+      const actor = actors[index]!
+      const before = wasAt[index]
+      if (before === undefined || !isAlive(actor)) continue
+      if (before.x === actor.x && before.y === actor.y) continue
+      for (const crossed of crossings(padLines, before.x, before.y, actor.x, actor.y)) {
+        if (!crossed.fromFront) continue
+        const where = state.teleportLines.get(crossed.line)
+        if (where === undefined || usedTeleports.has(crossed.line)) continue
+        if (where.once) usedTeleports.add(crossed.line)
+        actor.x = where.x
+        actor.y = where.y
+        actor.angle = where.angle
+        actor.sector = where.sector
+        actor.floor = (level.sectors[where.sector]?.floor ?? actor.floor) + (actor.hover ?? 0)
+        // One a step, the same rule the player's arrival follows: a pad standing
+        // on another pad's line would send it on again in the same tick.
+        break
+      }
+    }
+  }
   if (outcome.damage > 0) hurtPlayer(outcome.damage)
   for (const shot of outcome.shots) projectiles.push(shot)
 

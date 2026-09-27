@@ -21,6 +21,7 @@ import { makeGoal, type Goal } from './exit.ts'
 import { makeMover, type Mover, type MoverKind } from './movers.ts'
 import type { Pickup } from './pickups.ts'
 import type { Decor } from './waddecor.ts'
+import type { LightChange } from './wadlights.ts'
 import { spawnPlayer, type Player } from './player.ts'
 
 /** Where a creature stands before anything has noticed you. */
@@ -69,6 +70,13 @@ export interface LevelState {
    * whether the field is there.
    */
   readonly decor: Decor[]
+  /**
+   * Lines that change how bright a room is when crossed.
+   *
+   * Empty for every level written here, whose rooms are as bright as they were
+   * written. A map from a file may turn a light on behind you.
+   */
+  readonly lightLines: ReadonlyMap<Line, LightChange>
   readonly movers: Mover[]
   readonly goal: Goal
   /**
@@ -203,6 +211,7 @@ export function loadLevel(def: LevelDef): LevelState {
     // Nothing: a level written here furnishes itself out of what it fights and
     // what it hands over.
     decor: [],
+    lightLines: new Map(),
     movers,
     goal: makeGoal(exitSector),
     liftSectors: movers

@@ -63,6 +63,23 @@ interface Tagged {
    */
   expect: 'up' | 'down'
   /**
+   * Seconds at each end for a machine that never stops, or nothing for one that
+   * is worked and then stays where it was put.
+   */
+  cycles?: number
+  /** True for one that presses through a body rather than backing off it. */
+  crushes?: boolean
+  /**
+   * True for a machine whose working stroke is the one `updateMovers` calls
+   * "closing" -- which is where a body in the way is noticed.
+   *
+   * A crusher is the only thing here that needs it. Everything else rests where
+   * it is and travels to somewhere a neighbour decides, so the stroke that
+   * matters is the one out; a crusher hangs at the ceiling and the stroke that
+   * matters is the one back down, because that is the one with somebody under it.
+   */
+  crushing?: boolean
+  /**
    * Seconds at the far end before it comes back, or nothing to stay put.
    *
    * A closing door uses this as the pause before it reopens, which falls out of
@@ -216,6 +233,52 @@ const TAGGED = new Map<number, Tagged>([
   // A platform that drops, waits and comes back, which is a lift worked by
   // crossing a line rather than by standing on it.
   [121, { surface: 'floor', target: 'lowestFloor', fast: true, expect: 'down', wait: 3 }],
+  /*
+   * The crushers, which are the first machines here that do not give way.
+   *
+   * Sixty-four lines on twelve maps, and every one of them was a plain wall --
+   * so a room built as a trap was a room you walked through. They are the same
+   * mover with two differences: it comes down to the floor rather than stopping
+   * at somebody's ceiling, and a body underneath is reported rather than backed
+   * off. What that costs is the page's business.
+   *
+   * They rest at the top and are worked once. `wait` is the pause up there
+   * before each descent and `cycles` the pause on the floor before the next --
+   * both short, because a crusher you can walk under between blows is a puzzle
+   * rather than a trap.
+   */
+  [25, { surface: 'ceiling', target: 'ownFloor', fast: false, expect: 'down', crushes: true, crushing: true, cycles: 0.6, wait: 0.6 }],
+  [49, { surface: 'ceiling', target: 'ownFloor', fast: false, expect: 'down', crushes: true, crushing: true, cycles: 0.6, wait: 0.6 }],
+  [141, { surface: 'ceiling', target: 'ownFloor', fast: false, expect: 'down', crushes: true, crushing: true, cycles: 0.6, wait: 0.6 }],
+  [6, { surface: 'ceiling', target: 'ownFloor', fast: true, expect: 'down', crushes: true, crushing: true, cycles: 0.3, wait: 0.3 }],
+  [77, { surface: 'ceiling', target: 'ownFloor', fast: true, expect: 'down', crushes: true, crushing: true, cycles: 0.3, wait: 0.3 }],
+  /*
+   * And the platform that never stops, which is the same idea without the
+   * cruelty: it backs off a body the way every door here does and simply keeps
+   * going up and down until the level ends.
+   */
+  [53, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down', cycles: 2, wait: 2 }],
+  /*
+   * The tail: nine numbers with one line each, on nine different maps.
+   *
+   * Worth the nine rows precisely because they are one line each. A special that
+   * appears five hundred times is one a player meets whatever this importer does
+   * about it; a special that appears once is the only way through one room on one
+   * map, and the person who meets it has no idea the rest of the game works.
+   *
+   * 9 is the odd one. The original's "donut" lowers a room and raises the ring
+   * around it in one move, which is two machines and a geometry test this
+   * importer has no other use for. It arrives as the lowering half, which is the
+   * half that opens the way.
+   */
+  [58, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [83, { surface: 'floor', target: 'highestFloor', fast: false, expect: 'down' }],
+  [70, { surface: 'floor', target: 'highestFloor', fast: true, expect: 'down' }],
+  [9, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down' }],
+  [86, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [115, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up' }],
+  [75, { surface: 'ceiling', target: 'ownFloor', fast: false, expect: 'down' }],
+  [107, { surface: 'ceiling', target: 'ownFloor', fast: true, expect: 'down' }],
 ])
 
 /*
@@ -245,11 +308,13 @@ const TAGGED = new Map<number, Tagged>([
 
 /** Which of these are worked by pressing, rather than by walking across. */
 const PRESSED = new Set([
-  103, 112, 61, 63, 23, 102, 71, 18, 20,
+  103, 112, 61, 63, 23, 102, 71, 18, 20, 49,
   // The locked ones, all of which are switch plates.
   99, 133, 134, 135, 136, 137,
   // And the rest the original's `P_UseSpecialLine` answers for.
   114, 101, 64, 45, 60, 68, 69, 131, 140, 14,
+  // And the tail's switches.
+  70, 9, 115,
 ])
 
 /** And which are worked by being shot, which is neither of those. */
@@ -319,19 +384,29 @@ export function taggedFrom(
        * a doorway. A door travelling to its own floor is shutting, and shutting
        * short of the floor would leave a gap you could see through.
        */
-      const open = kind.target === 'lowestCeiling' ? target - HEADROOM : target
-      // A machine that would not move is not a machine, and one that moves the
-      // wrong way is worse: `updateMovers` travels toward whatever height it is
-      // handed without asking which way that is. So the direction is declared in
-      // the table and a map whose geometry disagrees gets no machine.
-      if (Math.abs(open - rest) < 1e-9) continue
-      if (kind.expect === 'up' && open < rest) continue
-      if (kind.expect === 'down' && open > rest) continue
+      const working = kind.target === 'lowestCeiling' ? target - HEADROOM : target
+      /*
+       * Two ends: where it rests and where it works to.
+       *
+       * Naming them that way rather than "shut" and "open" is what lets a crusher
+       * be the same machine as a door. `updateMovers` notices a body in the way
+       * only on the stroke toward `shut`, which for a door is the way home and for
+       * a crusher is the whole point -- so a crusher's resting end is its `open`
+       * and its working end is its `shut`, and everything else is the other way
+       * round.
+       *
+       * A machine that would not move is not a machine, and one that moves the
+       * wrong way is worse, so the direction is declared in the table: a map whose
+       * geometry disagrees with its own special gets no machine.
+       */
+      if (Math.abs(working - rest) < 1e-9) continue
+      if (kind.expect === 'up' && working < rest) continue
+      if (kind.expect === 'down' && working > rest) continue
 
       const made: MoverKind = {
         surface: kind.surface,
-        shut: rest,
-        open,
+        shut: kind.crushing === true ? working : rest,
+        open: kind.crushing === true ? rest : working,
         speed: kind.fast ? FAST_SPEED : SPEED,
         /*
          * Usually none: most of these stay where they are put, because a tagged
@@ -342,6 +417,12 @@ export function taggedFrom(
          */
         wait: kind.wait ?? 0,
         ...(kind.key === undefined ? {} : { requiresKey: kind.key }),
+        ...(kind.cycles === undefined ? {} : { cycles: kind.cycles }),
+        ...(kind.crushes === undefined ? {} : { crushes: kind.crushes }),
+        // A machine whose working stroke is the way down also rests at the top,
+        // which is one fact rather than two: without it the room would load
+        // already crushed.
+        ...(kind.crushing === undefined ? {} : { startsOpen: kind.crushing }),
       }
       madeFor.set(sector, movers.length)
       const mover = makeMover(sector, made)

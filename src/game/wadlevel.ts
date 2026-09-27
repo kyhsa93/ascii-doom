@@ -38,6 +38,8 @@ import { supplyFor, supplyPictureFor } from './waditems.ts'
 import { atHeight, atWidth } from '../columns/bakedart.ts'
 import { creatureArtFor, creatureFor, creaturePictureFor } from './wadthings.ts'
 import { decorFor, placeDecor, type Decor } from './waddecor.ts'
+import { lightsFrom } from './wadlights.ts'
+import { stairsFrom } from './wadstairs.ts'
 import { teleportsFrom } from './wadteleport.ts'
 import { taggedFrom } from './wadswitch.ts'
 
@@ -262,8 +264,30 @@ export function wadLevelState(
     new Set(platforms.map((platform) => platform.sector)),
   )
 
+  /*
+   * The staircases, last of the machine builders and handed everything the
+   * others already own.
+   *
+   * A staircase reaches a room by following a chain rather than by naming it, so
+   * where it meets a room a lift or a floor special has been given, it yields --
+   * two machines dragging one floor in turn looks like the floor shaking.
+   */
+  const steps = stairsFrom(
+    map.level,
+    map.specials,
+    map.tagged,
+    new Set([...platforms.map((platform) => platform.sector), ...machines.movers.map((mover) => mover.sector)]),
+  )
+
   const liftLines = new Map<Line, readonly Mover[]>()
   const crossedLines = new Map<Line, readonly Mover[]>(machines.crossed)
+  for (const [line, built] of steps.crossed) {
+    crossedLines.set(line, [...(crossedLines.get(line) ?? []), ...built])
+  }
+  const switchLines = new Map<Line, readonly Mover[]>(machines.pressed)
+  for (const [line, built] of steps.pressed) {
+    switchLines.set(line, [...(switchLines.get(line) ?? []), ...built])
+  }
   for (const [line, called] of lifts.crossed) {
     crossedLines.set(line, [
       ...(crossedLines.get(line) ?? []),
@@ -291,7 +315,7 @@ export function wadLevelState(
      * heights and a lift is a floor with two heights, and `updateMovers` has
      * never needed to know which it is looking at.
      */
-    movers: [...doors, ...platforms, ...machines.movers],
+    movers: [...doors, ...platforms, ...machines.movers, ...steps.movers],
     /**
      * Where the map ends, if it ends anywhere this game can notice.
      *
@@ -322,10 +346,19 @@ export function wadLevelState(
      * a room is not a place to stand.
      */
     teleportLines: teleportsFrom(map.specials, map.things, map.tagged),
+    /**
+     * And the lines that only change how bright a room is.
+     *
+     * The smallest machine a file describes and the only one that moves nothing.
+     * Two of the three turn a light on, which matters here more than it does in
+     * the original: a corridor a mapper left dark until you crossed the line that
+     * lit it is a corridor this game gives you no torch for.
+     */
+    lightLines: lightsFrom(map.level, map.specials, map.tagged),
     /** Lines that work something out of sight, which is most of what a map does. */
     crossedLines,
     /** And the walls that do, beyond the ones that call a platform. */
-    switchLines: machines.pressed,
+    switchLines,
     /**
      * And the walls a shot works, which is how thirteen maps open a door they
      * give you no way to touch.

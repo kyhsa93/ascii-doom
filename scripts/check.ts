@@ -50,9 +50,11 @@ import {
 } from '../src/columns/wad.ts'
 import { wadLevelState } from '../src/game/wadlevel.ts'
 import { doorsFrom, manualDoorSpecials } from '../src/game/waddoors.ts'
-import { exitSectorFrom, walkOverExitSpecials } from '../src/game/wadexit.ts'
+import { exitSectorFrom, switchExitSpecials, walkOverExitSpecials } from '../src/game/wadexit.ts'
 import { liftsFrom, switchLiftSpecials, walkLiftSpecials } from '../src/game/wadlifts.ts'
 import { taggedFrom, taggedSpecials } from '../src/game/wadswitch.ts'
+import { lightsFrom, lightSpecials } from '../src/game/wadlights.ts'
+import { stairsFrom, stairSpecials } from '../src/game/wadstairs.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
 import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
@@ -2714,6 +2716,14 @@ test('every tagged special arrives, under the table that matches how it works', 
     5, 91, 101, 64, 56, 24, 140, 14, 40,
     45, 60, 82,
     47, 68, 69, 119, 128, 22, 129, 130, 131, 121,
+    // The five that press rather than give way, and the one platform that never
+    // stops. These rest at the far end, so a shape where the named room has
+    // headroom is the only one they can be built in.
+    25, 49, 141, 6, 77, 53,
+    // The tail: one line each, on nine different maps. Worth nine rows precisely
+    // because they are one line each -- a special that appears once is the only
+    // way through one room, and whoever meets it cannot know the rest works.
+    58, 83, 70, 9, 86, 115, 75, 107,
   ]
   const table = taggedSpecials()
   for (const special of EXPECTED) {
@@ -5175,15 +5185,35 @@ test('tag zero is refused before it is looked up', () => {
   assert(teleportsFrom(specials, things, zeroed).size === 0, 'a teleport line with tag zero was honoured')
 })
 
-test('the monster-only teleports are left alone', () => {
-  // 125 and 126 are the same machine pointed at bodies this game does not
-  // teleport; 126 is on forty-one of these maps, so taking them would send the
-  // player through lines the original never lets them use.
+test('the monster-only teleports are read, and marked as the players\' business to refuse', () => {
+  /*
+   * These were deliberately left alone, and the note said why: they are the same
+   * machine pointed at bodies this game did not teleport, and taking them would
+   * have sent the player through lines the original never lets them use.
+   *
+   * Both halves of that were right. What changed is the second one: the line now
+   * says who may use it, so reading it does not hand the player anything. And the
+   * first stopped being a reason to skip them the moment creatures could be
+   * teleported at all -- three hundred and seventy-three lines across forty-two
+   * maps is more than every other unread special put together, and what they do
+   * is let a closet of monsters empty into the room you are standing in. Unread,
+   * those monsters stand in a cupboard for the length of the level.
+   */
   for (const special of [125, 126]) {
     const { specials, things, tagged } = teleportFixture(special, 7, 3)
-    assert(teleportsFrom(specials, things, tagged).size === 0, `${special} was treated as a teleport`)
+    const found = teleportsFrom(specials, things, tagged)
+    assert(found.size === 1, `${special} is a teleport in the files and is not one here`)
+    const where = [...found.values()][0]!
+    assert(where.monstersOnly, `${special} would send the player somewhere the original never does`)
   }
-  assert(teleportSpecials().length === 2, 'the teleport table grew without this check being told')
+  // And the two that anybody may use still say so, or the flag would be
+  // measuring nothing.
+  for (const special of [97, 39]) {
+    const { specials, things, tagged } = teleportFixture(special, 7, 3)
+    const where = [...teleportsFrom(specials, things, tagged).values()][0]!
+    assert(!where.monstersOnly, `${special} stopped working for the player`)
+  }
+  assert(teleportSpecials().length === 4, 'the teleport table changed size without this check being told')
 })
 
 test('a map from a file arrives with its teleports wired up', () => {
@@ -6603,6 +6633,200 @@ test('a map from a file arrives furnished', () => {
     assert(piece.light >= 0, 'a piece of furniture is lit by nothing')
     assert(sectorAt(state.level, piece.x, piece.y) >= 0, 'a piece of furniture stands outside the map')
   }
+})
+
+
+console.log('\nthe rest of the machinery')
+
+test('a crusher comes down, does not give way, and says whose head it is on', () => {
+  /*
+   * Sixty-four lines on twelve maps, and every one of them was a plain wall --
+   * so a room built as a trap was a room you walked through. A crusher is the
+   * same mover as a door with two differences, and both of them matter: it rests
+   * at the top rather than the bottom, and a body underneath is reported rather
+   * than backed off.
+   */
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[1]!.ceiling = 5
+  const line = spec(25, null, 5)
+  const made = taggedFrom(level, [line], new Map([[5, [1]]]))
+  assert(made.movers.length === 1, `${made.movers.length} machines came off a crusher`)
+  const crusher = made.movers[0]!
+  assert(crusher.kind.crushes === true, 'a crusher gives way')
+  assert(crusher.kind.cycles !== undefined, 'a crusher stops after one blow')
+  // It hangs at the ceiling until something works it, or a room built as a trap
+  // would be crushed the first time the level drew a frame.
+  assert(crusher.state === 'open', `a crusher starts ${crusher.state}`)
+  assert(crusher.kind.open === 5, `it rests at ${crusher.kind.open} rather than the ceiling`)
+  assert(crusher.kind.shut === 0, `it comes down to ${crusher.kind.shut} rather than the floor`)
+
+  const body = { sector: 1, height: 1.75 }
+  // Untouched, it stays up: fifty ticks with nobody working it.
+  for (let tick = 0; tick < 50; tick++) updateMovers(level, made.movers, [body], 1 / 60)
+  close(level.sectors[1]!.ceiling, 5, 1e-9, 'where an unworked crusher sits')
+
+  /*
+   * Worked once, and then watched for twenty seconds.
+   *
+   * The length matters: a run long enough for one descent proves it comes down
+   * and says nothing about whether it comes back. Deleting the cycling left that
+   * version of this check silent, because one blow was all it ever measured. What
+   * is counted here is how often the ceiling changes direction.
+   */
+  activate(crusher)
+  let caught = 0
+  let turns = 0
+  let previous = level.sectors[1]!.ceiling
+  let going = 0
+  for (let tick = 0; tick < 1200; tick++) {
+    caught += updateMovers(level, made.movers, [body], 1 / 60).length
+    const now = level.sectors[1]!.ceiling
+    const way = now > previous + 1e-9 ? 1 : now < previous - 1e-9 ? -1 : going
+    if (way !== 0 && going !== 0 && way !== going) turns++
+    going = way
+    previous = now
+  }
+  assert(caught > 0, 'a crusher ran over somebody for twenty seconds and reported nothing')
+  assert(level.sectors[1]!.ceiling <= 5 + 1e-9, 'a crusher rose through its own ceiling')
+  assert(turns >= 3, `the ceiling changed direction ${turns} times in twenty seconds, so it is not cycling`)
+
+  /*
+   * And the same room with a door in it gives way instead, which is the half of
+   * this that says the flag is doing the work rather than the geometry.
+   */
+  const soft = plainLevel([0, 0], [[0, 1]])
+  soft.sectors[1]!.ceiling = 0
+  const asDoor = taggedFrom(soft, [spec(2, null, 5)], new Map([[5, [1]]]))
+  const door = asDoor.movers[0]!
+  activate(door)
+  let reported = 0
+  for (let tick = 0; tick < 600; tick++) {
+    reported += updateMovers(soft, asDoor.movers, [body], 1 / 60).length
+  }
+  assert(reported === 0, 'a door reported crushing somebody instead of backing off')
+})
+
+test('a staircase climbs a run of rooms and stops where the floor changes', () => {
+  /*
+   * Fifteen lines on eight maps, and a line unread here is not a door that stays
+   * shut -- it is a pit with no way out of it.
+   *
+   * Four rooms in a chain: the first three share a floor material and the fourth
+   * does not. The original follows the chain by that test, and without it the
+   * flood reaches every room in the map and raises all of them.
+   */
+  const level = plainLevel([0, 0, 0, 0], [
+    [0, 1],
+    [1, 2],
+    [2, 3],
+  ])
+  // The fourth room's floor is made of something else, which is where the chain
+  // stops. `floorMaterial` is readonly on the type, so the fixture is rebuilt
+  // rather than edited: a cast would be a hole in exactly the field being tested.
+  level.sectors[3] = { ...level.sectors[3]!, floorMaterial: 'sludge' }
+  const line = spec(8, null, 9)
+  const built = stairsFrom(level, [line], new Map([[9, [0]]]), new Set())
+
+  assert(built.movers.length === 3, `${built.movers.length} steps were built out of a chain of three`)
+  const rises = built.movers.map((mover) => mover.kind.open - mover.kind.shut)
+  for (let step = 1; step < rises.length; step++) {
+    assert(
+      rises[step]! > rises[step - 1]! + 1e-9,
+      `step ${step} rises ${rises[step]!.toFixed(3)} against ${rises[step - 1]!.toFixed(3)} before it`,
+    )
+  }
+  // Even steps: each one is a step higher than the one before, which is what
+  // makes it a staircase rather than a ramp of one slab.
+  close(rises[1]! - rises[0]!, rises[0]!, 1e-9, 'the gap between the first two steps')
+  assert(built.crossed.get(line.line)?.length === 3, 'the line works none of the steps it built')
+  assert(built.pressed.size === 0, 'a staircase built by walking arrived as one you press')
+
+  // And a room another machine already owns is left alone, because two machines
+  // dragging one floor in turn looks like the floor shaking.
+  const shared = stairsFrom(level, [line], new Map([[9, [0]]]), new Set([1]))
+  assert(shared.movers.length === 1, `${shared.movers.length} steps were built through a room a lift owns`)
+})
+
+test('a light line sets the brightness the original names, and only once', () => {
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[0]!.light = 0.9
+  level.sectors[1]!.light = 0.2
+
+  const full = lightsFrom(level, [spec(13, null, 5)], new Map([[5, [1]]]))
+  const change = [...full.values()][0]
+  assert(change !== undefined, 'a light line that would change a room made no entry')
+  close(change.to[0]!, 1, 1e-9, 'what "turn on" sets a room to')
+  assert(!change.pressed, 'a light line you walk across arrived as one you press')
+
+  const dark = lightsFrom(level, [spec(35, null, 5)], new Map([[5, [1]]]))
+  const dimmed = [...dark.values()][0]!
+  assert(dimmed.to[0]! < 0.2, `"very dark" set a room to ${dimmed.to[0]}, which is brighter than it was`)
+
+  // "As bright as next door", which is how a mapper joins a dark room to a lit
+  // one without naming a number.
+  const matched = lightsFrom(level, [spec(12, null, 5)], new Map([[5, [1]]]))
+  close([...matched.values()][0]!.to[0]!, 0.9, 1e-9, 'what "brightest near" sets a room to')
+
+  // A change that changes nothing is not a machine, the same rule the doors
+  // follow. The room is already at full, so turning it on does nothing.
+  level.sectors[1]!.light = 1
+  assert(lightsFrom(level, [spec(13, null, 5)], new Map([[5, [1]]])).size === 0, 'a light line that changes nothing was kept')
+
+  // And the one on one map that is a wall rather than a line says so.
+  level.sectors[1]!.light = 0.2
+  const wall = lightsFrom(level, [spec(138, null, 5)], new Map([[5, [1]]]))
+  assert([...wall.values()][0]!.pressed, 'the light switch arrived as something you walk over')
+})
+
+test('every line special the shipped maps carry is read, bar the one there is nothing to scroll', () => {
+  /*
+   * The whole-set gate, and the reason it can exist: the sixty-eight maps are in
+   * this repository, so "have we missed one" is a measurement rather than a
+   * guess. It went from three hundred and fifty-eight unread lines over sixty
+   * kinds to nothing at all over one.
+   *
+   * 48 is that one: it scrolls a wall's texture sideways. There is no texel to
+   * scroll here -- a surface carries a material and a material picks a family of
+   * glyphs -- so it is not a gap to be closed but a thing this renderer has no
+   * equivalent of. Six hundred and forty-eight lines, which is why it is named
+   * rather than quietly filtered.
+   */
+  const handled = new Set<number>([
+    ...manualDoorSpecials(),
+    ...walkOverExitSpecials(),
+    ...switchExitSpecials(),
+    ...switchLiftSpecials(),
+    ...walkLiftSpecials(),
+    ...taggedSpecials(),
+    ...teleportSpecials(),
+    ...lightSpecials(),
+    ...stairSpecials(),
+  ])
+  const NOTHING_TO_SCROLL = 48
+
+  const unread = new Map<number, number>()
+  let lines = 0
+  for (const file of readdirSync('web/public/maps').filter((name) => name.endsWith('.wad'))) {
+    const map = readMap(new Uint8Array(readFileSync(`web/public/maps/${file}`)), file.replace('.wad', ''))
+    for (const entry of map.specials) {
+      lines++
+      if (handled.has(entry.special) || entry.special === NOTHING_TO_SCROLL) continue
+      unread.set(entry.special, (unread.get(entry.special) ?? 0) + 1)
+    }
+  }
+  assert(lines > 5000, `only ${lines} lines carry a special across the shipped maps`)
+  assert(
+    unread.size === 0,
+    `unread specials: ${[...unread.entries()].map(([special, count]) => `${special} (${count} lines)`).join(', ')}`,
+  )
+  // And the scrolling walls are still there, or the exemption above is exempting
+  // nothing and the next person will delete it.
+  let scrolls = 0
+  for (const file of readdirSync('web/public/maps').filter((name) => name.endsWith('.wad'))) {
+    const map = readMap(new Uint8Array(readFileSync(`web/public/maps/${file}`)), file.replace('.wad', ''))
+    scrolls += map.specials.filter((entry) => entry.special === NOTHING_TO_SCROLL).length
+  }
+  assert(scrolls > 100, `only ${scrolls} scrolling walls, so the exemption is carrying nothing`)
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

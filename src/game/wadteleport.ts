@@ -32,9 +32,25 @@ const PAD = 14
  * of these maps -- taking them would send the player through lines the original
  * never lets them use.
  */
-const WALK_OVER = new Map<number, { once: boolean }>([
-  [97, { once: false }],
-  [39, { once: true }],
+/*
+ * The four teleport lines, two of which only creatures may use.
+ *
+ * 125 and 126 are three hundred and seventy-three lines across forty-two maps --
+ * more than every other line special this importer had left unread put together
+ * -- and what they are for is that the monsters can reach you. A mapper who wants
+ * a closet of them to empty into the room you are standing in puts the closet
+ * somewhere else on the map and lays one of these across its doorway. Unread,
+ * those monsters stand in a cupboard for the length of the level.
+ *
+ * Whether a body may use one is a property of the line, not of the body, so it
+ * belongs here: the page asks each crossing whether it is allowed rather than
+ * keeping two tables and remembering which is which.
+ */
+const WALK_OVER = new Map<number, { once: boolean; monstersOnly: boolean }>([
+  [97, { once: false, monstersOnly: false }],
+  [39, { once: true, monstersOnly: false }],
+  [126, { once: false, monstersOnly: true }],
+  [125, { once: true, monstersOnly: true }],
 ])
 
 export interface Teleport {
@@ -46,6 +62,14 @@ export interface Teleport {
   readonly sector: number
   /** Whether the line stops working after one use. */
   readonly once: boolean
+  /**
+   * Whether only creatures may use it.
+   *
+   * A player crossing one of these walks over it, which is the original's rule
+   * and not a simplification: the line is how a mapper moves a monster without
+   * giving the player a shortcut through the level.
+   */
+  readonly monstersOnly: boolean
 }
 
 /** Every special this importer treats as a teleport, for checks to count against. */
@@ -87,6 +111,7 @@ export function teleportsFrom(
       angle: pad.angle,
       sector: pad.sector,
       once: kind.once,
+      monstersOnly: kind.monstersOnly,
     })
   }
   return found
