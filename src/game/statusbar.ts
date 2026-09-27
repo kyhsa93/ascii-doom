@@ -8,15 +8,27 @@
  * stripe of `=` and `%` with nothing legible on it -- a photograph of an
  * interface, which is worse than an interface.
  *
- * So what is taken is the *arrangement*: the health on the left, the ammunition
- * beside it, the keys on the right, the level between them, each in its own
- * panel with a rule between. That is the thing you recognise across the room,
- * and it is also the thing a character grid can actually draw.
+ * So what is taken is the *arrangement*, and it is now the original's in full:
+ * the ammunition first, then the health, then the arms you are carrying, then
+ * the armour, then the keys, then the four reserves -- each in its own panel with
+ * a rule between. That is the thing you recognise across the room, and it is also
+ * the thing a character grid can actually draw.
+ *
+ * The face is the one piece of it that the medium refuses, and it was measured
+ * rather than assumed. `STFST00` baked at four rows is a six-column blob, at six
+ * rows a head-shaped mass with no features, and at nine -- which is a fifth of the
+ * screen -- still a mass with no eyes. It is the same property that decides
+ * `STBAR` and the small font: large flat lettering survives being averaged into
+ * characters and a painting does not, and a mugshot is a painting.
  *
  * Pure arithmetic, like `hud.ts` beside it, because where a panel goes is a
  * question with a right answer and the page is the one place a check cannot
  * look.
  */
+
+import { capacityOf, heldOf, type Carrier } from './pickups.ts'
+import { AMMO_KINDS } from './ammo.ts'
+import { SLOTS } from './weapons.ts'
 
 /** What a panel shows: a heading nobody reads twice and the number they do. */
 export interface Panel {
@@ -24,11 +36,22 @@ export interface Panel {
   readonly value: string
   /** Dropped first when the grid is too narrow, lowest first. */
   readonly priority: number
+  /**
+   * Further lines under the number, for a panel that is a column rather than one
+   * reading.
+   *
+   * The arms you are holding are two rows of three and the reserves are four
+   * lines; a panel that could only say one thing could say neither. Counted in
+   * the width a panel needs, so a long line in one of them widens the panel
+   * rather than running into the next.
+   */
+  readonly lines?: readonly string[]
 }
 
 export interface PlacedPanel {
   readonly label: string
   readonly value: string
+  readonly lines: readonly string[]
   /** Leftmost column of the panel's box. */
   readonly col: number
   /** How many columns the box spans, rule included. */
@@ -45,12 +68,20 @@ export interface Bar {
 /**
  * How tall the bar is on a grid this size.
  *
- * Three rows: a rule, the labels, the numbers. The original's is thirty-two of
- * two hundred pixels, which is a sixth of the screen; three of fifty rows is a
- * sixteenth, and the difference is that a character is already as tall as a
- * line of text so nothing has to be drawn twice as large to be read.
+ * Six rows: a rule, the labels, and four for the numbers -- the deepest panel is
+ * the four reserves, and the first of its lines shares the row the single numbers
+ * use. Measured against the layout rather than rounded up: seven left a blank row
+ * along the whole bar.
+ *
+ * It was three, on the argument that a character is already as tall as a line of
+ * text so nothing has to be drawn twice as large to be read. That argument is
+ * still right about text and was never about a grid: the arms display is two rows
+ * of three numbers and the reserves are four lines, and neither can be squeezed
+ * into one. Six of fifty rows is an eighth of the screen against the sixth the
+ * original spends, so the shape is the original's for the original's reason
+ * rather than by coincidence.
  */
-export const BAR_ROWS = 3
+export const BAR_ROWS = 6
 
 /**
  * The narrowest grid that gets a bar at all.
@@ -83,7 +114,11 @@ export function layoutBar(width: number, height: number, panels: readonly Panel[
     if (kept.length === 0) break
 
     const each = Math.floor(width / kept.length)
-    const longest = Math.max(...kept.map((panel) => Math.max(panel.label.length, panel.value.length)))
+    const longest = Math.max(
+      ...kept.map((panel) =>
+        Math.max(panel.label.length, panel.value.length, ...(panel.lines ?? []).map((line) => line.length)),
+      ),
+    )
     if (each < longest + 2) continue
 
     return {
@@ -92,6 +127,7 @@ export function layoutBar(width: number, height: number, panels: readonly Panel[
       panels: kept.map((panel, index) => ({
         label: panel.label,
         value: panel.value,
+        lines: panel.lines ?? [],
         col: index * each,
         // The last panel takes whatever the division left over, so the bar
         // reaches the right-hand edge instead of stopping a column short.
@@ -105,4 +141,37 @@ export function layoutBar(width: number, height: number, panels: readonly Panel[
 /** The column a panel's text is centred on. */
 export function centreOf(panel: PlacedPanel): number {
   return panel.col + Math.floor(panel.width / 2)
+}
+
+/**
+ * The arms display: the original's two rows of slot numbers, 2 to 7.
+ *
+ * A digit for a slot you have something in and a dash for one you do not, which
+ * is how a single colour says what the original says with two. The fist and the
+ * saw are slot one and are left out for the reason the original leaves them out:
+ * you always have one of them, so the display would always read the same.
+ */
+export function armsRows(held: ReadonlySet<number>): string[] {
+  const shown = (slot: number): string => {
+    const inSlot = SLOTS[slot] ?? []
+    return inSlot.some((weapon) => held.has(weapon)) ? `${slot + 1}` : '-'
+  }
+  return [`${shown(1)} ${shown(2)} ${shown(3)}`, `${shown(4)} ${shown(5)} ${shown(6)}`]
+}
+
+/** The three keys, one to a line, in the order the original stacks them. */
+export function keyRows(held: ReadonlySet<string>): string[] {
+  return ['cobalt', 'crimson', 'amber'].map((colour) => (held.has(colour) ? colour : '-'))
+}
+
+/**
+ * The four reserves against what can be carried, which is the block the original
+ * puts on the right of its bar.
+ *
+ * Against the ceiling rather than alone, because the number on its own does not
+ * say whether a box of shells is worth walking to -- and the ceiling moves when
+ * the pack is found.
+ */
+export function stockRows(kit: Carrier): string[] {
+  return AMMO_KINDS.map((kind) => `${kind.slice(0, 4)} ${heldOf(kit, kind)}/${capacityOf(kit, kind)}`)
 }

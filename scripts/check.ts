@@ -57,7 +57,7 @@ import { lightsFrom, lightSpecials } from '../src/game/wadlights.ts'
 import { stairsFrom, stairSpecials } from '../src/game/wadstairs.ts'
 import { aimAt } from '../src/game/autoaim.ts'
 import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.ts'
-import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
+import { BAR_ROWS, NARROWEST, armsRows, centreOf, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, menuWindow, moveCursor, openMenu, type MenuItem } from '../src/game/menu.ts'
 import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { TROOPER } from '../src/game/freedoomart.ts'
@@ -6947,6 +6947,106 @@ test('every thing the shipped maps place is answered by one of the tables', () =
     unanswered.size === 0,
     `unanswered things: ${[...unanswered.entries()].map(([type, count]) => `${type} (${count})`).join(', ')}`,
   )
+})
+
+
+console.log('\nthe bar the original has')
+
+test('the arms display says which slots you have something in, and leaves out the one you always do', () => {
+  /*
+   * The original's two rows of slot numbers, and the reason it is worth having at
+   * all: until this round every weapon was held from the moment the game started,
+   * so a display of what you are carrying would have read the same for ever.
+   *
+   * A digit for a slot with something in it and a dash for one without, which is
+   * how a single colour says what the original says with two.
+   */
+  const rows = armsRows(new Set([0, 1, 3]))
+  assert(rows.length === 2, `${rows.length} rows of arms rather than the original's two`)
+  assert(rows[0] === '2 3 -', `the top row reads "${rows[0]}" holding a sidearm and a scattergun`)
+  assert(rows[1] === '- - -', `the bottom row reads "${rows[1]}" holding none of those`)
+
+  // Slot one is the fist and the saw, and it is left out for the reason the
+  // original leaves it out: you always have one of them.
+  assert(!rows.join(' ').includes('1'), 'the arms display shows the slot you can never be without')
+
+  // Everything found lights up, and the two that share a slot light the same one.
+  const all = armsRows(new Set([0, 1, 2, 3, 4, 5, 6, 7, 8]))
+  assert(all[0] === '2 3 4' && all[1] === '5 6 7', `a full arsenal reads "${all.join(' / ')}"`)
+  const both = armsRows(new Set([5]))
+  assert(both[0] === '- 3 -', `holding only the second shotgun reads "${both[0]}"`)
+})
+
+test('the keys and the reserves are stacked the way the original stacks them', () => {
+  const keys = keyRows(new Set(['cobalt', 'amber']))
+  assert(keys.length === 3, `${keys.length} key slots rather than three`)
+  assert(keys[0] === 'cobalt' && keys[1] === '-' && keys[2] === 'amber', `the keys read "${keys.join('/')}"`)
+
+  const kit = carrier({ ammo: [60, 24, 8, 0], ammoMax: [200, 50, 50, 300] })
+  const stock = stockRows(kit)
+  assert(stock.length === 4, `${stock.length} reserves rather than four`)
+  // Against the ceiling, because the number alone does not say whether a box of
+  // shells is worth walking to.
+  assert(stock[0] === 'bull 60/200', `the first reserve reads "${stock[0]}"`)
+  assert(stock[3] === 'cell 0/300', `the last reserve reads "${stock[3]}"`)
+  // And the ceiling moves when the pack is found, which is the point of showing it.
+  kit.pack = true
+  assert(stockRows(kit)[0] === 'bull 60/400', `with a pack the first reserve reads "${stockRows(kit)[0]}"`)
+})
+
+test('a panel that is a column is as wide as its longest line, and the clock goes first', () => {
+  /*
+   * Two rules that only matter now that a panel can be more than one reading.
+   *
+   * The width: a panel sized to its label would have "STOCK" over "bull 60/200"
+   * running into the panel beside it, which is the kind of thing that looks like
+   * a rendering bug and is a layout bug.
+   */
+  const panels = [
+    { label: 'HEALTH', value: '100%', priority: 7 },
+    { label: 'STOCK', value: '', lines: ['bull 60/200', 'shel 24/50'], priority: 2 },
+    { label: 'POWER', value: 'shld 28', priority: 1 },
+  ]
+  const wide = layoutBar(120, 50, panels)
+  assert(wide !== null, 'a hundred and twenty columns got no bar')
+  assert(wide.panels.length === 3, `${wide.panels.length} panels at a hundred and twenty columns`)
+  const stock = wide.panels.find((panel) => panel.label === 'STOCK')!
+  assert(stock.width >= 13, `the reserves panel is ${stock.width} columns for an eleven-column line`)
+  assert(stock.lines.length === 2, 'a panel carried none of its lines through the layout')
+
+  /*
+   * And a grid too narrow for all of them drops the clock first, not the health.
+   *
+   * Against the seven the game actually shows rather than the three above: three
+   * panels fit at every width that gets a bar at all, so the first version of this
+   * walked down to the narrowest grid and never found a drop to measure.
+   */
+  const whole = [
+    { label: 'SCATTERGUN', value: '24', priority: 6 },
+    { label: 'HEALTH', value: '100%', priority: 7 },
+    { label: 'ARMS', value: '', lines: ['2 3 -', '5 - -'], priority: 3 },
+    { label: 'ARMOR', value: '50%', priority: 5 },
+    { label: 'KEYS', value: '', lines: ['cobalt', '-', 'amber'], priority: 4 },
+    { label: 'STOCK', value: '', lines: ['bull 60/200', 'shel 24/50'], priority: 2 },
+    { label: 'POWER', value: 'shld 28', priority: 1 },
+  ]
+  let width = 200
+  while (width > NARROWEST && (layoutBar(width, 50, whole)?.panels.length ?? 0) === whole.length) width--
+  const narrow = layoutBar(width, 50, whole)
+  assert(narrow !== null, `no bar at all at ${width} columns`)
+  assert(narrow.panels.length < whole.length, `all seven panels fit at ${width} columns, so nothing was dropped`)
+  const labels = narrow.panels.map((panel) => panel.label)
+  assert(!labels.includes('POWER'), `at ${width} columns the bar kept the clock and dropped ${labels.join(', ')}`)
+  assert(labels.includes('HEALTH'), `at ${width} columns the bar dropped the health`)
+  assert(labels.includes('SCATTERGUN'), `at ${width} columns the bar dropped the ammunition`)
+})
+
+test('the bar is as deep as its deepest panel and no deeper', () => {
+  // Seven rows left a blank one along the whole bar, which is a sixth of the bar
+  // spent on nothing. The deepest panel is the four reserves, whose first line
+  // shares the row the single numbers use.
+  const deepest = 4
+  assert(BAR_ROWS === 2 + deepest, `the bar is ${BAR_ROWS} rows for a panel ${deepest} lines deep`)
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

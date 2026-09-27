@@ -62,7 +62,7 @@ import {
   TWINBORE_FIRING,
   TWINBORE_HELD,
 } from '../src/game/freedoomart.ts'
-import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
+import { BAR_ROWS, armsRows, centreOf, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
@@ -166,6 +166,19 @@ let litLines = new Set<Line>()
  * one place in this loop where building the list would cost more than the test.
  */
 let padLines: Line[] = []
+/*
+ * The slot asked for on the previous tick, for both bodies.
+ *
+ * A slot request has to be an edge and a weapon request does not, which is the
+ * distinction that caught this: `input.ts` holds a weapon request rather than
+ * pulsing it, on the sound reasoning that selecting weapon two twice is selecting
+ * weapon two. Pressing a *slot* twice is not selecting the same thing -- it moves
+ * to the next weapon in it -- so a key held for a sixth of a second cycled the
+ * fist and the saw ten times and landed wherever the parity fell. A browser check
+ * found it by asking for the saw and getting a fist.
+ */
+let slotAsked = -1
+let mateSlotAsked = -1
 /**
  * Seconds between the last map's spawns.
  *
@@ -508,6 +521,8 @@ function enterLevel(
   usedTeleports = new Set<Line>()
   litLines = new Set<Line>()
   padLines = []
+  slotAsked = -1
+  mateSlotAsked = -1
   spawnIn = SPAWN_INTERVAL
   bossDoorsOpen = false
   foundSecrets = new Set<number>()
@@ -1711,10 +1726,11 @@ function step(): void {
    * the original moves between a fist and a saw, or between one shotgun and the
    * other. A slot holding nothing you have found leaves the weapon alone.
    */
-  if (intent.slot >= 0 && intent.slot < SLOTS.length) {
+  if (intent.slot >= 0 && intent.slot < SLOTS.length && intent.slot !== slotAsked) {
     const asked = weaponInSlot(intent.slot, weaponIndex, carrier.weapons)
     if (asked >= 0) weaponIndex = asked
   }
+  slotAsked = intent.slot
   touch.weapon = -1
 
   // The rising edge, not the state: a device says the map is being asked for,
@@ -1951,10 +1967,16 @@ function step(): void {
   ) {
     mateWeapon = theirAsk.weapon
   }
-  if (theirAsk !== null && theirAsk.slot >= 0 && theirAsk.slot < SLOTS.length) {
+  if (
+    theirAsk !== null &&
+    theirAsk.slot >= 0 &&
+    theirAsk.slot < SLOTS.length &&
+    theirAsk.slot !== mateSlotAsked
+  ) {
     const asked = weaponInSlot(theirAsk.slot, mateWeapon, mateCarrier.weapons)
     if (asked >= 0) mateWeapon = asked
   }
+  if (theirAsk !== null) mateSlotAsked = theirAsk.slot
 
   /*
    * Both triggers, and always the host's first.
@@ -2449,13 +2471,27 @@ function frame(now: number): void {
    * readings a narrow screen keeps by where somebody happened to put a line.
    * What is deliberate is that a phone drops the clock and keeps where you are.
    */
+  /*
+   * The original's arrangement, left to right: ammunition, health, the arms you
+   * are holding, armour, keys, and the four reserves.
+   *
+   * The level's name is gone from here, which is where it had been sitting in a
+   * panel of its own. The original does not put it on the bar -- it is on the
+   * automap and in the single line a narrow screen gets -- and the panel it was
+   * using is the one the arms display needed.
+   *
+   * Dropped lowest first on a narrow grid, so a phone loses the powerup clock,
+   * then the reserves, then the arms, and keeps what the original would.
+   */
   const bar = layoutBar(fb.width, fb.height, [
-    { label: 'HEALTH', value: `${carrier.health}%`, priority: 5 },
-    // A weapon that costs nothing has no reserve to show, and a zero beside
-    // FISTS reads as a gun you cannot fire.
-    { label: weapon.name.toUpperCase(), value: reserve, priority: 4 },
-    { label: 'KEYS', value: keys === '' ? '--' : keys, priority: 3 },
-    { label: 'AREA', value: state.def.name, priority: 2 },
+    // The weapon's own name for the label, because "AMMO" above a number says
+    // less than "TWINBORE" does: the original has a picture of the gun instead.
+    { label: weapon.name.toUpperCase(), value: reserve, priority: 6 },
+    { label: 'HEALTH', value: `${carrier.health}%`, priority: 7 },
+    { label: 'ARMS', value: '', lines: armsRows(carrier.weapons), priority: 3 },
+    { label: 'ARMOR', value: `${Math.round(carrier.armour)}%`, priority: 5 },
+    { label: 'KEYS', value: '', lines: keyRows(carrier.keys), priority: 4 },
+    { label: 'STOCK', value: '', lines: stockRows(carrier), priority: 2 },
     { label: 'POWER', value: powers === '' ? '--' : powers, priority: 1 },
   ])
   if (bar !== null) {
@@ -2479,6 +2515,13 @@ function frame(now: number): void {
     for (const panel of bar.panels) {
       const middleOf = centreOf(panel)
       drawText(fb, middleOf, bar.top + 1, panel.label, { color: vec3(0.5, 0.48, 0.44), align: 'center' })
+      for (let extra = 0; extra < panel.lines.length; extra++) {
+        const line = panel.lines[extra]!
+        drawText(fb, middleOf, bar.top + 2 + extra, line, {
+          color: vec3(0.82, 0.8, 0.68),
+          align: 'center',
+        })
+      }
       drawText(fb, middleOf, bar.top + 2, panel.value, {
         color:
           panel.label === 'HEALTH'

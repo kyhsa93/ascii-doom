@@ -510,7 +510,9 @@ rocketPage.on('pageerror', (error) => problems.push(`rocket: ${error.message}`))
 await rocketPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
 await rocketPage.waitForTimeout(900)
 await begin(rocketPage)
-await hold(rocketPage, '3')
+// Five, not three. The keys moved to the original's slots this round: three is
+// the shotguns and five is the launcher.
+await hold(rocketPage, '5')
 await rocketPage.keyboard.down('w')
 await rocketPage.waitForTimeout(1200)
 await rocketPage.keyboard.up('w')
@@ -734,10 +736,13 @@ const withSidearm = await screenRows()
  * game reads which keys are held once a frame -- so a tap falls between two
  * samples and the weapon never changes. The check then reported, accurately and
  * uselessly, that the launcher was not on screen: it was never selected.
+ *
+ * And it is the fifth key, not the third. The keys moved to the original's seven
+ * slots this round, where the launcher is five and three is the two shotguns.
  */
-await gunPage.keyboard.down('3')
+await gunPage.keyboard.down('5')
 await gunPage.waitForTimeout(200)
-await gunPage.keyboard.up('3')
+await gunPage.keyboard.up('5')
 await gunPage.waitForTimeout(400)
 const withLauncher = await screenRows()
 
@@ -3101,8 +3106,14 @@ function readFront(page: Page) {
       cols: (p.cols as number) ?? 0,
       x: (p.x as number) ?? -1,
       ink: rows.reduce((n, row) => n + row.replace(/ /g, '').length, 0),
+      /*
+       * The last seven rows, because the bar is six and the rule sits on top of
+       * it. This read four while the bar was three rows deep, and when the bar
+       * grew the labels row moved out of the window -- so a check asking whether
+       * the bar says HEALTH would have failed with the bar plainly saying it.
+       */
       foot: rows
-        .slice(-4)
+        .slice(-7)
         .map((row) => row.trim())
         .join(' | '),
     }
@@ -3175,9 +3186,15 @@ check('nothing in the level moves until the title is dismissed', () => {
 check('a screen with room for the bar gets it', () => {
   const desktop = fronts.find((f) => f.name === 'desktop')!
   const phone = fronts.find((f) => f.name === 'phone')!
-  // Five since the powerups arrived: health, the weapon, the keys, where you
-  // are, and what you are under.
-  assert(desktop.playing.panels === 5, `a 163-column grid drew ${desktop.playing.panels} panels`)
+  /*
+   * Seven, which is the original's bar: the ammunition, the health, the arms you
+   * are holding, the armour, the keys, the four reserves, and -- this game's own
+   * -- what you are under.
+   *
+   * The level's name is no longer among them. The original does not put it on the
+   * bar, and the panel it had been using is the one the arms display needed.
+   */
+  assert(desktop.playing.panels === 7, `a 163-column grid drew ${desktop.playing.panels} panels`)
   // A phone used to keep the single line because 49 columns cannot hold four
   // panels. Its characters are smaller now and its grid is 80 wide, which is
   // over the seventy-two the bar needs -- so it gets the bar too. The claim
@@ -3190,12 +3207,14 @@ check('a screen with room for the bar gets it', () => {
   // panel must cost something -- it does not, until the grid is narrower than
   // this, and which panel goes first when it is narrower is checked in Node
   // where a width can be asked for directly.
-  assert(phone.playing.panels === 5, `a phone drew ${phone.playing.panels} panels on an 80-column grid`)
+  assert(phone.playing.panels === 6, `a phone drew ${phone.playing.panels} panels on an 80-column grid`)
+  // And the one it drops is the clock, which is the lowest priority there is.
+  assert(!phone.playing.foot.includes('POWER'), `a phone kept the clock: "${phone.playing.foot}"`)
   // The bar is opaque. Drawn straight over the world it came out as HEALTH and
   // 93 tangled into a wall of per-cent signs, so the foot is checked for the
   // words rather than for the flag that says they were placed.
   assert(
-    desktop.playing.foot.includes('HEALTH') && desktop.playing.foot.includes('AREA'),
+    desktop.playing.foot.includes('HEALTH') && desktop.playing.foot.includes('ARMS'),
     `the foot of the screen reads "${desktop.playing.foot}"`,
   )
   assert(
@@ -3425,29 +3444,37 @@ const gearPress = async (key: string): Promise<void> => {
   await gearPage.waitForTimeout(160)
 }
 
-await gearPress('4')
+// One, which is the slot the fist and the saw share. It was the fourth key while
+// the keys named weapons by position in the weapon list.
+await gearPress('1')
 const gearFists = await powerReadKit(gearPage)
 const gearFistsDrawn = await gearScreen()
-// Five, which nothing has found yet. The saw fires perfectly well without
-// ammunition, so before the ownership test was written this selected a weapon
-// nobody was carrying and swung it.
-await gearPress('5')
+/*
+ * The same key again, which is how the original moves from a fist to a saw -- and
+ * with no saw found it has nowhere to move to. The saw fires perfectly well
+ * without ammunition, so before the ownership test was written this selected a
+ * weapon nobody was carrying and swung it.
+ */
+await gearPress('1')
 const gearBeforeSaw = await powerReadKit(gearPage)
 const gearSawLaid = await powerDrop(gearPage, 2005)
 await gearPage.waitForTimeout(250)
-await gearPress('5')
+await gearPress('1')
 const gearWithSaw = await powerReadKit(gearPage)
 const gearSawDrawn = await gearScreen()
 await gearPage.close()
 
 check('a fist is always in hand and the saw has to be found', () => {
-  assert(gearFists.weapon === 'fists', `the fourth key selected "${gearFists.weapon}"`)
+  assert(gearFists.weapon === 'fists', `the first key selected "${gearFists.weapon}"`)
   assert(
     gearBeforeSaw.weapon === 'fists',
-    `the fifth key selected "${gearBeforeSaw.weapon}" before a saw had been found`,
+    `pressing the slot again reached "${gearBeforeSaw.weapon}" before a saw had been found`,
   )
   assert(gearSawLaid, 'the page would not put a chainsaw down')
-  assert(gearWithSaw.weapon === 'chainsaw', `the fifth key selected "${gearWithSaw.weapon}" after finding a saw`)
+  assert(
+    gearWithSaw.weapon === 'chainsaw',
+    `pressing the slot again reached "${gearWithSaw.weapon}" after finding a saw`,
+  )
 })
 
 check('a weapon that costs nothing shows no reserve', () => {

@@ -13,11 +13,13 @@ against a character grid.
 What is in it now: sector-based maps, a column renderer for walls with
 horizontal spans for floors and ceilings, light that falls off with distance,
 billboard creatures that wake when they see you and swing when they reach you,
-one that throws bolts instead of closing the distance, two instant weapons, one
-that throws and two swung at arm's length, doors and lifts, teleports, supplies
-you walk over, six powerups that run on clocks, keys and the doors that ask for
-them, and an exit that ends a level, tallies what you did and hands you to the
-next one.
+one that throws bolts instead of closing the distance, nine weapons on the
+original's seven slots drawing on four shared reserves, doors and lifts,
+teleports, supplies you walk over, six powerups that run on clocks, furnished
+rooms you can walk into the furniture of, crushing ceilings, staircases that
+build themselves, keys and the doors that ask for them, a status bar laid out
+the way the original's is, and an exit that ends a level, tallies what you did
+and hands you to the next one.
 
 There is an automap, drawn from what you have actually been able to see rather
 than from the level file: the renderer marks a wall the moment a column of the
@@ -91,6 +93,45 @@ you recognise across the room and the part a grid of characters can actually
 draw. Below about seventy columns there is no room for four panels, and a
 phone keeps the single status line instead, which drops what does not fit by
 priority and says more in one row than a cramped bar says in three.
+
+## The bar at the foot
+
+The status bar is laid out the way the original's is: the ammunition, then the
+health, then the arms you are holding, then the armour, the keys, and the four
+reserves against what you can carry. Six rows of characters, which is an eighth
+of a desk's screen against the sixth the original spends — the shape is the
+original's for the original's reason rather than by coincidence.
+
+It is built out of characters rather than converted from the picture, and that
+is a decision the pictures forced. `STBAR` is 320 by 32 pixels of metal texture
+with every number composited onto it at runtime; averaged down to rows of
+characters it is a stripe of `=` and `%` with nothing legible on it — a
+photograph of an interface, which is worse than an interface.
+
+The face is the one element of the original's bar that this medium refuses, and
+it was measured rather than assumed. Baked at four rows it is a six-column blob;
+at six rows a head-shaped mass with no features; at nine — a fifth of the screen
+— still a mass with no eyes. It is the same property that decides `STBAR` and
+the small font: large flat lettering survives being averaged into characters and
+a painting does not, and a mugshot is a painting.
+
+What is taken instead is everything that is lettering. The arms display is the
+original's two rows of slot numbers, a digit for a slot you have something in
+and a dash for one you do not, which is how a single colour says what the
+original says with two. Slot one is left out for the reason the original leaves
+it out: you always have a fist. The keys stack three deep. The reserves are
+shown against their ceilings, because the number alone does not say whether a
+box of shells is worth walking to — and the ceiling moves when the pack is
+found.
+
+A narrow grid drops panels from the lowest priority up, so a phone loses the
+powerup clock first and keeps what the original would. Below seventy-two columns
+there is no bar at all and a single line takes over, which says more in one row
+than a cramped bar says in six.
+
+The level's name is not on the bar. The original does not put it there — it is
+on the automap — and the panel it had been using is the one the arms display
+needed.
 
 ## Controls
 
@@ -489,6 +530,51 @@ has never moved, so pushing out of one is well defined. How far out is taken fro
 how wide the picture is drawn rather than from the original's collision box —
 that box is sixteen or twenty map units whatever the thing looks like, and those
 units are not this game's.
+
+Everything a map file describes is read now, with one exception that is named
+rather than hidden. Two measurements say so, and both can be taken because the
+sixty-eight maps are in this repository:
+
+| | before | after |
+| --- | --- | --- |
+| things a map places that nothing answered for | 4,157 of 26,739 | **0** |
+| lines carrying a special that nothing read | 1,490 of 6,185 | **648, all one kind** |
+
+That one kind is 48, which scrolls a wall's texture sideways. There is no texel
+here to scroll — a surface carries a material and a material picks a family of
+glyphs — so it is not a gap to be closed but a thing this renderer has no
+equivalent of. It is named in a check so that nobody deletes the exemption
+wondering what it was for.
+
+Four kinds of machine came in with the rest of the lines. A crusher is the same
+mover as a door with two differences, and working out which two took a wrong
+turn worth recording: a body in the way is noticed only on the stroke the code
+calls closing, so a crusher's resting end is its *open* and its working end its
+*shut* — exactly inverted from a door. Modelled the other way round first, which
+built a room that loaded already crushed. A staircase is a chain rather than a
+room, followed from each room to the one next door that shares its floor
+material; without that test the flood reaches every room in the map and raises
+all of them. A light line moves nothing and is worth reading because two of the
+three turn one *on*. And the monster-only teleports — three hundred and
+seventy-three lines across forty-two maps — exist so that a closet of monsters
+can empty into the room you are standing in; unread, those monsters spend the
+level in a cupboard.
+
+Six locked switches came back in the same round, and how is the interesting
+part. They had been tried and removed with the reasoning written down: every key
+colour had been guessed for the two commonest against all sixty-eight maps, nine
+combinations, and none of them beat leaving them out. The door textures
+contradicted each other. What was missing was not a tenth guess — it was the
+original's own dispatcher, which names all six. The contradiction was that a
+door texture is decoration, and a mapper is free to hang a plain wall on a
+locked door.
+
+The last map's machinery is in too, which is nineteen things across three maps
+and the smallest count in the importer. Something you cannot reach throws
+creatures at ten marked spots, and the way out opens when every shootable thing
+in the room is dead — except on the very last map, which gives no room the tag
+the original opens, because there is nowhere left to walk to. Two endings, and
+which one a map gets is the map's own doing rather than a rule written here.
 
 A file you open still brings its own pictures, which matters for a WAD whose
 art is not Freedoom's. A creature or a supply the file has a drawing for is

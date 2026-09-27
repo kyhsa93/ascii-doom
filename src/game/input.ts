@@ -45,6 +45,11 @@ export interface Intent {
    * selecting weapon two twice is selecting weapon two, but toggling a map
    * twice is not toggling it. The edge belongs to whoever holds the map's
    * state, which is the page.
+   *
+   * A *slot* is the other kind. Pressing one twice moves to the next weapon in
+   * it, so it needs the edge too -- the page keeps that latch beside the map's,
+   * and holding the key for a sixth of a second cycled a fist and a saw ten
+   * times before it did.
    */
   readonly map: boolean
 }
