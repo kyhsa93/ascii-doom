@@ -35,7 +35,8 @@ import { doorsFrom } from './waddoors.ts'
 import { exitSectorFrom, switchExitLines } from './wadexit.ts'
 import { liftsFrom } from './wadlifts.ts'
 import { supplyFor, supplyPictureFor } from './waditems.ts'
-import { creatureFor, creaturePictureFor } from './wadthings.ts'
+import { atHeight, atWidth } from '../columns/bakedart.ts'
+import { creatureArtFor, creatureFor, creaturePictureFor } from './wadthings.ts'
 import { teleportsFrom } from './wadteleport.ts'
 import { taggedFrom } from './wadswitch.ts'
 
@@ -172,8 +173,25 @@ export function wadLevelState(
       const prefix = creaturePictureFor(thing.type)
       const upright = pictureOf(prefix, { height: kind.height })
       const fallen = upright === null ? null : pictureOf(prefix, { width: upright.width }, true)
+      /*
+       * And when the file has no pictures, the one baked for this creature.
+       *
+       * Which is the usual case rather than the odd one: the maps that ship
+       * are cut to the lumps the geometry needs and carry no sprites, so every
+       * body in all sixty-eight came out as the art of whichever of four kinds
+       * it was filed under. Fitted here by the same rule the file's own
+       * picture goes through -- standing to the creature's height, fallen to
+       * the standing width -- so nothing about the size depends on where the
+       * picture came from.
+       */
+      const own = upright === null ? creatureArtFor(thing.type) : null
+      const standing = upright ?? (own === null ? null : atHeight(own.standing, kind.height))
+      const down =
+        fallen ?? (own?.fallen != null && standing !== null ? atWidth(own.fallen, standing.width) : null)
       const looks =
-        upright === null ? kind : { ...kind, sprite: upright, corpse: fallen ?? kind.corpse }
+        standing === null ? kind : { ...kind, sprite: standing, corpse: down ?? kind.corpse }
+      // Counted only for pictures that really came out of the file, because
+      // that is what the count is for: saying whether the file was read.
       if (upright !== null) fromFile++
       // The ceiling too, so a creature that floats is clamped by the room it
       // spawns in rather than rising through it: ten of the seven hundred and

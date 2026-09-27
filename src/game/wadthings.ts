@@ -20,6 +20,37 @@
  */
 
 import type { ActorKind } from './ai.ts'
+import type { Sprite } from '../columns/sprite.ts'
+import {
+  BARON,
+  GUNNER,
+  GUNNER_DOWN,
+  HOUND,
+  HOUND_DOWN,
+  IMP,
+  IMP_DOWN,
+  TROOPER,
+  TROOPER_DOWN,
+  BARON_DOWN,
+  BLOATER,
+  BLOATER_DOWN,
+  BROODER,
+  EMBER,
+  FLOATER,
+  FLOATER_DOWN,
+  KNIGHT,
+  KNIGHT_DOWN,
+  MATRIARCH,
+  REPEATER,
+  REPEATER_DOWN,
+  REVIVER,
+  REVIVER_DOWN,
+  STALKER,
+  STALKER_DOWN,
+  TITAN,
+  TITAN_DOWN,
+  WEAVER,
+} from './freedoomart.ts'
 import {
   BARREL_KIND,
   CRAWLER_KIND,
@@ -128,6 +159,52 @@ const PICTURE = new Map<number, string>([
   [67, 'FATT'],
   [68, 'BSPI'],
 ])
+
+/**
+ * What each one looks like when the file cannot say.
+ *
+ * The importer prefers the pictures in the file it was handed, and for a WAD
+ * somebody opens that is the right answer. It is not the usual case: the maps
+ * that ship here are cut down to the five lumps the geometry needs, so they
+ * carry no sprites at all, and every creature in all sixty-eight fell back to
+ * the picture of whichever of four kinds it had been filed under. Nine
+ * thousand bodies, drawn as four things -- a cacodemon came at you looking
+ * like an imp and a cyberdemon like a dog.
+ *
+ * These are the pictures that were baked for them and then never named by
+ * anything. Fitted where they are used rather than here: standing to the
+ * creature's own height and fallen to the standing width, which is the same
+ * rule the file's own pictures go through.
+ *
+ * Four of them have no fallen frame, and that is a decision rather than a gap:
+ * the baker only keeps a death frame that actually lies down, and a skull
+ * bursts rather than falls while a spider's last frame is as tall as its
+ * first. Those keep the corpse of the kind they are filed under.
+ */
+const ART = new Map<number, { readonly standing: Sprite; readonly fallen: Sprite | null }>([
+  [3004, { standing: TROOPER, fallen: TROOPER_DOWN }],
+  [9, { standing: GUNNER, fallen: GUNNER_DOWN }],
+  [3001, { standing: IMP, fallen: IMP_DOWN }],
+  [3002, { standing: HOUND, fallen: HOUND_DOWN }],
+  [58, { standing: HOUND, fallen: HOUND_DOWN }],
+  [3005, { standing: FLOATER, fallen: FLOATER_DOWN }],
+  [3006, { standing: EMBER, fallen: null }],
+  [3003, { standing: BARON, fallen: BARON_DOWN }],
+  [69, { standing: KNIGHT, fallen: KNIGHT_DOWN }],
+  [16, { standing: TITAN, fallen: TITAN_DOWN }],
+  [7, { standing: MATRIARCH, fallen: null }],
+  [65, { standing: REPEATER, fallen: REPEATER_DOWN }],
+  [66, { standing: STALKER, fallen: STALKER_DOWN }],
+  [67, { standing: BLOATER, fallen: BLOATER_DOWN }],
+  [68, { standing: WEAVER, fallen: null }],
+  [71, { standing: BROODER, fallen: null }],
+  [64, { standing: REVIVER, fallen: REVIVER_DOWN }],
+])
+
+/** The baked picture for a thing type, for when the file carries none. */
+export function creatureArtFor(type: number): { readonly standing: Sprite; readonly fallen: Sprite | null } | null {
+  return ART.get(type) ?? null
+}
 
 /** What this thing's picture is called in a file, or null if nothing is known. */
 export function creaturePictureFor(type: number): string | null {

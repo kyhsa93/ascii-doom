@@ -12,7 +12,7 @@
  * second copy of the projection formula.
  */
 
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { squeezed } from '../src/columns/sprite.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
@@ -58,6 +58,7 @@ import { CODES, atHeight, atWidth, unpackSprite } from '../src/columns/bakedart.
 import { BAR_ROWS, NARROWEST, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, menuWindow, moveCursor, openMenu, type MenuItem } from '../src/game/menu.ts'
 import * as FREEDOOM from '../src/game/freedoomart.ts'
+import { TROOPER } from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
@@ -1896,10 +1897,30 @@ test('a map from a file is drawn with the file’s pictures', () => {
   assert(looks.reach === SHOOTER_KIND.reach, 'the file changed how far the creature can hit')
   assert(looks.hitscan !== undefined, 'the file took the gun off it')
 
-  // And the same map out of a file with no pictures keeps this game's own art,
-  // which is what every map did before any of this.
+  /*
+   * And the same map out of a file with no pictures is drawn with the picture
+   * baked for that creature.
+   *
+   * This used to assert the opposite -- that the drawing was left alone -- and
+   * it was right at the time: the alternative was the art of whichever kind
+   * the thing had been filed under, so leaving it alone was the honest answer.
+   * It stopped being right when the pictures baked for each creature were
+   * finally named, and every map that ships is a file with no pictures in it,
+   * so this is the path nearly every body in the game goes through.
+   *
+   * What the line was really guarding is still guarded: nothing is drawn
+   * differently without a reason, and the reason has to be about that
+   * creature. The rows are the baked trooper's rather than the kind's.
+   */
   const without = wadLevelState(tinyWad('E1M1', true, '', [[100, 64, 0, 3004]], 0, false, 0), 'E1M1', 1)
-  assert(without.actors[0]!.kind.sprite === SHOOTER_KIND.sprite, 'a file with no art still changed the drawing')
+  const bare = without.actors[0]!.kind
+  assert(bare.sprite !== SHOOTER_KIND.sprite, 'a file with no art fell back to the kind it was filed under')
+  assert(bare.sprite.rows.length === TROOPER.rows.length, 'the fallback is not the picture baked for a trooper')
+  assert(bare.sprite.colors !== undefined, 'the fallback came through in a single tint')
+  close(bare.sprite.height, SHOOTER_KIND.height, 1e-9, 'the fallback was fitted to the creature’s own height')
+  // Everything you can feel is still the kind's.
+  assert(bare.health === SHOOTER_KIND.health, 'the fallback changed how much the creature can take')
+  assert(bare.speed === SHOOTER_KIND.speed, 'the fallback changed how fast the creature is')
 })
 
 console.log('\na menu you can find your way round')
@@ -2203,6 +2224,87 @@ test('the art that was baked covers the things the importers name', () => {
     assert(sprite.rows.length > 4, `the ${name} is only ${sprite.rows.length} rows of art`)
   }
   assert(baked.TROOPER !== undefined && baked.IMP !== undefined, 'the baked file is missing its commonest pictures')
+})
+
+test('a map with no pictures in it still shows each creature as itself', () => {
+  /*
+   * The maps that ship carry geometry and no sprites, so the importer's
+   * preferred path -- draw a thing with the picture the file supplies -- never
+   * runs on any of them. Every one of nine thousand bodies used to come out as
+   * the art of whichever of four kinds it was filed under.
+   *
+   * Counted as distinct pictures rather than by naming any one of them: what
+   * matters is that a room of different creatures looks like different
+   * creatures.
+   */
+  const listed = JSON.parse(readFileSync('web/public/maps/maps.json', 'utf8')) as {
+    name: string
+    file: string
+  }[]
+  let best = 0
+  let bestMap = ''
+  for (const entry of listed) {
+    const state = wadLevelState(new Uint8Array(readFileSync(`web/public/maps/${entry.file}`)), entry.name)
+    const shapes = new Set(state.actors.map((one) => one.kind.sprite))
+    if (shapes.size > best) {
+      best = shapes.size
+      bestMap = entry.name
+    }
+  }
+  assert(best > 4, `the most varied map, ${bestMap}, draws its creatures with ${best} pictures`)
+})
+
+test('nothing is baked that the game never names', () => {
+  /*
+   * The converter and the game drifting apart, which they did quietly for
+   * weeks: forty-six of sixty-nine baked pictures were reachable from nothing.
+   *
+   * It happened because the two tables answer different questions. The baker
+   * was filled in by asking what the file has -- all sixteen of the original's
+   * monsters, every powerup, both armours, each key in both shapes -- and the
+   * game was written by asking what it draws, which turned out to be four
+   * creatures other sizes are derived from and one picture per kind of supply.
+   * Nothing compared the two, so the extra pictures stayed, and they are not
+   * free: the bundle carries what is exported whether or not anything imports
+   * it.
+   *
+   * The weapons escaped this because somebody wrote the reason down next to
+   * them -- "there is nothing here to fire them with" -- and that comment is
+   * why the chaingun and the BFG were never baked in hand. This is the same
+   * judgement, made by a check instead of by remembering.
+   */
+  const baked = Object.keys(FREEDOOM as unknown as Record<string, unknown>)
+  assert(baked.length > 10, `only ${baked.length} pictures came out of the converter`)
+
+  /*
+   * Every source the game is built from, rather than a list of files.
+   *
+   * The first version named four files it expected the pictures to be used in,
+   * and the moment a picture was named somewhere else the check went on
+   * reporting it as unused. A list of places to look is a list that goes stale
+   * exactly when somebody does the thing it is meant to notice.
+   */
+  const named = new Set<string>()
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? walk(`${dir}/${entry.name}`)
+        : entry.name.endsWith('.ts')
+          ? [`${dir}/${entry.name}`]
+          : [],
+    )
+  for (const file of [...walk('src'), ...walk('web')]) {
+    if (file.endsWith('src/game/freedoomart.ts')) continue
+    const text = readFileSync(file, 'utf8')
+    for (const name of baked) {
+      if (new RegExp(`\\b${name}\\b`).test(text)) named.add(name)
+    }
+  }
+  const spare = baked.filter((name) => !named.has(name))
+  assert(
+    spare.length === 0,
+    `${spare.length} baked pictures are named nowhere: ${spare.slice(0, 6).join(', ')}${spare.length > 6 ? '…' : ''}`,
+  )
 })
 
 test('a creature that has fallen over is lying down', () => {

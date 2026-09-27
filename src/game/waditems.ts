@@ -3,9 +3,12 @@
  *
  * The same arrangement as the creatures: a WAD says a thing of a certain class
  * stood here, and one of this project's own supplies is put there instead.
- * None of the original's art or names is reproduced, and nothing is reproduced
- * that this game has no notion of -- there is no armour here, so armour is
- * simply not picked up.
+ *
+ * That sentence used to end "there is no armour here, so armour is simply not
+ * picked up", which stopped being true the day armour arrived and stayed in
+ * the file for weeks afterwards. Armour is picked up; so are the weapons, by
+ * folding into the three this game fires; the powerups are drawn where they
+ * stand and grant nothing yet.
  *
  * A whitelist again, for the reason it was one before: most of the hundred and
  * twenty-one thing types in a real map are scenery, and a lamp that heals you
@@ -13,7 +16,36 @@
  */
 
 import type { PickupGrant } from './pickups.ts'
-import { CANISTER, KEY_TOKEN, KIT, SHELL_BOX, SLUG_CRATE } from './things.ts'
+import {
+  AMBER_CARD,
+  AMBER_TOKEN,
+  BACKPACK_PICKUP,
+  BFG_PICKUP,
+  BONUS_VIAL,
+  CANISTER,
+  CHAINGUN_PICKUP,
+  CHAINSAW_PICKUP,
+  CLIP_CARTON,
+  COBALT_KEY,
+  COBALT_SKULL,
+  CRIMSON_KEY,
+  CRIMSON_SKULL,
+  DOUBLE_SHOTGUN_PICKUP,
+  JACKET,
+  JACKET_BIT,
+  JACKET_HEAVY,
+  KIT,
+  PLASMA_PICKUP,
+  ROCKET_LAUNCHER_PICKUP,
+  SHELL_BOX,
+  SHELL_CARTON,
+  SHOTGUN_PICKUP,
+  SLUG_CARTON,
+  SLUG_CRATE,
+  SPHERE,
+  SPHERE_GREAT,
+  STIMPACK,
+} from './things.ts'
 import type { Sprite } from '../columns/sprite.ts'
 
 /** What to put down, and what taking it does. */
@@ -151,15 +183,62 @@ export function supplyPictureFor(type: number): string | null {
 }
 
 /** What lies where the map put a thing of this type, or null for one to ignore. */
+/*
+ * The picture for each thing, rather than one for each class of thing.
+ *
+ * This used to answer with whichever of five pictures was nearest the idea: a
+ * stimpack and a soulsphere were both the kit, a shotgun on the floor was a
+ * box of rounds, and armour -- of either weight -- was drawn with the key's
+ * picture. Meanwhile the real picture of every one of them sat baked into the
+ * page with nothing importing it. The map says what is lying there; this now
+ * says so too.
+ */
+const LOOKS = new Map<number, Sprite>([
+  // Health, which four different things grant.
+  [2011, STIMPACK],
+  [2012, KIT],
+  [2014, BONUS_VIAL],
+  [2013, SPHERE],
+  [83, SPHERE_GREAT],
+  // Armour: the light jacket, the heavy one, and the scrap.
+  [2018, JACKET],
+  [2019, JACKET_HEAVY],
+  [2015, JACKET_BIT],
+  // Ammunition, loose and by the box.
+  [2007, CANISTER],
+  [2048, CLIP_CARTON],
+  [2008, SHELL_BOX],
+  [2049, SHELL_CARTON],
+  [2010, SLUG_CRATE],
+  [2046, SLUG_CARTON],
+  // The guns, each its own, whatever this game folds it into.
+  [2001, SHOTGUN_PICKUP],
+  [82, DOUBLE_SHOTGUN_PICKUP],
+  [2002, CHAINGUN_PICKUP],
+  [2003, ROCKET_LAUNCHER_PICKUP],
+  [2004, PLASMA_PICKUP],
+  [2006, BFG_PICKUP],
+  [2005, CHAINSAW_PICKUP],
+  [8, BACKPACK_PICKUP],
+  // The keys, in the colour they open and the shape the map chose.
+  [5, COBALT_KEY],
+  [40, COBALT_SKULL],
+  [13, CRIMSON_KEY],
+  [39, CRIMSON_SKULL],
+  [6, AMBER_CARD],
+  [38, AMBER_TOKEN],
+])
+
 export function supplyFor(type: number): Supply | null {
   const heals = HEALTH.get(type)
   if (heals !== undefined) {
-    return { sprite: KIT, grant: { kind: 'health', amount: heals }, radius: 0.4 }
+    return { sprite: LOOKS.get(type) ?? KIT, grant: { kind: 'health', amount: heals }, radius: 0.4 }
   }
 
   const rounds = AMMO.get(type)
   if (rounds !== undefined) {
-    const sprite = rounds.weapon === 0 ? CANISTER : rounds.weapon === 1 ? SHELL_BOX : SLUG_CRATE
+    const sprite =
+      LOOKS.get(type) ?? (rounds.weapon === 0 ? CANISTER : rounds.weapon === 1 ? SHELL_BOX : SLUG_CRATE)
     return {
       sprite,
       grant: { kind: 'ammo', weapon: rounds.weapon, amount: rounds.amount },
@@ -170,7 +249,7 @@ export function supplyFor(type: number): Supply | null {
   const jacket = ARMOUR.get(type)
   if (jacket !== undefined) {
     return {
-      sprite: KEY_TOKEN,
+      sprite: LOOKS.get(type) ?? JACKET,
       grant: {
         kind: 'armour',
         amount: jacket.amount,
@@ -184,13 +263,14 @@ export function supplyFor(type: number): Supply | null {
 
   const weapon = WEAPON_THINGS.get(type)
   if (weapon !== undefined) {
-    const sprite = weapon.weapon === 0 ? CANISTER : weapon.weapon === 1 ? SHELL_BOX : SLUG_CRATE
+    const sprite =
+      LOOKS.get(type) ?? (weapon.weapon === 0 ? CANISTER : weapon.weapon === 1 ? SHELL_BOX : SLUG_CRATE)
     return { sprite, grant: { kind: 'weapon', weapon: weapon.weapon, ammo: weapon.ammo }, radius: 0.45 }
   }
 
   const colour = keyColourOf(type)
   if (colour !== null) {
-    return { sprite: KEY_TOKEN, grant: { kind: 'key', key: colour }, radius: 0.5 }
+    return { sprite: LOOKS.get(type) ?? COBALT_KEY, grant: { kind: 'key', key: colour }, radius: 0.5 }
   }
 
   return null

@@ -29,18 +29,46 @@ import { atHeight, atWidth } from '../columns/bakedart.ts'
 import type { Sprite } from '../columns/sprite.ts'
 import type { ActorKind } from './ai.ts'
 import {
+  AMBER_KEY,
+  AMBER_SKULL,
+  ARMOUR,
+  ARMOUR_BIT,
+  ARMOUR_HEAVY,
+  BACKPACK,
   BARREL,
+  BERSERK,
+  BFG,
   BLUE_KEY,
+  BLUE_SKULL,
+  BLUR,
+  BONUS,
+  CHAINGUN,
+  CHAINSAW,
   CLIP,
+  CLIP_BOX,
+  COMPUTER_MAP,
+  DOUBLE_SHOTGUN,
   GUNNER,
   GUNNER_DOWN,
   HOUND,
   HOUND_DOWN,
   IMP,
   IMP_DOWN,
+  INVULNERABILITY,
+  LAUNCHER_PICKUP,
+  LIGHT_AMP,
   MEDIKIT,
+  MEGASPHERE,
+  PLASMA,
+  RED_KEY,
+  RED_SKULL,
   ROCKET,
+  ROCKET_BOX,
   SHELLS,
+  SHELL_CRATE,
+  SHOTGUN,
+  SOULSPHERE,
+  STIM,
   TROOPER,
   TROOPER_DOWN,
 } from './freedoomart.ts'
@@ -77,12 +105,77 @@ export const GUNMAN_DOWN: Sprite = atWidth(GUNNER_DOWN, GUNMAN.width)
 export const DRIFTER: Sprite = atHeight(IMP, 1.6)
 export const DRIFTER_DOWN: Sprite = atWidth(IMP_DOWN, DRIFTER.width)
 
-/** The supplies, at the sizes the levels here were laid out around. */
+/*
+ * The supplies, at the sizes the levels here were laid out around.
+ *
+ * One picture per thing rather than one per class, which is what this was.
+ * Every health pickup was the kit, every key the same token whatever colour it
+ * opened, both armours were drawn with the key's picture, and a shotgun on the
+ * floor looked like a box of rounds -- while the pictures for all of them sat
+ * baked into the page with nothing importing them. Thirty-three of the sixty-
+ * nine baked pictures were supplies drawn as something else.
+ *
+ * The small ones are small on purpose: a bonus is a quarter of a metre and a
+ * jacket is half, so a room with forty bonuses in it does not read as forty
+ * boxes.
+ */
 export const CANISTER: Sprite = atHeight(CLIP, 0.6)
+export const CLIP_CARTON: Sprite = atHeight(CLIP_BOX, 0.5)
 export const KIT: Sprite = atHeight(MEDIKIT, 0.5)
+export const STIMPACK: Sprite = atHeight(STIM, 0.35)
+export const BONUS_VIAL: Sprite = atHeight(BONUS, 0.25)
 export const SHELL_BOX: Sprite = atHeight(SHELLS, 0.45)
+export const SHELL_CARTON: Sprite = atHeight(SHELL_CRATE, 0.5)
 export const SLUG_CRATE: Sprite = atHeight(ROCKET, 0.5)
+export const SLUG_CARTON: Sprite = atHeight(ROCKET_BOX, 0.55)
+
+/** The jackets, and the scrap you scavenge. */
+export const JACKET: Sprite = atHeight(ARMOUR, 0.55)
+export const JACKET_HEAVY: Sprite = atHeight(ARMOUR_HEAVY, 0.6)
+export const JACKET_BIT: Sprite = atHeight(ARMOUR_BIT, 0.25)
+
+/** The spheres, which are health by another name. */
+export const SPHERE: Sprite = atHeight(SOULSPHERE, 0.6)
+export const SPHERE_GREAT: Sprite = atHeight(MEGASPHERE, 0.6)
+
+/**
+ * The guns on the floor, each its own picture.
+ *
+ * This game fires three of them and folds the rest into ammunition, but what
+ * is lying there is still what the map put there -- a plasma rifle you pick up
+ * for its cells should look like a plasma rifle.
+ */
+export const SHOTGUN_PICKUP: Sprite = atHeight(SHOTGUN, 0.45)
+export const DOUBLE_SHOTGUN_PICKUP: Sprite = atHeight(DOUBLE_SHOTGUN, 0.45)
+export const CHAINGUN_PICKUP: Sprite = atHeight(CHAINGUN, 0.45)
+export const ROCKET_LAUNCHER_PICKUP: Sprite = atHeight(LAUNCHER_PICKUP, 0.5)
+export const PLASMA_PICKUP: Sprite = atHeight(PLASMA, 0.45)
+export const BFG_PICKUP: Sprite = atHeight(BFG, 0.5)
+export const CHAINSAW_PICKUP: Sprite = atHeight(CHAINSAW, 0.4)
+export const BACKPACK_PICKUP: Sprite = atHeight(BACKPACK, 0.45)
+
+/**
+ * The powerups, which this game does not grant yet and does draw.
+ *
+ * Drawn rather than hidden because the alternative is a room the map filled
+ * and the game left empty: two hundred and thirty of them stand across the
+ * sixty-eight maps. What they do when walked over is a separate question from
+ * what is standing there.
+ */
+export const BERSERK_PACK: Sprite = atHeight(BERSERK, 0.4)
+export const INVULNERABILITY_SPHERE: Sprite = atHeight(INVULNERABILITY, 0.6)
+export const BLUR_SPHERE: Sprite = atHeight(BLUR, 0.6)
+export const CHART: Sprite = atHeight(COMPUTER_MAP, 0.5)
+export const GOGGLES: Sprite = atHeight(LIGHT_AMP, 0.35)
+
+/** The keys, each in the colour it opens and in both shapes the maps use. */
 export const KEY_TOKEN: Sprite = atHeight(BLUE_KEY, 0.5)
+export const COBALT_KEY: Sprite = atHeight(BLUE_KEY, 0.5)
+export const COBALT_SKULL: Sprite = atHeight(BLUE_SKULL, 0.5)
+export const CRIMSON_KEY: Sprite = atHeight(RED_KEY, 0.5)
+export const CRIMSON_SKULL: Sprite = atHeight(RED_SKULL, 0.5)
+export const AMBER_CARD: Sprite = atHeight(AMBER_KEY, 0.5)
+export const AMBER_TOKEN: Sprite = atHeight(AMBER_SKULL, 0.5)
 
 export const BOLT: Sprite = {
   rows: [

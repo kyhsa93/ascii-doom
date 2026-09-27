@@ -145,6 +145,30 @@ reads a file once, at a desk, and what ships is characters rather than
 pictures. The notice the licence asks to travel with the work is in
 `docs/freedoom/`, with the contributors it names.
 
+One consequence of shipping maps rather than files is worth stating, because
+it quietly undid something else. A map here is cut down to the five lumps the
+geometry needs, so it carries no pictures -- and the importer prefers the
+pictures in the file it was handed. For every one of the sixty-eight that
+meant there were none to prefer, and all nine thousand bodies fell back to the
+art of whichever of four kinds they had been filed under: a cacodemon came at
+you looking like an imp, a cyberdemon like a dog. The pictures for all
+seventeen had been baked into the page months earlier and nothing named them.
+
+They are named now. Each creature type has the picture that was baked for it,
+fitted the same way a file's own picture would be -- standing to its height,
+fallen to the standing width. Four have no fallen frame and keep the corpse of
+the kind they are filed under, which is not an oversight: the baker only keeps
+a death frame that lies down, and a skull bursts rather than falls while a
+spider's last frame is as tall as its first.
+
+The same had happened to the supplies, and more thoroughly. Every health
+pickup was drawn as the kit, every key as one token whatever colour it opened,
+both armours with the key's picture, and a shotgun on the floor as a box of
+rounds -- while the real picture of each sat baked and unnamed. Thirty-three of
+them. A check holds the two lists together now: nothing may be baked that the
+game never names, which is the rule the weapons had all along in a comment and
+nowhere else.
+
 The maps ship too, and they ship as maps. That sentence used to say no WAD was
 redistributed, and it is worth saying plainly that this is no longer true:
 `scripts/bakemaps.ts` cuts each of the sixty-eight down to the five lumps this
