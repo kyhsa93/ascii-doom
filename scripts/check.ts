@@ -3745,7 +3745,7 @@ test('every way of choosing something from the title is a distinct action', () =
    * so an action quietly disappearing is a feature quietly becoming
    * unreachable -- which has happened twice in this project already.
    */
-  const EXPECTED = ['continue', 'begin', 'level', 'map', 'shipped', 'pick', 'meet', 'skill', 'sound']
+  const EXPECTED = ['continue', 'begin', 'level', 'map', 'shipped', 'pick', 'meet', 'record', 'replay', 'skill', 'sound']
   const built: MenuItem[] = [
     { label: 'continue', action: { kind: 'continue' } },
     { label: 'begin', action: { kind: 'begin' } },
@@ -3754,6 +3754,8 @@ test('every way of choosing something from the title is a distinct action', () =
     { label: 'the maps that ship', action: { kind: 'shipped' } },
     { label: 'one of them', action: { kind: 'pick', name: 'E1M1' } },
     { label: 'play somebody', action: { kind: 'meet' } },
+    { label: 'record a run', action: { kind: 'record' } },
+    { label: 'play it back', action: { kind: 'replay' } },
     { label: 'difficulty', action: { kind: 'skill' } },
     { label: 'sound', action: { kind: 'sound' } },
   ]

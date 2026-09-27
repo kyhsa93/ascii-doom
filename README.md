@@ -746,6 +746,34 @@ sounds: input barely changes between one sixtieth and the next, and a minute of
 standing still is one entry instead of three and a half thousand copies of the
 same object.
 
+Recording is on the title as well, and that is not a convenience. The words
+that start a demo can only be typed and a phone has nothing to type with, so
+for a while the whole feature existed only at a desk -- the same shape of fault
+as the file picker that once sat behind the touch controls, where everything
+worked and the device most people hold could not reach it. The cheats stay
+typed, which is what the original did and what a phone can do without; a
+recording is a feature rather than a cheat.
+
+That forced a better rule for ending one. It used to end by typing the word a
+second time, which a phone cannot do, so a recording now ends with its level --
+finished, restarted after dying, or left for somewhere else. A demo is a run,
+and a run is over when the level is.
+
+Writing that down found a bug the moment it had a check. The seal reads which
+level the recording belongs to, and it had been reading where the player is
+rather than where the run began: entering a map from a file sets the campaign
+index to -1 on the way in, so a run recorded in the outpost and ended that way
+was sealed as level -1, and playing it back asks the campaign for a level it
+refuses. A recording remembers where it started now.
+
+And the page stopped booting entirely before any of that ran, which is the
+fourth time this file has taught the same lesson. The title menu greys the line
+that plays a demo back when there is none, so it reads the kept recording --
+and the kept recording was declared four hundred lines below the menu that
+reads it, while the menu is built as the module is still being evaluated.
+"Cannot access it before initialization", and a blank page. The declaration
+moved up.
+
 The words work. Typing iddqd, idkfa, idclip or iddt does what it has always
 done -- nothing can hurt you, you are handed the keys and a full kit, walls
 stop mattering, the map fills in -- and none of them is a bound key: no letter

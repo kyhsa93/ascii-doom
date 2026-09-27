@@ -54,6 +54,17 @@ export type MenuAction =
    * a door with no handle, which this project has built once before.
    */
   | { readonly kind: 'meet' }
+  /*
+   * Recording a run, and playing the last one back.
+   *
+   * On the title because a phone has no keyboard, and the words that start
+   * these -- idrec and idplay -- can only be typed. Everything else the typed
+   * words do is a cheat, which the original also made you type and which a
+   * phone can live without; a demo is a feature, and a feature reachable only
+   * on a desk is a feature most people do not have.
+   */
+  | { readonly kind: 'record' }
+  | { readonly kind: 'replay' }
   /** One of those, by name, fetched when it is chosen. */
   | { readonly kind: 'pick'; readonly name: string }
   /**

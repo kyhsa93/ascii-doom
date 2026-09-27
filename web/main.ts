@@ -284,6 +284,28 @@ void fetch(new URL('maps/maps.json', document.baseURI))
 /** The save on offer at the title, read once rather than on every frame. */
 let offered: Save | null = readSave()
 
+/*
+ * The last recorded run, kept here rather than with the rest of the demo state.
+ *
+ * The title offers to play it back and greys the line when there is none, so
+ * `titleMenu` reads this -- and `titleMenu` is called while the module is
+ * still being evaluated. Declared below its reader, it was a `const` in its
+ * dead zone and the page did not boot at all: "cannot access it before
+ * initialization", the fourth time this file has taught that lesson.
+ */
+let kept: Demo | null = null
+/*
+ * Which level the recording in progress belongs to.
+ *
+ * Kept apart from `levelIndex`, which is where you are rather than where the
+ * run started. The two part company exactly when a recording is sealed by
+ * leaving for somewhere else: `enterWad` sets the index to -1 before it enters,
+ * so a demo recorded in the outpost and ended by opening a file would have been
+ * sealed as level -1 -- and playing it back asks the campaign for level -1,
+ * which it refuses.
+ */
+let tapingLevel = 0
+
 /**
  * The title's own menu, rebuilt when the difficulty changes.
  *
@@ -302,6 +324,26 @@ function titleMenu(cursor?: number): Menu {
     { label: 'the maps that ship', action: { kind: 'shipped' }, enabled: shipped.length > 0 },
     // Needs the maps for the same reason: both sides play one that ships.
     { label: 'play somebody', action: { kind: 'meet' }, enabled: shipped.length > 0 },
+    /*
+     * Demos, on the title because a phone has no keyboard.
+     *
+     * The words that start them can only be typed, and everything else the
+     * typed words do is a cheat -- which the original also made you type, and
+     * which a phone can do without. A recording is a feature, and one reachable
+     * only at a desk is one most people do not have.
+     */
+
+    /*
+     * Demos, on the title because a phone has no keyboard.
+     *
+     * The words that start them can only be typed, and everything else the
+     * typed words do is a cheat -- which the original also made you type, and
+     * which a phone can do without. A recording is a feature, and one reachable
+     * only at a desk is one most people do not have.
+     */
+
+    { label: 'record a run', action: { kind: 'record' } },
+    { label: 'play it back', action: { kind: 'replay' }, enabled: kept !== null },
     { label: `difficulty: ${skill}`, action: { kind: 'skill' } },
     { label: `sound: ${audible ? 'on' : 'off'}`, action: { kind: 'sound' } },
   ])
@@ -417,6 +459,24 @@ function enterLevel(
    * means a save is always a level boundary, which is also the only place the
    * counts a save depends on are known to match the level.
    */
+  /*
+   * A recording ends with the level it was made in.
+   *
+   * It used to end by typing the word a second time, which a phone cannot do,
+   * and this is the better rule anyway: a demo is a run, and a run is over
+   * when the level is -- whether it was finished, restarted after dying, or
+   * left for another one. Sealed before the menu is rebuilt below, so the
+   * title comes back offering to play it.
+   *
+   * Before `taping` is set again by whoever is starting a fresh recording:
+   * `applyCheat` starts the level first and takes the tape afterwards, so this
+   * seals the previous run rather than the one just asked for.
+   */
+  if (taping !== null) {
+    kept = sealed(taping, tapingLevel)
+    taping = null
+  }
+
   if (keep) {
     keepRun()
     // And the title's list is rebuilt, because the offer it was built from has
@@ -624,8 +684,23 @@ let ghostly = false
  * player in it would have every count in the game call them a monster.
  */
 let mate: (Body & { angle: number }) | null = null
-/** The agreement about ticks, while two people are playing. */
+/*
+ * Where the other side's input arrives, and whether the game is keeping step.
+ *
+ * Two things rather than one, and that was a deadlock. The mailbox used to be
+ * the switch: input was only recorded while `net` existed, and `net` was made
+ * at the end of joining -- after fetching the map. The host finishes joining
+ * first and starts speaking immediately, so everything it said while the other
+ * side was still fetching went in the bin, and the lead meant the guest needed
+ * exactly those first packets. It stopped dead on tick three; the host ran on
+ * the guest's opening packets to tick seven and stopped too. Frames kept being
+ * drawn, so nothing looked broken.
+ *
+ * The mailbox is now made when the channel opens -- before anything can be
+ * said -- and `inDuel` is what the frame loop asks about.
+ */
 let net: Lockstep | null = null
+let inDuel = false
 let wire: RTCPeerConnection | null = null
 let channel: RTCDataChannel | null = null
 /** The last tick this side put its own asking on the wire for. */
@@ -664,7 +739,6 @@ const LEAD = 3
 let rolls = seeded(Date.now() >>> 0)
 let taping: Tape | null = null
 let playing: Demo | null = null
-let kept: Demo | null = null
 let tick = 0
 
 const held = new Set<string>()
@@ -914,10 +988,11 @@ function applyCheat(asked: Cheat): void {
       rolls = seeded(seed)
       startLevel(levelIndex)
       taping = record(seed)
+      tapingLevel = levelIndex
       tick = 0
       say('recording')
     } else {
-      kept = sealed(taping, levelIndex)
+      kept = sealed(taping, tapingLevel)
       taping = null
       say(`recorded ${kept.ticks} ticks`)
     }
@@ -1175,6 +1250,11 @@ function step(): void {
         // were rather than in a room on your own.
         meetPanel?.classList.add('up')
         say('one string each way')
+      } else if (action?.kind === 'record' || action?.kind === 'replay') {
+        // The same code the typed word runs. Two ways in, one thing done --
+        // anything else is two behaviours that drift.
+        titleUp = false
+        applyCheat(action.kind)
       } else if (action?.kind === 'shipped') {
         // The same shape the file picker produces, so picking a map that ships
         // and picking one out of a file you opened look and behave alike.
@@ -1680,7 +1760,7 @@ function frame(now: number): void {
   // Clamped above, so a backgrounded tab returning after a minute takes a few
   // steps rather than several thousand.
   while (accumulator >= STEP) {
-    if (net !== null) {
+    if (inDuel && net !== null) {
       /*
        * Say what this side wants, then run the tick only if both sides have.
        *
@@ -2085,6 +2165,9 @@ function frame(now: number): void {
     mateAt: mate === null ? null : { x: mate.x, y: mate.y },
     netTick: tick,
     hosting,
+    /** Whether a run is being written down, and whether one is there to play. */
+    recording: taping !== null,
+    hasDemo: kept !== null,
     /** The other player's health, worked out here rather than taken on trust. */
     mateHealth: mate === null ? null : mateCarrier.health,
     /*
@@ -2364,7 +2447,10 @@ async function pairUp(seed: number, mapName: string, first: boolean): Promise<vo
   rolls = seeded(seed)
   titleUp = false
   enterWad(new Uint8Array(await answer.arrayBuffer()), mapName)
-  net = lockstep(LEAD)
+  // Not made here: it exists already, holding whatever arrived while this side
+  // was fetching the map. Making a fresh one here is what threw those away.
+  net = net ?? lockstep(LEAD)
+  inDuel = true
   spokenFor = -1
   tick = 0
   /*
@@ -2419,6 +2505,8 @@ async function pairUp(seed: number, mapName: string, first: boolean): Promise<vo
 
 function listen(open: RTCDataChannel): void {
   channel = open
+  // Before a word can be said, so nothing said early is lost.
+  net = lockstep(LEAD)
   open.onmessage = (event: MessageEvent) => {
     const message = JSON.parse(String(event.data)) as {
       start?: { seed: number; map: string }

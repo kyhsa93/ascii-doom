@@ -1967,18 +1967,33 @@ check('the maps that ship can be reached and played', () => {
  * all. They had walked for the whole second; the second just had almost no
  * ticks in it.
  */
-const waitTicks = async (page: Page, many: number): Promise<void> => {
+const waitTicks = async (page: Page, many: number): Promise<boolean> => {
   const reading = () =>
     page.evaluate(
       () => ((window as unknown as { __doom?: Record<string, unknown> }).__doom?.netTick as number) ?? 0,
     )
   const from = await reading()
-  await page.waitForFunction(
-    (want) =>
-      (((window as unknown as { __doom?: Record<string, unknown> }).__doom?.netTick as number) ?? 0) >= want,
-    from + many,
-    { timeout: 60000 },
-  )
+  try {
+    await page.waitForFunction(
+      (want) =>
+        (((window as unknown as { __doom?: Record<string, unknown> }).__doom?.netTick as number) ?? 0) >= want,
+      from + many,
+      { timeout: 60000 },
+    )
+    return true
+  } catch {
+    /*
+     * Answered rather than thrown, because a throw out here is not a failed
+     * check -- it is the end of the run.
+     *
+     * A game that stopped advancing killed the whole gate three times while
+     * this was being written, and each time the sixty-eight verdicts that had
+     * already been earned went with it and the output said nothing about which
+     * check had been waiting. The caller records this and asserts on it, so a
+     * stall fails the check it belongs to and leaves the rest standing.
+     */
+    return false
+  }
 }
 
 /*
@@ -2057,20 +2072,21 @@ await hostPage.waitForFunction(
   undefined,
   { timeout: 30000 },
 )
-await waitTicks(hostPage, 60)
+let pairKeptTicking = await waitTicks(hostPage, 60)
 const hostJoined = await standing(hostPage)
 const guestJoined = await standing(guestPage)
 
 // One of them walks, and the question is whether the other sees it.
 await hostPage.keyboard.down('w')
-await waitTicks(hostPage, 72)
+pairKeptTicking = (await waitTicks(hostPage, 72)) && pairKeptTicking
 await hostPage.keyboard.up('w')
-await waitTicks(hostPage, 30)
+pairKeptTicking = (await waitTicks(hostPage, 30)) && pairKeptTicking
 const hostWalked = await standing(hostPage)
 const guestWatching = await standing(guestPage)
 await pairBrowser.close()
 
 check('two browsers meet with no server and play the same world', () => {
+  assert(pairKeptTicking, 'the two of them stopped advancing: the lockstep deadlocked')
   assert(hostFoundIt && guestFoundIt, 'the title has no line offering to play somebody')
   assert(hostJoined.linked && guestJoined.linked, 'the two pages never connected')
   assert(hostJoined.hosting && !guestJoined.hosting, 'both sides think they are the same one')
@@ -2167,7 +2183,7 @@ await duelHost.waitForFunction(
   undefined,
   { timeout: 30000 },
 )
-await waitTicks(duelHost, 60)
+let duelKeptTicking = await waitTicks(duelHost, 60)
 
 const duelLook = (page: Page) =>
   page.evaluate(() => {
@@ -2216,6 +2232,8 @@ const duelAimAt = async (page: Page, within: number): Promise<number> => {
     await waitTicks(page, forTicks)
     await page.keyboard.up(key)
     await waitTicks(page, 3)
+    // A stall here shows up as an aim that never converges, which the check
+    // below reports on its own terms.
   }
   return Math.abs(off)
 }
@@ -2257,15 +2275,16 @@ const duelGuestOff = await duelAimAt(duelGuest, duelWithin)
 // left to assert.
 await duelHost.keyboard.down(' ')
 await duelGuest.keyboard.down(' ')
-await waitTicks(duelHost, 48)
+duelKeptTicking = (await waitTicks(duelHost, 48)) && duelKeptTicking
 await duelHost.keyboard.up(' ')
 await duelGuest.keyboard.up(' ')
-await waitTicks(duelHost, 54)
+duelKeptTicking = (await waitTicks(duelHost, 54)) && duelKeptTicking
 const duelHostAfter = await duelLook(duelHost)
 const duelGuestAfter = await duelLook(duelGuest)
 await duelBrowser.close()
 
 check('the two of them can shoot each other, and agree about the wounds', () => {
+  assert(duelKeptTicking, 'the duel stopped advancing: the lockstep deadlocked')
   assert(duelHostBefore.level === 'MAP11', `the duel is on ${duelHostBefore.level} rather than MAP11`)
   assert(duelHostBefore.linked && duelGuestBefore.linked, 'the two never connected')
   assert(
@@ -2318,6 +2337,163 @@ check('the two of them keep the same world while they fight', () => {
   assert(
     duelHostAfter.crowd === duelGuestAfter.crowd,
     'the two worlds parted once both of them fired, which is the resolving order',
+  )
+})
+
+/*
+ * Recording a run from a phone, with no keyboard anywhere in it.
+ *
+ * The words that start a demo can only be typed, and a phone has nothing to
+ * type with -- so for a while the whole feature existed only at a desk, which
+ * is the same shape of fault as the file picker that was hidden behind the
+ * touch controls. The way in is the title, and the way to drive the title on a
+ * phone is the stick and the fire button, so that is what this uses. Nothing
+ * here touches a key.
+ */
+const phoneDemoContext = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  hasTouch: true,
+  isMobile: true,
+})
+const phoneDemoPage = await phoneDemoContext.newPage()
+phoneDemoPage.on('pageerror', (error) => problems.push(`phone demo: ${error.message}`))
+await phoneDemoPage.goto(base, { waitUntil: 'domcontentloaded' })
+await phoneDemoPage.waitForTimeout(1200)
+
+/** One nudge of the stick, which is how a thumb moves the cursor. */
+const phoneDemoNudge = async (down: boolean): Promise<void> => {
+  const box = await phoneDemoPage.locator('#stick').boundingBox()
+  if (box === null) return
+  const cx = box.x + box.width / 2
+  const cy = box.y + box.height / 2
+  await phoneDemoPage.locator('#stick').dispatchEvent('pointerdown', {
+    pointerId: 21,
+    isPrimary: true,
+    clientX: cx,
+    clientY: cy,
+  })
+  await phoneDemoPage.locator('#stick').dispatchEvent('pointermove', {
+    pointerId: 21,
+    isPrimary: true,
+    clientX: cx,
+    clientY: cy + (down ? 44 : -44),
+  })
+  await phoneDemoPage.waitForTimeout(180)
+  await phoneDemoPage.locator('#stick').dispatchEvent('pointerup', { pointerId: 21, isPrimary: true })
+  await phoneDemoPage.waitForTimeout(140)
+}
+/** And a press of the fire button, which is how a thumb chooses. */
+const phoneDemoChoose = async (): Promise<void> => {
+  await phoneDemoPage.locator('#fire').dispatchEvent('pointerdown', { pointerId: 22, isPrimary: true })
+  await phoneDemoPage.waitForTimeout(200)
+  await phoneDemoPage.locator('#fire').dispatchEvent('pointerup', { pointerId: 22, isPrimary: true })
+  await phoneDemoPage.waitForTimeout(300)
+}
+const phoneDemoRead = () =>
+  phoneDemoPage.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      label: (d.menuLabel as string) ?? '',
+      titleUp: d.titleUp === true,
+      recording: d.recording === true,
+      hasDemo: d.hasDemo === true,
+      level: (d.level as string) ?? '',
+    }
+  })
+
+const phoneDemoAtFirst = await phoneDemoRead()
+let phoneDemoFound = false
+let phoneDemoLandedOnReplay = false
+for (let i = 0; i < 14; i++) {
+  const now = await phoneDemoRead()
+  if (now.label === 'play it back') phoneDemoLandedOnReplay = true
+  if (now.label === 'record a run') {
+    phoneDemoFound = true
+    break
+  }
+  await phoneDemoNudge(true)
+}
+await phoneDemoChoose()
+await phoneDemoPage.waitForTimeout(900)
+const phoneDemoRunning = await phoneDemoRead()
+await phoneDemoPage.close()
+await phoneDemoContext.close()
+
+check('a phone can record a run without a keyboard', () => {
+  assert(phoneDemoAtFirst.titleUp, 'the phone did not come up on the title')
+  assert(!phoneDemoAtFirst.hasDemo, 'something was already recorded before anything happened')
+  // Nothing recorded yet, so the line that plays one back must be skipped over
+  // rather than sat on -- a cursor parked on a dead line is a title that will
+  // not go away, which this project has already shipped once.
+  assert(!phoneDemoLandedOnReplay, 'the cursor stopped on "play it back" with nothing to play')
+  assert(phoneDemoFound, 'a thumb could not reach "record a run" on the title')
+  assert(!phoneDemoRunning.titleUp, 'choosing it left the title up')
+  assert(phoneDemoRunning.recording, 'choosing it started a level but no recording')
+})
+
+/*
+ * A recording that ends with its level, rather than by typing the word again.
+ *
+ * That was the rule the phone needed -- there is nothing to type with -- and it
+ * put the seal in `enterLevel`, which is where finishing, dying and going
+ * somewhere else all land. Leaving for a map out of a file is the quickest of
+ * those to drive, and it is also the one that found a bug: `enterWad` sets the
+ * campaign index to -1 before it enters, so a run recorded in the outpost was
+ * sealed as level -1 and playing it back asked the campaign for a level it
+ * refuses. A recording now remembers where it began.
+ */
+const sealPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+sealPage.on('pageerror', (error) => problems.push(`sealing: ${error.message}`))
+await sealPage.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
+await sealPage.waitForTimeout(900)
+await begin(sealPage)
+const sealRead = () =>
+  sealPage.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      recording: d.recording === true,
+      hasDemo: d.hasDemo === true,
+      level: (d.level as string) ?? '',
+      titleUp: d.titleUp === true,
+    }
+  })
+for (const letter of 'idrec') await sealPage.keyboard.press(letter)
+await sealPage.waitForTimeout(500)
+const sealTaping = await sealRead()
+await sealPage.keyboard.down('w')
+await sealPage.waitForTimeout(700)
+await sealPage.keyboard.up('w')
+await sealPage.waitForTimeout(200)
+
+// Somewhere else entirely, which is one of the ways a run ends.
+await sealPage.setInputFiles('#wad', goodWad)
+await sealPage.waitForTimeout(900)
+await hold(sealPage, ' ', 200)
+await sealPage.waitForTimeout(900)
+const sealAfterLeaving = await sealRead()
+
+// And what was sealed can be played, which is what "sealed properly" means.
+for (const letter of 'idplay') await sealPage.keyboard.press(letter)
+await sealPage.waitForTimeout(1500)
+const sealReplaying = await sealRead()
+await sealPage.close()
+
+check('a recording ends with its level, and what it kept can be played', () => {
+  assert(sealTaping.recording, 'typing the word did not start a recording')
+  assert(!sealTaping.hasDemo, 'something was already kept before this run ended')
+  assert(!sealAfterLeaving.recording, 'leaving the level left the recording open')
+  assert(sealAfterLeaving.hasDemo, 'leaving the level kept nothing')
+  /*
+   * The bug this was written for: the run was recorded in the campaign and
+   * ended by entering a map from a file, which sets the campaign index to -1
+   * on its way in. Sealed with that index, the replay asks for level -1 and
+   * the campaign refuses -- so the page would still be sitting in the file's
+   * map rather than back in the outpost.
+   */
+  assert(!sealReplaying.titleUp, 'playing it back left the title up')
+  assert(
+    sealReplaying.level === 'the outpost',
+    `playing it back landed in ${sealReplaying.level} rather than where it was recorded`,
   )
 })
 
