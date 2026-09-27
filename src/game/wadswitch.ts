@@ -46,14 +46,35 @@ const FAST_SPEED = 4.4
  * every one of these is the "stays" kind -- because a tagged door that shut
  * itself again would need a second machine to know when.
  */
-const TAGGED = new Map<
-  number,
-  {
-    surface: 'floor' | 'ceiling'
-    target: 'lowestCeiling' | 'lowestFloor' | 'highestFloor' | 'nextHigherFloor'
-    fast: boolean
-  }
->([
+type Target = 'lowestCeiling' | 'highestCeiling' | 'lowestFloor' | 'highestFloor' | 'nextHigherFloor' | 'ownFloor'
+
+interface Tagged {
+  surface: 'floor' | 'ceiling'
+  target: Target
+  fast: boolean
+  /**
+   * Which way the surface is supposed to travel.
+   *
+   * Stated rather than worked out from the heights, because it is the one thing
+   * that can be checked: `updateMovers` travels toward whatever height it is
+   * handed without asking which way that is, so a map whose geometry contradicts
+   * its own special used to produce a door that opened downwards. Now it produces
+   * no machine at all, which is what a map saying two things means.
+   */
+  expect: 'up' | 'down'
+  /**
+   * Seconds at the far end before it comes back, or nothing to stay put.
+   *
+   * A closing door uses this as the pause before it reopens, which falls out of
+   * the arrangement rather than needing a second kind of machine: for a door that
+   * closes, the far end *is* shut.
+   */
+  wait?: number
+  /** A key colour that must be held, for the locked switches. */
+  key?: string
+}
+
+const TAGGED = new Map<number, Tagged>([
   /*
    * A door held open where the original would shut it again.
    *
@@ -65,14 +86,14 @@ const TAGGED = new Map<
    * person to wonder should find it written down instead of in the maps.
    */
   // Switches that open a door somewhere else.
-  [103, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
-  [112, { surface: 'ceiling', target: 'lowestCeiling', fast: true }],
-  [61, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
-  [63, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
+  [103, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [112, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up' }],
+  [61, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [63, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up' }],
   // Switches that move a floor.
-  [23, { surface: 'floor', target: 'lowestFloor', fast: false }],
-  [102, { surface: 'floor', target: 'highestFloor', fast: false }],
-  [71, { surface: 'floor', target: 'lowestFloor', fast: true }],
+  [23, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down' }],
+  [102, { surface: 'floor', target: 'highestFloor', fast: false, expect: 'down' }],
+  [71, { surface: 'floor', target: 'lowestFloor', fast: true, expect: 'down' }],
   /*
    * Floors that rise to the next step up rather than to the highest one.
    *
@@ -88,8 +109,8 @@ const TAGGED = new Map<
    * highest thing around and are refused, like every other machine here that
    * would not move.
    */
-  [18, { surface: 'floor', target: 'nextHigherFloor', fast: false }],
-  [20, { surface: 'floor', target: 'nextHigherFloor', fast: false }],
+  [18, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [20, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
   // Walked across. The same rooms, reached the other way, now that a crossing
   // is something this engine can see.
   //
@@ -98,17 +119,103 @@ const TAGGED = new Map<
   // pressing anything. Measured: of the rooms they name, a hundred and
   // thirty-five each are shut the way a door is shut, and not one of them is
   // without a neighbour to measure an opening against.
-  [2, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
-  [109, { surface: 'ceiling', target: 'lowestCeiling', fast: true }],
-  [38, { surface: 'floor', target: 'lowestFloor', fast: false }],
-  [37, { surface: 'floor', target: 'lowestFloor', fast: false }],
-  [19, { surface: 'floor', target: 'highestFloor', fast: false }],
-  [36, { surface: 'floor', target: 'highestFloor', fast: true }],
+  [2, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [109, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up' }],
+  [38, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down' }],
+  [37, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down' }],
+  [19, { surface: 'floor', target: 'highestFloor', fast: false, expect: 'down' }],
+  [36, { surface: 'floor', target: 'highestFloor', fast: true, expect: 'down' }],
   // Opened by being shot rather than by being touched. The room it names is a
   // door like any other; only the trigger is unusual.
-  [46, { surface: 'ceiling', target: 'lowestCeiling', fast: false }],
-  // Opened by being shot rather than by being touched. The room it names is a
-  // door like any other; only the trigger is unusual.
+  [46, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  /*
+   * The locked switches, which were out for a round and are in now.
+   *
+   * They were tried and removed, and the reason was written down: every colour
+   * was guessed for the two commonest against all sixty-eight maps, nine
+   * combinations, and none of them was an improvement. The textures disagreed
+   * with each other -- 133 is DOORBLU twenty-four times and plain twenty-two --
+   * and one map settled 137 on a red key, which the second file's DOORYEL
+   * flatly contradicted.
+   *
+   * What was missing was not more guessing. The original's own dispatcher names
+   * all six: 99 and 133 blue, 134 and 135 red, 136 and 137 yellow. Two readings
+   * that disagree meant a third thing was going on, and the third thing was that
+   * a door texture is decoration -- a mapper is free to put a plain wall on a
+   * locked door and often did.
+   */
+  [99, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', key: 'cobalt' }],
+  [133, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', key: 'cobalt' }],
+  [134, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', key: 'crimson' }],
+  [135, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', key: 'crimson' }],
+  [136, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', key: 'amber' }],
+  [137, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', key: 'amber' }],
+  /*
+   * Doors that shut rather than open, which need no new machine.
+   *
+   * A mover travels between two heights and is worked by being triggered; which
+   * of the two is "shut" is a name rather than a rule. So a closing door is one
+   * whose far end is its own floor, and 16 -- the one that closes for thirty
+   * seconds and opens again -- is that with a wait on it. Nothing here knew how
+   * to make a door close before, and thirteen lines across eight maps are the
+   * only way through on the far side of a room you have already crossed.
+   */
+  [3, { surface: 'ceiling', target: 'ownFloor', fast: false, expect: 'down' }],
+  [110, { surface: 'ceiling', target: 'ownFloor', fast: true, expect: 'down' }],
+  [16, { surface: 'ceiling', target: 'ownFloor', fast: false, expect: 'down', wait: 30 }],
+  /*
+   * Doors that open and shut themselves, which is what the original means by
+   * "raise" as against "open". Four seconds, which is the original's wait.
+   */
+  [4, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up', wait: 4 }],
+  [90, { surface: 'ceiling', target: 'lowestCeiling', fast: false, expect: 'up', wait: 4 }],
+  [105, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', wait: 4 }],
+  [114, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up', wait: 4 }],
+  [106, { surface: 'ceiling', target: 'lowestCeiling', fast: true, expect: 'up' }],
+  /*
+   * Floors that rise until the room runs out of headroom, which is what the
+   * original's plain "raise floor" does: it stops at the lowest ceiling around,
+   * not at the highest floor. Six specials and eighty-odd lines say it.
+   */
+  [5, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [91, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [101, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [64, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [56, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [24, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  /*
+   * Two that raise a floor by a fixed number of map units -- thirty-two and five
+   * hundred and twelve -- and are approximated by the room's own limits instead.
+   *
+   * A fixed rise cannot be carried across honestly: this game's map unit is not
+   * the original's, and five hundred and twelve of them is either thirteen metres
+   * or twenty depending on which of this project's scales you believe. Four lines
+   * in total, and a floor that rises as far as the room allows is closer to what
+   * the mapper wanted than a floor that rises through the ceiling.
+   */
+  [140, { surface: 'floor', target: 'lowestCeiling', fast: false, expect: 'up' }],
+  [14, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  // A ceiling that rises out of the way, which is the one special here that
+  // moves a ceiling upward rather than opening it like a door.
+  [40, { surface: 'ceiling', target: 'highestCeiling', fast: false, expect: 'up' }],
+  // Floors that drop, to their neighbours or to the lowest of them.
+  [45, { surface: 'floor', target: 'highestFloor', fast: false, expect: 'down' }],
+  [60, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down' }],
+  [82, { surface: 'floor', target: 'lowestFloor', fast: false, expect: 'down' }],
+  // And floors that step up once, which is the commonest of all of these: a
+  // hundred and one lines across the two files.
+  [47, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [68, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [69, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [119, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [128, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [22, { surface: 'floor', target: 'nextHigherFloor', fast: false, expect: 'up' }],
+  [129, { surface: 'floor', target: 'nextHigherFloor', fast: true, expect: 'up' }],
+  [130, { surface: 'floor', target: 'nextHigherFloor', fast: true, expect: 'up' }],
+  [131, { surface: 'floor', target: 'nextHigherFloor', fast: true, expect: 'up' }],
+  // A platform that drops, waits and comes back, which is a lift worked by
+  // crossing a line rather than by standing on it.
+  [121, { surface: 'floor', target: 'lowestFloor', fast: true, expect: 'down', wait: 3 }],
 ])
 
 /*
@@ -137,10 +244,16 @@ const TAGGED = new Map<
  */
 
 /** Which of these are worked by pressing, rather than by walking across. */
-const PRESSED = new Set([103, 112, 61, 63, 23, 102, 71, 18, 20])
+const PRESSED = new Set([
+  103, 112, 61, 63, 23, 102, 71, 18, 20,
+  // The locked ones, all of which are switch plates.
+  99, 133, 134, 135, 136, 137,
+  // And the rest the original's `P_UseSpecialLine` answers for.
+  114, 101, 64, 45, 60, 68, 69, 131, 140, 14,
+])
 
 /** And which are worked by being shot, which is neither of those. */
-const SHOT = new Set([46])
+const SHOT = new Set([46, 24, 47])
 
 export interface TaggedMachines {
   /** The movers to add to the level, in the order they were made. */
@@ -198,22 +311,37 @@ export function taggedFrom(
       if (target === null) continue
 
       const rest = kind.surface === 'ceiling' ? room.ceiling : room.floor
+      /*
+       * Headroom only where the far end is somebody else's ceiling.
+       *
+       * An opening door stops a little short of the lowest neighbouring ceiling,
+       * which is the original's arrangement and what keeps a doorway looking like
+       * a doorway. A door travelling to its own floor is shutting, and shutting
+       * short of the floor would leave a gap you could see through.
+       */
       const open = kind.target === 'lowestCeiling' ? target - HEADROOM : target
-      // A machine that would not move is not a machine, and one that would move
-      // the wrong way is worse: `updateMovers` travels toward whatever height it
-      // is handed without asking which way that is.
-      if (kind.surface === 'ceiling' && open <= rest) continue
-      if (kind.surface === 'floor' && Math.abs(open - rest) < 1e-9) continue
+      // A machine that would not move is not a machine, and one that moves the
+      // wrong way is worse: `updateMovers` travels toward whatever height it is
+      // handed without asking which way that is. So the direction is declared in
+      // the table and a map whose geometry disagrees gets no machine.
+      if (Math.abs(open - rest) < 1e-9) continue
+      if (kind.expect === 'up' && open < rest) continue
+      if (kind.expect === 'down' && open > rest) continue
 
       const made: MoverKind = {
         surface: kind.surface,
         shut: rest,
         open,
         speed: kind.fast ? FAST_SPEED : SPEED,
-        // No wait: these stay where they are put. A tagged door that shut itself
-        // again would need something to decide when, and the original's answer
-        // for that is a different special.
-        wait: 0,
+        /*
+         * Usually none: most of these stay where they are put, because a tagged
+         * door that shut itself again would need something to decide when and the
+         * original's answer for that is a different special. The ones that do
+         * come back say so in the table -- and for the doors that *close*, the
+         * far end is shut, so this is the pause before they open again.
+         */
+        wait: kind.wait ?? 0,
+        ...(kind.key === undefined ? {} : { requiresKey: kind.key }),
       }
       madeFor.set(sector, movers.length)
       const mover = makeMover(sector, made)
@@ -234,13 +362,13 @@ export function taggedFrom(
 }
 
 /** The height a named room's surface is measured against, or null. */
-function targetFor(
-  level: Level,
-  sector: number,
-  want: 'lowestCeiling' | 'lowestFloor' | 'highestFloor' | 'nextHigherFloor',
-): number | null {
+function targetFor(level: Level, sector: number, want: Target): number | null {
   const here = level.sectors[sector]
   if (here === undefined) return null
+
+  // The one target that needs no neighbour: a door that closes travels to its own
+  // floor, which is where a shut door's ceiling is.
+  if (want === 'ownFloor') return here.floor
 
   let found: number | null = null
   for (const line of level.lines) {
@@ -249,7 +377,7 @@ function targetFor(
     if (other === null || other === sector) continue
     const room = level.sectors[other]
     if (room === undefined) continue
-    const value = want === 'lowestCeiling' ? room.ceiling : room.floor
+    const value = want === 'lowestCeiling' || want === 'highestCeiling' ? room.ceiling : room.floor
     // The next step up is the lowest neighbour that is still above this room,
     // so neighbours at or below it are not candidates at all. Everything else
     // takes every neighbour and then picks an end.
@@ -259,7 +387,7 @@ function targetFor(
       continue
     }
     if (found === null) found = value
-    else if (want === 'highestFloor') found = Math.max(found, value)
+    else if (want === 'highestFloor' || want === 'highestCeiling') found = Math.max(found, value)
     else found = Math.min(found, value)
   }
   return found

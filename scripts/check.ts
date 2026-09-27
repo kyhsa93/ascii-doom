@@ -2668,6 +2668,26 @@ test('every tagged special arrives, under the table that matches how it works', 
    * on its first run for exactly that reason -- the fixture, not the importer.
    */
   const sunkenRoom = () => plainLevel([3, 0], [[0, 1]])
+  /*
+   * Two more shapes, for the two kinds of machine added with the locked
+   * switches.
+   *
+   * A door that *closes* needs a room with headroom to close: in both shapes
+   * above the named room's ceiling is already on its floor or level with the
+   * only place it could travel to, so the machine is correctly refused and the
+   * fixture would have been the thing failing. And a ceiling that rises out of
+   * the way needs a neighbour with a higher one to rise to.
+   */
+  const openRoom = () => {
+    const level = plainLevel([0, 0], [[0, 1]])
+    level.sectors[1]!.ceiling = 5
+    return level
+  }
+  const lowRoof = () => {
+    const level = plainLevel([0, 0], [[0, 1]])
+    level.sectors[0]!.ceiling = 8
+    return level
+  }
 
   /*
    * Written out here rather than read from the table being checked.
@@ -2678,15 +2698,23 @@ test('every tagged special arrives, under the table that matches how it works', 
    * thirty maps -- changed nothing and the falsifier sat silent. A check that
    * derives its expectations from the thing under test is not a check.
    */
-  // The locked switches are deliberately absent: every colour was tried for 133
-  // and 137 against all sixty-eight maps and none of the nine combinations beat
-  // leaving them out. The reasoning is in `wadswitch.ts`.
-  //
-  // 18 and 20 raise a floor to the next step above it rather than to the
-  // highest one -- a fourth target, added for them.
-  // 46 is the one worked by shooting it, which is why the count below adds a
-  // third table rather than two.
-  const EXPECTED = [103, 112, 61, 63, 23, 102, 71, 18, 20, 2, 109, 38, 37, 19, 36, 46]
+  /*
+   * 18 and 20 raise a floor to the next step above it rather than to the highest
+   * one. 46, 24 and 47 are worked by being shot, which is why the count below
+   * adds a third table rather than two. The six locked ones -- 99, 133, 134,
+   * 135, 136, 137 -- were absent for a round, and the note that said so is worth
+   * keeping in mind rather than deleting: they were left out because their key
+   * colours had been guessed from door textures that contradicted each other,
+   * and they are in now because the original's own dispatcher names all six.
+   */
+  const EXPECTED = [
+    103, 112, 61, 63, 23, 102, 71, 18, 20, 2, 109, 38, 37, 19, 36, 46,
+    99, 133, 134, 135, 136, 137,
+    3, 110, 16, 4, 90, 105, 114, 106,
+    5, 91, 101, 64, 56, 24, 140, 14, 40,
+    45, 60, 82,
+    47, 68, 69, 119, 128, 22, 129, 130, 131, 121,
+  ]
   const table = taggedSpecials()
   for (const special of EXPECTED) {
     assert(table.includes(special), `special ${special} has gone out of the tagged table`)
@@ -2700,14 +2728,12 @@ test('every tagged special arrives, under the table that matches how it works', 
     // A door needs a shut room to open and a floor needs somewhere to go, and
     // which of the two this is cannot be read off the number. Try both; one of
     // them must produce exactly one machine.
-    const asDoor = taggedFrom(shutRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
-    const asFloor = taggedFrom(raisedRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
-    const asStep = taggedFrom(sunkenRoom(), [spec(special, null, 5)], new Map([[5, [1]]]))
-    const made =
-      asDoor.movers.length === 1 ? asDoor : asFloor.movers.length === 1 ? asFloor : asStep
+    const shapes = [shutRoom(), raisedRoom(), sunkenRoom(), openRoom(), lowRoof()]
+    const tried = shapes.map((level) => taggedFrom(level, [spec(special, null, 5)], new Map([[5, [1]]])))
+    const made = tried.find((attempt) => attempt.movers.length === 1) ?? tried[0]!
     assert(
       made.movers.length === 1,
-      `special ${special} is in the table and makes no machine in any of the three shapes`,
+      `special ${special} is in the table and makes no machine in any of the five shapes`,
     )
     // And it is filed under exactly one of the three ways of working it,
     // because the page asks three different questions -- what am I facing,
@@ -2716,6 +2742,103 @@ test('every tagged special arrives, under the table that matches how it works', 
     assert(worked === 1, `special ${special} arrived under ${worked} ways of working it`)
   }
 })
+
+test('a door that closes is the same machine with its far end shut', () => {
+  /*
+   * Thirteen lines on eight maps close a door instead of opening one, and there
+   * was no way to say that: every machine here travelled from where it was to
+   * somewhere a neighbour decided, and "shut" was a name for whichever end it
+   * started at. Its own floor is the end a shutting door travels to, which needs
+   * no new machinery -- only a target that does not consult a neighbour.
+   */
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[1]!.ceiling = 5
+  const line = spec(3, null, 5)
+  const made = taggedFrom(level, [line], new Map([[5, [1]]]))
+  assert(made.movers.length === 1, `${made.movers.length} machines came off a closing door`)
+  const mover = made.movers[0]!
+  assert(mover.kind.surface === 'ceiling', 'a closing door moves the floor')
+  assert(mover.kind.shut === 5, `it starts at ${mover.kind.shut} rather than at the ceiling`)
+  assert(mover.kind.open === 0, `its far end is ${mover.kind.open} rather than the floor`)
+  assert(mover.kind.open < mover.kind.shut, 'a closing door opens upwards')
+  assert(made.crossed.get(line.line)?.length === 1, 'a closing door is worked by pressing it')
+
+  // And the one that closes for thirty seconds and opens again is that with a
+  // wait, which is the pause before it comes back rather than before it shuts.
+  const timed = taggedFrom(level, [spec(16, null, 5)], new Map([[5, [1]]]))
+  assert(timed.movers[0]?.kind.wait === 30, `the thirty-second door waits ${timed.movers[0]?.kind.wait}`)
+  // Against one that stays where it is put, or the field above would be
+  // measuring a default.
+  const stays = taggedFrom(shutRoomFor(), [spec(106, null, 5)], new Map([[5, [1]]]))
+  assert(stays.movers[0]?.kind.wait === 0, 'a door that stays open waits to shut itself')
+})
+
+test('a map whose geometry contradicts its own special gets no machine', () => {
+  /*
+   * The guard that came with the closing doors, and the reason it had to.
+   *
+   * `updateMovers` travels toward whatever height it is handed without asking
+   * which way that is, so before this the direction was inferred from a
+   * comparison that only made sense for doors that open. A closing door broke
+   * that inference, which meant the table had to declare the direction -- and
+   * declaring it makes the contradiction checkable: a room that is told to raise
+   * its floor and has nowhere above it to raise to is a room the machine is
+   * refused in.
+   */
+  // A floor told to rise to the next step up, in a room that is already the
+  // highest thing around.
+  const nowhereUp = taggedFrom(plainLevel([0, 3], [[0, 1]]), [spec(119, null, 5)], new Map([[5, [1]]]))
+  assert(nowhereUp.movers.length === 0, 'a floor rose to a step that is below it')
+  // And the same special in a room that has one.
+  const somewhere = taggedFrom(plainLevel([3, 0], [[0, 1]]), [spec(119, null, 5)], new Map([[5, [1]]]))
+  assert(somewhere.movers.length === 1, 'a floor with a step above it refused to rise')
+  assert(somewhere.movers[0]!.kind.open > somewhere.movers[0]!.kind.shut, 'it rose downwards')
+})
+
+test('the locked switches ask for the colour the original names', () => {
+  /*
+   * These were in, then out with the reasoning written down, and are in again.
+   *
+   * Out because their colours had been guessed from door textures, and the
+   * textures contradict each other -- 133 is DOORBLU twenty-four times and plain
+   * twenty-two, and one map settles 137 on a red key against the other file's
+   * DOORYEL. In again because the original's own dispatcher names all six, which
+   * is evidence rather than a ninth guess: 99 and 133 blue, 134 and 135 red, 136
+   * and 137 yellow.
+   *
+   * Measured before putting them back: on eight of the sixty-eight maps a locked
+   * door has no key of its colour placed anywhere, so it stays shut. It stayed
+   * shut when the special was unread too -- an unread line is a plain wall -- so
+   * nothing became less finishable by reading it.
+   */
+  const colours = new Map([
+    [99, 'cobalt'],
+    [133, 'cobalt'],
+    [134, 'crimson'],
+    [135, 'crimson'],
+    [136, 'amber'],
+    [137, 'amber'],
+  ])
+  for (const [special, colour] of colours) {
+    const made = taggedFrom(shutRoomFor(), [spec(special, null, 5)], new Map([[5, [1]]]))
+    assert(made.movers.length === 1, `locked switch ${special} makes no machine`)
+    assert(
+      made.movers[0]!.kind.requiresKey === colour,
+      `locked switch ${special} asks for ${made.movers[0]!.kind.requiresKey} rather than ${colour}`,
+    )
+    assert(made.pressed.size === 1, `locked switch ${special} is not worked by pressing`)
+  }
+  // And the unlocked ones ask for nothing, or the field would be meaningless.
+  const plain = taggedFrom(shutRoomFor(), [spec(103, null, 5)], new Map([[5, [1]]]))
+  assert(plain.movers[0]!.kind.requiresKey === undefined, 'an unlocked switch asks for a key')
+})
+
+/** A room shut the way a door is shut, for the checks above. */
+function shutRoomFor(): Level {
+  const level = plainLevel([0, 0], [[0, 1]])
+  level.sectors[1]!.ceiling = 0
+  return level
+}
 
 test('a switch opens the door its tag names', () => {
   // The room a 103 names is shut the way a door is shut -- ceiling on the
