@@ -33,7 +33,7 @@ import type { ActorState } from './ai.ts'
  * failure of a half-understood save is a level that looks right and is wrong
  * somewhere nobody looks.
  */
-export const SAVE_VERSION = 1
+export const SAVE_VERSION = 2
 
 export interface Save {
   readonly version: number
@@ -46,6 +46,17 @@ export interface Save {
     readonly armour: number
     readonly armourShare: number
     readonly weapons: readonly number[]
+    /**
+     * Seconds left on each powerup, in `POWERS` order, with a twist.
+     *
+     * Two of them never run out and are held as an infinite clock, and `JSON`
+     * has no way to write one down -- `JSON.stringify(Infinity)` is the string
+     * "null", which comes back as `null` and reads as zero. So a clock that does
+     * not run out is written as -1 here and turned back on the way in. This is
+     * the only place that knows the representation.
+     */
+    readonly powers: readonly number[]
+    readonly pack: boolean
   }
   readonly player: {
     readonly x: number
@@ -110,6 +121,8 @@ export function snapshot(
       armour: carrier.armour,
       armourShare: carrier.armourShare,
       weapons: [...carrier.weapons],
+      powers: carrier.powers.map((left) => (Number.isFinite(left) ? left : -1)),
+      pack: carrier.pack,
     },
     player: {
       x: state.player.x,
@@ -176,6 +189,8 @@ export function restore(save: Save, state: LevelState, carrier: Carrier): Extras
   carrier.armour = save.carrier.armour
   carrier.armourShare = save.carrier.armourShare
   carrier.weapons = new Set(save.carrier.weapons)
+  carrier.powers = save.carrier.powers.map((left) => (left < 0 ? Infinity : left))
+  carrier.pack = save.carrier.pack
 
   state.player.x = save.player.x
   state.player.y = save.player.y

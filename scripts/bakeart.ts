@@ -75,6 +75,9 @@ const SUPPLIES: readonly (readonly [string, string])[] = [
   ['PINS', 'BLUR'],
   ['PMAP', 'COMPUTER_MAP'],
   ['PVIS', 'LIGHT_AMP'],
+  // The one powerup picture that was missed the first time round, which is why
+  // the radiation suit stood in sixty-eight maps as a thing with no art.
+  ['SUIT', 'RADIATION_SUIT'],
   ['BAR1', 'BARREL'],
 
   ['BON1', 'BONUS'],
@@ -121,9 +124,14 @@ const INTERFACE: readonly (readonly [string, string, number])[] = [
    * fourteen come out smaller there, which is what you want, because the gun is
    * furniture and the room is the thing being looked at.
    *
-   * Only the three this game has. The chaingun, plasma rifle, BFG and chainsaw
-   * are in the file and would each cost their own kilobytes to say nothing --
-   * there is nothing here to fire them with.
+   * Only the five this game has. The chaingun, plasma rifle and BFG are in the
+   * file and would each cost their own kilobytes to say nothing -- there is
+   * nothing here to fire them with.
+   *
+   * The fist and the saw joined the list the round they became weapons. They are
+   * the two the sentence above used to exclude for the same reason it still
+   * excludes the other three, which is why it is worth saying that the reason
+   * was never "these are not real weapons".
    */
   ['PISGA0', 'SIDEARM_HELD', 14],
   ['PISGB0', 'SIDEARM_FIRING', 14],
@@ -131,6 +139,10 @@ const INTERFACE: readonly (readonly [string, string, number])[] = [
   ['SHTGB0', 'SCATTERGUN_FIRING', 14],
   ['MISGA0', 'LAUNCHER_HELD', 14],
   ['MISGB0', 'LAUNCHER_FIRING', 14],
+  ['PUNGA0', 'FISTS_HELD', 14],
+  ['PUNGB0', 'FISTS_FIRING', 14],
+  ['SAWGA0', 'CHAINSAW_HELD', 14],
+  ['SAWGB0', 'CHAINSAW_FIRING', 14],
 ]
 
 /**

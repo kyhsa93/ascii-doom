@@ -57,6 +57,7 @@ import {
   INVULNERABILITY,
   LAUNCHER_PICKUP,
   LIGHT_AMP,
+  RADIATION_SUIT,
   MEDIKIT,
   MEGASPHERE,
   PLASMA,
@@ -155,18 +156,28 @@ export const CHAINSAW_PICKUP: Sprite = atHeight(CHAINSAW, 0.4)
 export const BACKPACK_PICKUP: Sprite = atHeight(BACKPACK, 0.45)
 
 /**
- * The powerups, which this game does not grant yet and does draw.
+ * The powerups.
  *
- * Drawn rather than hidden because the alternative is a room the map filled
- * and the game left empty: two hundred and thirty of them stand across the
- * sixty-eight maps. What they do when walked over is a separate question from
- * what is standing there.
+ * These were drawn and inert for a round -- two hundred and fifty-six of them
+ * standing across the sixty-eight maps, projecting and occluding and granting
+ * nothing -- which is the state `waditems.ts` used to describe as "drawn where
+ * they stand and grant nothing yet". They grant now; `powers.ts` says what and
+ * for how long.
+ *
+ * The suit was the one of the six whose picture had never been baked, so it
+ * could not even be the thing that grants nothing. Its lump is in the baker's
+ * list now.
  */
 export const BERSERK_PACK: Sprite = atHeight(BERSERK, 0.4)
 export const INVULNERABILITY_SPHERE: Sprite = atHeight(INVULNERABILITY, 0.6)
 export const BLUR_SPHERE: Sprite = atHeight(BLUR, 0.6)
 export const CHART: Sprite = atHeight(COMPUTER_MAP, 0.5)
 export const GOGGLES: Sprite = atHeight(LIGHT_AMP, 0.35)
+// Taller than the rest of the supplies because it is a suit rather than a box:
+// the original's picture is a figure, and shrinking it to a canister's height
+// would make the one powerup you have to recognise from across a room the one
+// that looks like ammunition.
+export const HAZARD_SUIT: Sprite = atHeight(RADIATION_SUIT, 0.8)
 
 /** The keys, each in the colour it opens and in both shapes the maps use. */
 export const KEY_TOKEN: Sprite = atHeight(BLUE_KEY, 0.5)

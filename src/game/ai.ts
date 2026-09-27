@@ -228,6 +228,19 @@ export interface UpdateOptions {
   wakeCone?: number
   /** Source of randomness, so a check can pin the pain rolls. */
   random?: () => number
+  /**
+   * Extra radians of error on every hitscanner's aim.
+   *
+   * What being hard to see does: the creature still knows where you are and
+   * still fires, and the shot goes wider than it meant. Added to the gun's own
+   * spread rather than replacing it, so a weapon that was already inaccurate
+   * stays the more inaccurate of the two.
+   *
+   * Only the guns. A creature close enough to bite does not have to aim, which
+   * is the original's arrangement too and the reason a blurred player still
+   * cannot stand in a hound's mouth.
+   */
+  aimWobble?: number
 }
 
 const scratchHits: RayHit[] = []
@@ -248,6 +261,7 @@ export function updateActors(
   options: UpdateOptions = {},
 ): ActorOutcome {
   const wakeCone = options.wakeCone ?? Math.PI * 0.75
+  const wobble = options.aimWobble ?? 0
   let damage = 0
   const shots: Projectile[] = []
   /*
@@ -343,7 +357,7 @@ export function updateActors(
         // shot is traced against -- so a creature standing between the two
         // takes it, and a wall stops it.
         for (let shot = 0; shot < gun.shots; shot++) {
-          const off = ((options.random ?? Math.random)() * 2 - 1) * gun.spread
+          const off = ((options.random ?? Math.random)() * 2 - 1) * (gun.spread + wobble)
           const hit = traceShot(
             level,
             actor.sector,

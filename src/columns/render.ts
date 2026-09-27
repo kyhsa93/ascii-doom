@@ -48,6 +48,16 @@ export interface RenderOptions {
    */
   horizonShift?: number
   /**
+   * A floor under every sector's light, before distance dims it.
+   *
+   * What the goggles do: a dark room is lit as brightly as a lit one and the
+   * far end of it is still the far end. Lifting the sector's light rather than
+   * the finished shade is deliberate -- flattening the result would take away
+   * the only depth cue a character grid has, and a corridor with no falloff
+   * reads as a wall of glyphs rather than as somewhere you can see.
+   */
+  lightFloor?: number
+  /**
    * Collects the lines this frame actually reached, for the automap.
    *
    * Filled here because the rays have already been cast: knowing what you have
@@ -295,6 +305,7 @@ export function renderView(
   const cols = fb.width
   const rows = fb.height
   const maxDistance = options.maxDistance ?? DEFAULT_MAX_DISTANCE
+  const lightFloor = options.lightFloor ?? 0
   const { projScale, planeHalf, horizon } = projectionOf(
     cols,
     rows,
@@ -326,7 +337,7 @@ export function renderView(
     const cosA = dx * fx + dy * fy
     castRay(level, view.x, view.y, dx, dy, maxDistance / cosA, hits)
 
-    drawColumn(fb, level, view, col, hits, cosA, projScale, horizon, maxDistance, options.seen)
+    drawColumn(fb, level, view, col, hits, cosA, projScale, horizon, maxDistance, options.seen, lightFloor)
   }
 }
 
@@ -341,6 +352,7 @@ function drawColumn(
   horizon: number,
   maxDistance: number,
   seen: Set<Line> | undefined,
+  lightFloor: number,
 ): void {
   const rows = fb.height
   let current = view.sector
@@ -361,6 +373,9 @@ function drawColumn(
     // along the ray.
     seen?.add(hit.line)
 
+    // Once per sector reached rather than at each of the six places below, so a
+    // floor cannot apply to the walls and not to the ceiling.
+    const light = sector.light > lightFloor ? sector.light : lightFloor
     const distance = hit.t * cosA
     const ceilingRow = rowOfHeight(sector.ceiling, distance, view.z, projScale, horizon)
     const floorRow = rowOfHeight(sector.floor, distance, view.z, projScale, horizon)
@@ -374,8 +389,8 @@ function drawColumn(
     // sector, so everything nearer keeps clipping against them, and they are
     // left as they were cleared -- which is the same nothing the renderer shows
     // where a ray leaves the map altogether.
-    top = paintPlane(fb, col, top, Math.min(bottom, firstRow(ceilingRow) - 1), sector.ceiling, sector.light, view.z, projScale, horizon, sector.ceilingMaterial, maxDistance, false, !sector.sky)
-    bottom = paintPlane(fb, col, Math.max(top, firstRow(floorRow)), bottom, sector.floor, sector.light, view.z, projScale, horizon, sector.floorMaterial, maxDistance, true)
+    top = paintPlane(fb, col, top, Math.min(bottom, firstRow(ceilingRow) - 1), sector.ceiling, light, view.z, projScale, horizon, sector.ceilingMaterial, maxDistance, false, !sector.sky)
+    bottom = paintPlane(fb, col, Math.max(top, firstRow(floorRow)), bottom, sector.floor, light, view.z, projScale, horizon, sector.floorMaterial, maxDistance, true)
 
     const next = acrossFrom(hit.line, current)
     if (next < 0) {
@@ -393,7 +408,7 @@ function drawColumn(
        * different question from what the surface is made of -- and they are how
        * you tell a doorway from a wall at a glance.
        */
-      paintWall(fb, col, top, bottom, distance, sector.light, hit.line.material)
+      paintWall(fb, col, top, bottom, distance, light, hit.line.material)
       return
     }
 
@@ -407,13 +422,13 @@ function drawColumn(
     if (beyond.ceiling < sector.ceiling) {
       const edge = rowOfHeight(beyond.ceiling, distance, view.z, projScale, horizon)
       const to = Math.min(bottom, firstRow(edge) - 1)
-      paintWall(fb, col, top, to, distance, sector.light, 'upper')
+      paintWall(fb, col, top, to, distance, light, 'upper')
       top = Math.max(top, to + 1)
     }
     if (beyond.floor > sector.floor) {
       const edge = rowOfHeight(beyond.floor, distance, view.z, projScale, horizon)
       const from = Math.max(top, firstRow(edge))
-      paintWall(fb, col, from, bottom, distance, sector.light, 'lower')
+      paintWall(fb, col, from, bottom, distance, light, 'lower')
       bottom = Math.min(bottom, from - 1)
     }
 

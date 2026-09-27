@@ -19,6 +19,7 @@ import type { Level, Line } from '../columns/level.ts'
 import { damageActor, isAlive, type Actor } from './ai.ts'
 import type { Body } from './player.ts'
 import { spawnProjectile, type Projectile, type ProjectileKind } from './projectiles.ts'
+import { RAGE_MULTIPLIER } from './powers.ts'
 import { SLUG } from './things.ts'
 
 export interface Weapon {
@@ -44,6 +45,24 @@ export interface Weapon {
    * not firing at a wall you are standing against.
    */
   readonly projectile?: ProjectileKind
+  /**
+   * True for something swung rather than fired.
+   *
+   * It costs nothing, which is what makes it the weapon you still have when the
+   * reserves are gone, and it reaches about as far as a creature's claws do --
+   * the same distance beyond your own edge that they reach beyond theirs. A
+   * shot from one still resolves as a trace: a swing that stops at the wall
+   * between you and what you swung at is the behaviour either way.
+   */
+  readonly melee?: boolean
+  /**
+   * True for the bare hand in particular, which rage makes heavy.
+   *
+   * Separate from `melee` because the original's berserk multiplies the fist and
+   * leaves the saw alone, and a saw at ten times its damage would make the
+   * powerup the only decision in the game.
+   */
+  readonly bare?: boolean
 }
 
 /** Accurate, cheap, and slow to finish anything. */
@@ -112,7 +131,67 @@ export const LAUNCHER: Weapon = {
   },
 }
 
-export const WEAPONS: readonly Weapon[] = [SIDEARM, SCATTERGUN, LAUNCHER]
+/**
+ * Bare hands, which cost nothing and are always in them.
+ *
+ * The thing you are left with, and -- with rage -- briefly the best thing you
+ * have. Ten a swing at one every half second is under half the sidearm's rate
+ * of killing, which is the price of it being free.
+ */
+export const FISTS: Weapon = {
+  name: 'fists',
+  damage: 10,
+  pellets: 1,
+  spread: 0,
+  // A creature's widest reach is nine tenths, measured from its edge. This is
+  // that plus the player's own radius, so you and a hound standing nose to nose
+  // can each just reach the other rather than one of you having to lean in.
+  range: 1.25,
+  interval: 0.5,
+  cost: 0,
+  melee: true,
+  bare: true,
+}
+
+/**
+ * The saw, which the maps put down thirty-seven times and nothing could hold.
+ *
+ * Eight a bite at eight a second, free, at arm's length: more damage than
+ * anything else here and only against what you are touching. It is the answer
+ * to a corridor and the wrong answer to a room.
+ */
+export const CHAINSAW: Weapon = {
+  name: 'chainsaw',
+  damage: 8,
+  pellets: 1,
+  spread: 0,
+  range: 1.25,
+  interval: 0.12,
+  cost: 0,
+  melee: true,
+}
+
+/*
+ * The order is append-only on purpose.
+ *
+ * Everything indexes weapons by position in this list -- the reserves, the
+ * ceilings, what a map's shotgun folds into, a save on somebody's disk -- so
+ * putting the fists first where the original has them would renumber all of it
+ * for the sake of a number nothing shows.
+ */
+export const WEAPONS: readonly Weapon[] = [SIDEARM, SCATTERGUN, LAUNCHER, FISTS, CHAINSAW]
+
+/**
+ * The weapon as it lands, given whether the carrier is raging.
+ *
+ * Here rather than at the trigger because it is a rule with a right answer, and
+ * because the trigger is in the page where nothing can check it. Returns the
+ * same object when nothing applies, so the common case allocates nothing.
+ */
+export function asSwung(weapon: Weapon, raging: boolean): Weapon {
+  if (!raging || weapon.bare !== true) return weapon
+  return { ...weapon, damage: weapon.damage * RAGE_MULTIPLIER }
+}
 
 /** What one pull of the trigger did. */
 export interface FireResult {

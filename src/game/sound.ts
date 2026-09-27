@@ -34,6 +34,10 @@ export type Noise =
   | 'weaponUp'
   | 'teleport'
   | 'noAmmo'
+  | 'fists'
+  | 'chainsaw'
+  | 'powerUp'
+  | 'powerDown'
 
 interface Shape {
   /** Seconds the whole thing lasts. */
@@ -61,6 +65,17 @@ const SHAPES: Record<Noise, Shape> = {
   sidearm: { length: 0.12, grit: 0.7, from: 420, to: 140, level: 0.5, cutoff: 3200 },
   scattergun: { length: 0.3, grit: 0.85, from: 300, to: 70, level: 0.7, cutoff: 2200 },
   launcher: { length: 0.36, grit: 0.6, from: 260, to: 60, level: 0.7, cutoff: 1600 },
+  // A swing is short, soft and low: nothing goes off, something lands.
+  fists: { length: 0.09, grit: 0.55, from: 200, to: 90, level: 0.35, cutoff: 1200 },
+  // Eight of these a second, so it has to be shorter than its own interval or
+  // the game is one continuous noise. Bright and gritty, because what a saw
+  // sounds like is teeth rather than a report.
+  chainsaw: { length: 0.1, grit: 0.9, from: 1100, to: 800, level: 0.3, cutoff: 5000 },
+  // The two that rise rather than fall, which is the whole of why they read as
+  // something starting and something ending. Every other noise in this table
+  // falls because percussion does; a powerup is not percussion.
+  powerUp: { length: 0.45, grit: 0.1, from: 300, to: 900, level: 0.45, cutoff: 5000 },
+  powerDown: { length: 0.5, grit: 0.15, from: 700, to: 200, level: 0.4, cutoff: 3000 },
   blast: { length: 0.7, grit: 0.95, from: 180, to: 40, level: 0.9, cutoff: 900 },
   hurt: { length: 0.22, grit: 0.4, from: 300, to: 180, level: 0.55, cutoff: 1800 },
   die: { length: 0.9, grit: 0.5, from: 260, to: 70, level: 0.8, cutoff: 1400 },

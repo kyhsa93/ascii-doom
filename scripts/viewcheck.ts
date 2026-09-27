@@ -3175,13 +3175,22 @@ check('nothing in the level moves until the title is dismissed', () => {
 check('a screen with room for the bar gets it', () => {
   const desktop = fronts.find((f) => f.name === 'desktop')!
   const phone = fronts.find((f) => f.name === 'phone')!
-  assert(desktop.playing.panels === 4, `a 163-column grid drew ${desktop.playing.panels} panels`)
+  // Five since the powerups arrived: health, the weapon, the keys, where you
+  // are, and what you are under.
+  assert(desktop.playing.panels === 5, `a 163-column grid drew ${desktop.playing.panels} panels`)
   // A phone used to keep the single line because 49 columns cannot hold four
   // panels. Its characters are smaller now and its grid is 80 wide, which is
   // over the seventy-two the bar needs -- so it gets the bar too. The claim
   // that a narrow grid keeps the line has not changed and is checked in Node,
   // where a 49-column grid can still be asked for directly.
-  assert(phone.playing.panels === 4, `a phone drew ${phone.playing.panels} panels on an 80-column grid`)
+  //
+  // Five there too, measured rather than assumed: eighty columns over five
+  // panels is sixteen each, and the longest thing any of them has to show is
+  // six characters wide. The guess here was four, on the reasoning that a fifth
+  // panel must cost something -- it does not, until the grid is narrower than
+  // this, and which panel goes first when it is narrower is checked in Node
+  // where a width can be asked for directly.
+  assert(phone.playing.panels === 5, `a phone drew ${phone.playing.panels} panels on an 80-column grid`)
   // The bar is opaque. Drawn straight over the world it came out as HEALTH and
   // 93 tangled into a wall of per-cent signs, so the foot is checked for the
   // words rather than for the flag that says they were placed.
@@ -3253,6 +3262,209 @@ check('a new level starts the tally from nothing', () => {
   assert(afterNewLevel.shots === 0, `${afterNewLevel.shots} shots carried into the new level`)
   assert(afterNewLevel.landed === 0, `${afterNewLevel.landed} hits carried into the new level`)
   assert(afterNewLevel.kills === 0, `${afterNewLevel.kills} kills carried into the new level`)
+})
+
+
+/*
+ * The powerups, which are the newest thing here and the hardest to see from
+ * Node: what each one does lands in the page -- the shield inside `hurtPlayer`,
+ * the suit at the floor underfoot, the chart in the set of lines the automap has
+ * been shown, the goggles in the light the renderer is handed. Node can check
+ * that the clocks run; only a browser can check that anything is under them.
+ *
+ * Everything below is named `power*` or `gear*`. Three top-level names have
+ * collided in this file already, and the collision does not fail -- the later
+ * one wins and the earlier check quietly measures the wrong page.
+ */
+const powerReadKit = (page: Page) =>
+  page.evaluate(() => {
+    const probe = (window as unknown as { __doom?: Record<string, unknown> }).__doom ?? {}
+    return {
+      health: (probe.health as number) ?? -1,
+      hurt: (probe.hurt as number) ?? -1,
+      powers: (probe.powers as string) ?? '?',
+      pack: (probe.pack as boolean) ?? false,
+      mapped: (probe.mapped as number) ?? -1,
+      mapLines: (probe.mapLines as number) ?? -1,
+      bright: (probe.bright as number) ?? -1,
+      weapon: (probe.weapon as string) ?? '?',
+      levelIndex: (probe.levelIndex as number) ?? -1,
+    }
+  })
+
+const powerDrop = (page: Page, type: number) =>
+  page.evaluate(
+    (thing) => (window as unknown as { __probe?: { drop(t: number): boolean } }).__probe?.drop(thing) ?? false,
+    type,
+  )
+
+const powerToTag = (page: Page, tag: string) =>
+  page.evaluate(
+    (name) => (window as unknown as { __probe?: { toTag(t: string): boolean } }).__probe?.toTag(name) ?? false,
+    tag,
+  )
+
+// The suit and the shield are measured against the same ground the unprotected
+// check above measures: the channel in the cistern, which is the only thing in
+// the shipped levels that hurts you without also shooting back.
+const powerGround = async (thing: number, label: string) => {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+  page.on('pageerror', (error) => problems.push(`${label}: ${error.message}`))
+  await page.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(900)
+  await begin(page)
+  await page.evaluate(() => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit())
+  // Past the summary and its pause, which puts us in the cistern.
+  await page.waitForTimeout(4400)
+
+  const laid = await powerDrop(page, thing)
+  // A step, so the ordinary collection rule finds what is at our feet.
+  await page.waitForTimeout(250)
+  const carrying = await powerReadKit(page)
+  const inIt = await powerToTag(page, 'channel')
+  await page.waitForTimeout(200)
+  const entered = await powerReadKit(page)
+  await page.waitForTimeout(1600)
+  const stood = await powerReadKit(page)
+  await page.close()
+  return { laid, carrying, inIt, entered, stood }
+}
+
+const powerSuit = await powerGround(2025, 'suit')
+check('the suit stands in the channel and the channel does nothing', () => {
+  assert(powerSuit.laid, 'the page would not put a radiation suit down')
+  assert(powerSuit.carrying.levelIndex === 1, `the probe never reached the cistern (level ${powerSuit.carrying.levelIndex})`)
+  assert(powerSuit.carrying.powers.startsWith('suit'), `the status line says "${powerSuit.carrying.powers}" after taking a suit`)
+  assert(powerSuit.inIt, 'the shipped level has no sector tagged "channel" to stand in')
+  // The premise, and the half of this that catches a suit which works by
+  // accident: the ground still says it is dangerous ground.
+  assert(powerSuit.entered.hurt > 0, 'the channel reports no damage, so wearing a suit in it proves nothing')
+  assert(
+    powerSuit.stood.health === powerSuit.entered.health,
+    `a second and a half in the channel cost ${powerSuit.entered.health - powerSuit.stood.health} health through a suit`,
+  )
+})
+
+const powerShield = await powerGround(2022, 'shield')
+check('nothing can touch you, including the floor', () => {
+  assert(powerShield.laid, 'the page would not put an invulnerability sphere down')
+  assert(
+    powerShield.carrying.powers.startsWith('shld'),
+    `the status line says "${powerShield.carrying.powers}" after taking a shield`,
+  )
+  assert(powerShield.entered.hurt > 0, 'the channel reports no damage, so standing in it under a shield proves nothing')
+  assert(
+    powerShield.stood.health === powerShield.entered.health,
+    `a shield let the channel take ${powerShield.entered.health - powerShield.stood.health} health`,
+  )
+})
+
+// The chart and the goggles, both on the first level, because neither needs
+// anything to happen to you.
+const powerSight = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+powerSight.on('pageerror', (error) => problems.push(`sight: ${error.message}`))
+await powerSight.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await powerSight.waitForTimeout(900)
+await begin(powerSight)
+// Walked a little first, so the automap has learned something: "the chart showed
+// everything" is not a claim you can make on a level that was already shown.
+await powerSight.keyboard.down('w')
+await powerSight.waitForTimeout(700)
+await powerSight.keyboard.up('w')
+await powerSight.waitForTimeout(250)
+const powerBeforeChart = await powerReadKit(powerSight)
+const powerChartLaid = await powerDrop(powerSight, 2026)
+await powerSight.waitForTimeout(250)
+const powerAfterChart = await powerReadKit(powerSight)
+
+const powerBeforeGoggles = await powerReadKit(powerSight)
+const powerGogglesLaid = await powerDrop(powerSight, 2045)
+await powerSight.waitForTimeout(250)
+const powerAfterGoggles = await powerReadKit(powerSight)
+await powerSight.close()
+
+check('the chart shows the whole map at once', () => {
+  assert(powerChartLaid, 'the page would not put a computer map down')
+  assert(powerBeforeChart.mapLines > 0, 'the level has no lines, so there is nothing to have been shown')
+  assert(
+    powerBeforeChart.mapped > 0 && powerBeforeChart.mapped < powerBeforeChart.mapLines,
+    `the automap already held ${powerBeforeChart.mapped} of ${powerBeforeChart.mapLines} lines before the chart`,
+  )
+  assert(
+    powerAfterChart.mapped === powerAfterChart.mapLines,
+    `the chart left ${powerAfterChart.mapped} of ${powerAfterChart.mapLines} lines known`,
+  )
+  assert(powerAfterChart.powers.includes('map'), `the status line says "${powerAfterChart.powers}" after a chart`)
+})
+
+check('the goggles brighten what is on the screen', () => {
+  assert(powerGogglesLaid, 'the page would not put light amplification goggles down')
+  assert(powerBeforeGoggles.bright > 0, 'nothing was drawn at all, so the brightness means nothing')
+  assert(
+    powerAfterGoggles.bright > powerBeforeGoggles.bright,
+    `the screen was ${powerBeforeGoggles.bright.toFixed(4)} bright before the goggles and ${powerAfterGoggles.bright.toFixed(4)} after`,
+  )
+  assert(powerAfterGoggles.powers.includes('eyes'), `the status line says "${powerAfterGoggles.powers}" after goggles`)
+})
+
+// The two weapons, and the rule that you cannot select one you have not found.
+const gearPage = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+gearPage.on('pageerror', (error) => problems.push(`gear: ${error.message}`))
+await gearPage.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await gearPage.waitForTimeout(900)
+await begin(gearPage)
+const gearScreen = async (): Promise<string> =>
+  await gearPage.evaluate(() => document.querySelector('pre')?.innerText ?? '')
+
+// Held rather than tapped: the game samples which keys are down once a frame, so
+// a press whose keyup lands in the same instant falls between two samples.
+const gearPress = async (key: string): Promise<void> => {
+  await gearPage.keyboard.down(key)
+  await gearPage.waitForTimeout(160)
+  await gearPage.keyboard.up(key)
+  await gearPage.waitForTimeout(160)
+}
+
+await gearPress('4')
+const gearFists = await powerReadKit(gearPage)
+const gearFistsDrawn = await gearScreen()
+// Five, which nothing has found yet. The saw fires perfectly well without
+// ammunition, so before the ownership test was written this selected a weapon
+// nobody was carrying and swung it.
+await gearPress('5')
+const gearBeforeSaw = await powerReadKit(gearPage)
+const gearSawLaid = await powerDrop(gearPage, 2005)
+await gearPage.waitForTimeout(250)
+await gearPress('5')
+const gearWithSaw = await powerReadKit(gearPage)
+const gearSawDrawn = await gearScreen()
+await gearPage.close()
+
+check('a fist is always in hand and the saw has to be found', () => {
+  assert(gearFists.weapon === 'fists', `the fourth key selected "${gearFists.weapon}"`)
+  assert(
+    gearBeforeSaw.weapon === 'fists',
+    `the fifth key selected "${gearBeforeSaw.weapon}" before a saw had been found`,
+  )
+  assert(gearSawLaid, 'the page would not put a chainsaw down')
+  assert(gearWithSaw.weapon === 'chainsaw', `the fifth key selected "${gearWithSaw.weapon}" after finding a saw`)
+})
+
+check('a weapon that costs nothing shows no reserve', () => {
+  // A zero beside FISTS reads as a gun you cannot fire, which is the opposite of
+  // what the fists are for.
+  assert(/fists/i.test(gearFistsDrawn), 'the status line never named the fists')
+  assert(!/fists\s+0/i.test(gearFistsDrawn), 'the fists are shown with a reserve of zero')
+})
+
+check('the fist and the saw are drawn in your hands', () => {
+  // The picture, not the name. The held frames for these two were baked in the
+  // same round the weapons arrived, and a weapon whose art is never wired up
+  // shows as an empty pair of hands with a working trigger.
+  const fists = signatureOf(FREEDOOM.FISTS_HELD)
+  const saw = signatureOf(FREEDOOM.CHAINSAW_HELD)
+  assert(gearFistsDrawn.includes(fists), 'the fists are selected and nothing of them is on the screen')
+  assert(gearSawDrawn.includes(saw), 'the saw is selected and nothing of it is on the screen')
 })
 
 await browser.close()

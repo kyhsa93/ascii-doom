@@ -40,6 +40,10 @@ import {
 import { deathLines, finishNow, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import {
+  CHAINSAW_FIRING,
+  CHAINSAW_HELD,
+  FISTS_FIRING,
+  FISTS_HELD,
   LAUNCHER_FIRING,
   LAUNCHER_HELD,
   LOGO,
@@ -70,10 +74,19 @@ import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState, type Skill } from '../src/game/wadlevel.ts'
 import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
-import { collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
+import { capacityOf, collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
+import { supplyFor } from '../src/game/waditems.ts'
+import {
+  BLUR_WOBBLE,
+  SIGHT_FLOOR,
+  holds,
+  leftOn,
+  tickPowers,
+  type Power,
+} from '../src/game/powers.ts'
 import { blast, sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
 import { EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody, type Body } from '../src/game/player.ts'
-import { WEAPONS, fire } from '../src/game/weapons.ts'
+import { WEAPONS, asSwung, fire } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
 // Declared here rather than beside its listener: the menu opens it too, and a
@@ -886,12 +899,12 @@ button(
     touch.use = false
   },
 )
-// One button cycling forward, because three weapon buttons would cost more of
+// One button cycling forward, because five weapon buttons would cost more of
 // a small screen than they are worth.
 button(
   'swap',
   () => {
-    touch.weapon = (weaponIndex + 1) % WEAPONS.length
+    touch.weapon = nextHeld(weaponIndex)
   },
   () => {},
 )
@@ -960,7 +973,11 @@ function applyCheat(asked: Cheat): void {
     carrier.health = carrier.maxHealth
     carrier.armour = 200
     carrier.armourShare = 1 / 2
-    for (let i = 0; i < carrier.ammo.length; i++) carrier.ammo[i] = carrier.ammoMax[i] ?? 0
+    // The pack first, so "full" means the ceiling the pack raises rather than
+    // the one it replaces -- the original's version of this word hands you
+    // backpack-sized reserves and this is what that amounts to here.
+    carrier.pack = true
+    for (let i = 0; i < carrier.ammo.length; i++) carrier.ammo[i] = capacityOf(carrier, i)
     for (let i = 0; i < WEAPONS.length; i++) carrier.weapons.add(i)
     for (const colour of ['cobalt', 'crimson', 'amber']) carrier.keys.add(colour)
     say('every key and a full kit')
@@ -1017,10 +1034,116 @@ function applyCheat(asked: Cheat): void {
   noise('switch')
 }
 
+/**
+ * What each weapon sounds like, by the position the weapon list gives it.
+ *
+ * A table because the chain of conditionals it replaced ended in "or else the
+ * launcher", which meant the two free weapons both went off with a rocket's
+ * report the moment they existed.
+ */
+const SHOT_NOISE: readonly Noise[] = ['sidearm', 'scattergun', 'launcher', 'fists', 'chainsaw']
+
+/**
+ * What each powerup says on the way in and on the way out.
+ *
+ * Words rather than the name of the effect, because "shield" is what the code
+ * calls it and "nothing can touch you" is what it does. The ones that never run
+ * out have no ending line and never ask for one -- `tickPowers` cannot return
+ * them -- so the table is complete rather than partial on purpose: a `Record`
+ * over the union is the thing that would fail to compile if a seventh powerup
+ * arrived and nobody wrote its line.
+ */
+const POWER_SAID: Readonly<Record<Power, string>> = {
+  shield: 'nothing can touch you',
+  rage: 'your hands are heavy',
+  blur: 'hard to see',
+  suit: 'the floor cannot burn you',
+  chart: 'the whole map',
+  sight: 'you can see in the dark',
+}
+
+const POWER_ENDED: Readonly<Record<Power, string>> = {
+  shield: 'the shield is gone',
+  rage: 'the rage is gone',
+  blur: 'you can be seen again',
+  suit: 'the suit is gone',
+  chart: 'the map is gone',
+  sight: 'the dark is back',
+}
+
+/**
+ * The two letters a running powerup shows in the status line, shortest clock
+ * first.
+ *
+ * Six of them could take the whole line, so what is shown is the one about to
+ * run out -- which is the one you would want to know about -- and a count of the
+ * others. The two that never run out sort last for the same reason.
+ */
+function powerLine(powers: readonly number[]): string {
+  const running = (['shield', 'blur', 'suit', 'sight', 'rage', 'chart'] as const)
+    .filter((power) => holds(powers, power))
+    .sort((a, b) => leftOn(powers, a) - leftOn(powers, b))
+  const first = running[0]
+  if (first === undefined) return ''
+  const left = leftOn(powers, first)
+  const clock = Number.isFinite(left) ? ` ${Math.ceil(left)}` : ''
+  const rest = running.length > 1 ? ` +${running.length - 1}` : ''
+  return `${POWER_SHORT[first]}${clock}${rest}`
+}
+
+/** Four letters each, which is what fits beside the health and the ammunition. */
+const POWER_SHORT: Readonly<Record<Power, string>> = {
+  shield: 'shld',
+  rage: 'rage',
+  blur: 'blur',
+  suit: 'suit',
+  chart: 'map',
+  sight: 'eyes',
+}
+
+/**
+ * The next weapon round from this one that is actually in hand.
+ *
+ * Only reachable weapons, or the one button on a phone would stop on the saw
+ * nobody has found yet and firing would do nothing. Falls back to where it
+ * started, which is what happens if somehow nothing is held: cycling then does
+ * nothing rather than selecting a weapon that does not exist.
+ */
+function nextHeld(from: number): number {
+  for (let step = 1; step <= WEAPONS.length; step++) {
+    const at = (from + step) % WEAPONS.length
+    if (carrier.weapons.has(at)) return at
+  }
+  return from
+}
+
+/**
+ * Mean brightness of the world pass, sampled before anything is drawn over it.
+ *
+ * Kept outside the frame so the hook at the foot of it can report a number taken
+ * halfway through.
+ */
+let worldBright = 0
+
+/** Mean of the colour channels over the cells this frame drew on. */
+function meanBrightness(fb: Framebuffer): number {
+  let sum = 0
+  let cells = 0
+  for (let i = 0; i < fb.depth.length; i++) {
+    if (fb.depth[i]! <= 0) continue
+    sum += (fb.color[i * 3]! + fb.color[i * 3 + 1]! + fb.color[i * 3 + 2]!) / 3
+    cells++
+  }
+  return cells === 0 ? 0 : sum / cells
+}
+
 function hurtPlayer(amount: number): void {
   if (amount <= 0) return
-  // Nothing can hurt you, and nothing needs to know that but this.
-  if (godly) return
+  // Nothing can hurt you, and nothing needs to know that but this. The shield
+  // hangs here with the cheat rather than beside each thing that hurts, which is
+  // the same reason `takeDamage` exists: the fourth place something hurts you is
+  // the one that would have forgotten.
+  if (godly || holds(carrier.powers, 'shield')) return
   const before = carrier.health
   takeDamage(carrier, amount)
   if (carrier.health <= 0 && before > 0) noise('die')
@@ -1086,15 +1209,25 @@ function pullTrigger(
   wants: boolean,
 ): number {
   const { level, actors, player } = state
-  const weapon = WEAPONS[weaponAt]
-  if (weapon === undefined) return cooling
-  if (!wants || cooling > 0 || (kit.ammo[weaponAt] ?? 0) < weapon.cost) return cooling
+  const held = WEAPONS[weaponAt]
+  if (held === undefined) return cooling
+  if (!wants || cooling > 0 || (kit.ammo[weaponAt] ?? 0) < held.cost) return cooling
+  /*
+   * What rage does, applied here rather than inside `fire`.
+   *
+   * `fire` takes a weapon and resolves it; which weapon is being swung is the
+   * caller's question, and the caller is the only place that knows whose
+   * carrier is holding the powerup. It is also the only arrangement where the
+   * other player's rage lands on this machine too, because their carrier is
+   * passed in as `kit`.
+   */
+  const weapon = asSwung(held, holds(kit.powers, 'rage'))
   kit.ammo[weaponAt] = (kit.ammo[weaponAt] ?? 0) - weapon.cost
   if (own) {
     flash = 0.06
     shotsFired++
   }
-  noise(weaponAt === 0 ? 'sidearm' : weaponAt === 1 ? 'scattergun' : 'launcher')
+  noise(SHOT_NOISE[weaponAt] ?? 'sidearm')
 
   // The other player goes in the second list, which is traced with the
   // creatures and counted as none of them.
@@ -1418,7 +1551,17 @@ function step(): void {
   const theirAsk = mate !== null && runTheirs !== null && !isDead(mateCarrier) ? runTheirs : null
   // A weapon request is a one-shot: consumed here so holding the button does
   // not keep re-selecting, and cleared whether or not it changed anything.
-  if (intent.weapon >= 0 && intent.weapon < WEAPONS.length) weaponIndex = intent.weapon
+  /*
+   * And only one you are holding.
+   *
+   * This was a bounds check alone while every weapon was held from the start.
+   * The saw is the first one that is found, and without this the key for it
+   * selected a weapon that then fired perfectly well -- the trigger asks about
+   * ammunition, not about ownership, and a saw needs none.
+   */
+  if (intent.weapon >= 0 && intent.weapon < WEAPONS.length && carrier.weapons.has(intent.weapon)) {
+    weaponIndex = intent.weapon
+  }
   touch.weapon = -1
 
   // The rising edge, not the state: a device says the map is being asked for,
@@ -1552,8 +1695,17 @@ function step(): void {
 
   // The ground underfoot, after the move rather than before it: a step out of a
   // channel is a step out of it, and the clock starts again on the way back in.
+  /*
+   * The suit, which is the one powerup that has to be asked about here.
+   *
+   * The clock still runs while you stand in the channel -- `bite` is asked
+   * either way, so stepping out and back in is the same decision it was -- and
+   * what the suit changes is only whether the answer lands. Skipping the call
+   * instead would mean a suit that expires mid-channel starts your burn clock
+   * from that moment rather than from when you waded in.
+   */
   const burn = bite(level, player.sector, hazard, STEP)
-  if (burn > 0) {
+  if (burn > 0 && !holds(carrier.powers, 'suit')) {
     hurtPlayer(burn)
     say('burning')
     noise('hurt', 0.5)
@@ -1562,7 +1714,12 @@ function step(): void {
   // counted from when that body stepped in rather than when this one did.
   if (mate !== null) {
     const theirBurn = bite(level, mate.sector, mateHazard, STEP)
-    if (theirBurn > 0) takeDamage(mateCarrier, theirBurn)
+    // Read off their own carrier, so both machines agree about whether the
+    // other one is wearing a suit. A powerup consulted from the page instead
+    // would be one only the machine holding it knew about.
+    if (theirBurn > 0 && !holds(mateCarrier.powers, 'suit') && !holds(mateCarrier.powers, 'shield')) {
+      takeDamage(mateCarrier, theirBurn)
+    }
   }
 
   // Walked over. Nothing is taken that would give nothing, so crossing a room
@@ -1575,6 +1732,14 @@ function step(): void {
       else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
       else if (grant.kind === 'armour') say(`armour ${carrier.armour}`)
       else if (grant.kind === 'weapon') say(`${WEAPONS[grant.weapon]?.name ?? 'a weapon'} — ${carrier.ammo[grant.weapon] ?? 0} rounds`)
+      else if (grant.kind === 'power') {
+        // The one powerup whose whole effect is on a thing the page owns: the
+        // set of lines the automap has been shown. The cheat that does this
+        // fills the same set, which is why the two read alike.
+        if (grant.power === 'chart') for (const line of level.lines) seen.add(line)
+        say(POWER_SAID[grant.power])
+        noise('powerUp')
+      } else if (grant.kind === 'pack') say(`a pack — twice what you could carry`)
       else say(`${grant.key} key`)
     }
   }
@@ -1588,11 +1753,32 @@ function step(): void {
     else takeTheirs()
   }
 
+  /*
+   * The powerup clocks, run down here with the other seconds-based ones.
+   *
+   * Both carriers, because both collect. Theirs is run down without saying so:
+   * a line about somebody else's shield wearing off is a line about a room you
+   * cannot see.
+   */
+  for (const ended of tickPowers(carrier.powers, STEP)) {
+    say(`${POWER_ENDED[ended]}`)
+    noise('powerDown')
+  }
+  tickPowers(mateCarrier.powers, STEP)
+
   cooldown = Math.max(0, cooldown - STEP)
   mateCooldown = Math.max(0, mateCooldown - STEP)
   flash = Math.max(0, flash - STEP)
   noticeTime = Math.max(0, noticeTime - STEP)
-  if (theirAsk !== null && theirAsk.weapon >= 0 && theirAsk.weapon < WEAPONS.length) {
+  // The same ownership test as for this side's, against their carrier. Both
+  // machines run it against the same carrier, so both agree about what they are
+  // holding even though only one of them pressed the key.
+  if (
+    theirAsk !== null &&
+    theirAsk.weapon >= 0 &&
+    theirAsk.weapon < WEAPONS.length &&
+    mateCarrier.weapons.has(theirAsk.weapon)
+  ) {
     mateWeapon = theirAsk.weapon
   }
 
@@ -1686,7 +1872,24 @@ function step(): void {
   // either. The rule is about height, not about what kind of thing is under it.
   updateMovers(level, movers, [player, ...actors], STEP)
 
-  const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP, { random: rolls })
+  /*
+   * Driven by this machine's own player, which is as far as the shared world
+   * goes -- and worth writing down, because the powerup below reads this
+   * machine's own carrier for the same reason.
+   *
+   * In a duel both machines run this pass and each hands it the body whose keys
+   * it is holding, so the creatures are not part of what the two of you agree
+   * about: they chase whoever is local, and the two views of them drift apart
+   * within seconds. That was true before the powerups and is not made worse by
+   * one that widens their aim. What the lockstep checks compare is the players
+   * and the wounds they give each other, which is what the duel maps are for.
+   * Making the creatures shared would mean naming one body, on both machines, as
+   * the one they hunt -- a decision about what a duel is rather than a fix.
+   */
+  const outcome = updateActors(level, actors, player, EYE_HEIGHT, STEP, {
+    random: rolls,
+    aimWobble: holds(carrier.powers, 'blur') ? BLUR_WOBBLE : 0,
+  })
   if (outcome.damage > 0) hurtPlayer(outcome.damage)
   for (const shot of outcome.shots) projectiles.push(shot)
 
@@ -1819,7 +2022,21 @@ function frame(now: number): void {
   // The map replaces the view rather than floating over it, which is what the
   // original does and what this resolution can afford. Nothing new is seen
   // while it is up, because seeing is a side effect of drawing the world.
-  if (!mapOpen && !titleUp) renderView(fb, level, view, surface.cellAspect, { horizonShift, seen })
+  // One value, read once, handed to both passes: the world and everything
+  // standing in it have to be lit by the same rule or night vision looks like a
+  // bug in the sprite pass.
+  const lightFloor = holds(carrier.powers, 'sight') ? SIGHT_FLOOR : 0
+  if (!mapOpen && !titleUp) renderView(fb, level, view, surface.cellAspect, { horizonShift, seen, lightFloor })
+  /*
+   * Measured here, between the two passes, rather than at the end of the frame.
+   *
+   * A browser check asked whether the goggles brighten the screen and read the
+   * finished frame, which the sprite pass has already drawn on -- so with the
+   * world pass deliberately left dark the check still passed, on the strength of
+   * the creatures alone. The reading has to name one pass to be able to tell the
+   * two apart.
+   */
+  worldBright = meanBrightness(fb)
 
   visible.length = 0
   for (const pickup of pickups) {
@@ -1853,7 +2070,7 @@ function frame(now: number): void {
     })
   }
   // After the world, so the depth it wrote decides what is hidden.
-  if (!mapOpen && !titleUp) drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift })
+  if (!mapOpen && !titleUp) drawBillboards(fb, view, surface.cellAspect, visible, { horizonShift, lightFloor })
 
   fb.resolve(RAMPS.short)
 
@@ -1921,6 +2138,7 @@ function frame(now: number): void {
 
   const sector = level.sectors[player.sector]
   const keys = [...carrier.keys].join(' ')
+  const powers = powerLine(carrier.powers)
 
   /*
    * The bar the original has, where there is room for it, and the single line
@@ -1933,11 +2151,23 @@ function frame(now: number): void {
    * ammunition, then keys, then where you are -- which is the part you
    * recognise and the part a character grid can draw.
    */
+  /*
+   * Five panels now, and the new one is the first to go.
+   *
+   * The numbers moved up by one rather than the powerups being given a tie with
+   * the keys: panels are dropped lowest-first and equal priorities are settled
+   * by the order they were written in, so a tie would have decided which of two
+   * readings a narrow screen keeps by where somebody happened to put a line.
+   * What is deliberate is that a phone drops the clock and keeps where you are.
+   */
   const bar = layoutBar(fb.width, fb.height, [
-    { label: 'HEALTH', value: `${carrier.health}%`, priority: 4 },
-    { label: weapon.name.toUpperCase(), value: `${carrier.ammo[weaponIndex]}`, priority: 3 },
-    { label: 'KEYS', value: keys === '' ? '--' : keys, priority: 2 },
-    { label: 'AREA', value: state.def.name, priority: 1 },
+    { label: 'HEALTH', value: `${carrier.health}%`, priority: 5 },
+    // A weapon that costs nothing has no reserve to show, and a zero beside
+    // FISTS reads as a gun you cannot fire.
+    { label: weapon.name.toUpperCase(), value: weapon.cost === 0 ? '--' : `${carrier.ammo[weaponIndex]}`, priority: 4 },
+    { label: 'KEYS', value: keys === '' ? '--' : keys, priority: 3 },
+    { label: 'AREA', value: state.def.name, priority: 2 },
+    { label: 'POWER', value: powers === '' ? '--' : powers, priority: 1 },
   ])
   if (bar !== null) {
     // Wiped first. The original's bar is an opaque panel; this one was drawn
@@ -2001,12 +2231,18 @@ function frame(now: number): void {
      * cooldown is what the weapon is actually doing: 0.28 seconds for the
      * sidearm, 0.85 for the scattergun, 1.2 for the launcher. A third of it
      * reads as recoil at every one of those speeds.
+     *
+     * The saw is the one this arithmetic does not flatter: its interval is 0.12,
+     * so two thirds of it is eight hundredths of a second and the frame
+     * alternates almost every frame. Which is what a saw does.
      */
     const recoiling = cooldown > weapon.interval * (2 / 3)
     const held = [
       recoiling ? SIDEARM_FIRING : SIDEARM_HELD,
       recoiling ? SCATTERGUN_FIRING : SCATTERGUN_HELD,
       recoiling ? LAUNCHER_FIRING : LAUNCHER_HELD,
+      recoiling ? FISTS_FIRING : FISTS_HELD,
+      recoiling ? CHAINSAW_FIRING : CHAINSAW_HELD,
     ][weaponIndex]
     if (held !== undefined) {
       const foot = (bar !== null ? bar.top : fb.height - 1) - 1
@@ -2015,11 +2251,14 @@ function frame(now: number): void {
   }
 
 
+  // The same renumbering as the bar, for the same reason: the powerup clock is
+  // the one reading a narrow line can do without.
   const line = bar !== null ? [] : layoutHud(fb.width, [
-    { text: `${carrier.health}`, align: 'left', priority: 4 },
-    { text: `${weapon.name} ${carrier.ammo[weaponIndex]}`, align: 'left', priority: 3 },
-    { text: keys === '' ? '' : `keys ${keys}`, align: 'left', priority: 2 },
-    { text: `${state.def.name} · ${fps.toFixed(0)} fps`, align: 'right', priority: 1 },
+    { text: `${carrier.health}`, align: 'left', priority: 5 },
+    { text: weapon.cost === 0 ? weapon.name : `${weapon.name} ${carrier.ammo[weaponIndex]}`, align: 'left', priority: 4 },
+    { text: keys === '' ? '' : `keys ${keys}`, align: 'left', priority: 3 },
+    { text: `${state.def.name} · ${fps.toFixed(0)} fps`, align: 'right', priority: 2 },
+    { text: powers, align: 'left', priority: 1 },
   ])
   for (const piece of line) {
     if (piece.text === '') continue
@@ -2103,6 +2342,36 @@ function frame(now: number): void {
     alive: actors.filter((actor) => isAlive(actor) && isCreature(actor)).length,
     weapon: weapon.name,
     ammo: carrier.ammo[weaponIndex],
+    /*
+     * What the status line says about the powerups, rather than the clocks
+     * themselves.
+     *
+     * The string the player reads, so a check that says "the shield is showing"
+     * is checking the thing that has to be true. Reading the array would pass
+     * while the line beside the health stayed empty, which has happened here
+     * before with the keys.
+     */
+    powers,
+    pack: carrier.pack,
+    // How much of the level the automap has been shown, out of how much there
+    // is: the only way a check can see what the chart did.
+    mapped: seen.size,
+    mapLines: level.lines.length,
+    /**
+     * Mean brightness of the cells that were drawn on.
+     *
+     * A light level leaves no other mark a check can read: the glyph a cell ends
+     * up with depends on which ramp its material uses, so counting dense
+     * characters measures the materials in view as much as the light on them.
+     * Averaged over the drawn cells rather than all of them, or a frame looking
+     * at a wall and one looking down a corridor would differ by how much of the
+     * screen is empty.
+     *
+     * The walls, floors and ceilings only. Read off the finished frame it also
+     * counts the creatures standing in front of them, and a check asking whether
+     * the goggles light the room would pass on the strength of a lit trooper.
+     */
+    bright: worldBright,
     shotsFired,
     pelletsLanded,
     kills,
@@ -2293,6 +2562,33 @@ if (new URLSearchParams(location.search).has('probe')) {
     },
     toExit(): boolean {
       return putIn(state.goal.exitSector)
+    },
+    /**
+     * Lays one of the things a map file places at your feet.
+     *
+     * A way to arrive at a pickup rather than a way to skip one: what is put
+     * down is whatever `supplyFor` says that thing type is, and the ordinary
+     * rule takes it on the next step -- the reach, the "would this give you
+     * anything", the effect and the line that says so are all still on the path
+     * being checked. Only walking to it is skipped, and Node already walks that.
+     *
+     * By thing number rather than by effect, so the check names what the file
+     * names and cannot ask for a powerup this game does not place.
+     */
+    drop(type: number): boolean {
+      const supply = supplyFor(type)
+      if (supply === null) return false
+      state.pickups.push({
+        x: state.player.x,
+        y: state.player.y,
+        z: state.player.floor,
+        light: 1,
+        sprite: supply.sprite,
+        grant: supply.grant,
+        radius: supply.radius,
+        taken: false,
+      })
+      return true
     },
     /** Stand in the sector carrying this tag, for checks about the ground. */
     toTag(tag: string): boolean {

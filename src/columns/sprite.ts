@@ -160,6 +160,13 @@ export interface BillboardOptions {
   horizonShift?: number
   /** Nothing nearer than this is drawn, so a creature in your face is not a wall of glyphs. */
   nearDistance?: number
+  /**
+   * A floor under each billboard's own light, matching `RenderOptions`.
+   *
+   * Both passes need it or the goggles light the room and leave everything
+   * standing in it dark, which looks less like night vision than like a bug.
+   */
+  lightFloor?: number
 }
 
 /**
@@ -180,6 +187,7 @@ export function drawBillboards(
   const rows = fb.height
   const maxDistance = options.maxDistance ?? 64
   const nearDistance = options.nearDistance ?? 0.3
+  const lightFloor = options.lightFloor ?? 0
   const { projScale, planeHalf, horizon } = projectionOf(
     cols,
     rows,
@@ -225,7 +233,7 @@ export function drawBillboards(
     if (firstCol > lastCol || firstRow > lastRow) continue
 
     const invW = 1 / depth
-    const shade = lightAt(thing.light, depth)
+    const shade = lightAt(thing.light > lightFloor ? thing.light : lightFloor, depth)
     const tint = sprite.tint
     const painted = sprite.colors
 

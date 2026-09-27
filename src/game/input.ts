@@ -86,6 +86,12 @@ export function keyboardIntent(held: ReadonlySet<string>): Intent {
   if (down('1')) weapon = 0
   else if (down('2')) weapon = 1
   else if (down('3')) weapon = 2
+  // Four and five, in the order the weapon list gives rather than the order the
+  // original's slots do: the fists and the saw were appended to that list so
+  // that nothing already indexing it had to be renumbered, and the keys follow
+  // the list because the list is what the number means everywhere else.
+  else if (down('4')) weapon = 3
+  else if (down('5')) weapon = 4
 
   return {
     forward: moved.forward,

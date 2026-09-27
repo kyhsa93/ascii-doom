@@ -6,9 +6,11 @@
  *
  * That sentence used to end "there is no armour here, so armour is simply not
  * picked up", which stopped being true the day armour arrived and stayed in
- * the file for weeks afterwards. Armour is picked up; so are the weapons, by
- * folding into the three this game fires; the powerups are drawn where they
- * stand and grant nothing yet.
+ * the file for weeks afterwards. Then it said the powerups were "drawn where
+ * they stand and grant nothing yet", and that stayed in the file for a round of
+ * its own. Everything a map puts down that this game has a rule for is now
+ * picked up: armour, the weapons by folding into the five this game holds, the
+ * six powerups, and the pack.
  *
  * A whitelist again, for the reason it was one before: most of the hundred and
  * twenty-one thing types in a real map are scenery, and a lamp that heals you
@@ -16,6 +18,7 @@
  */
 
 import type { PickupGrant } from './pickups.ts'
+import type { Power } from './powers.ts'
 import {
   AMBER_CARD,
   AMBER_TOKEN,
@@ -31,6 +34,12 @@ import {
   CRIMSON_KEY,
   CRIMSON_SKULL,
   DOUBLE_SHOTGUN_PICKUP,
+  BERSERK_PACK,
+  BLUR_SPHERE,
+  CHART,
+  GOGGLES,
+  HAZARD_SUIT,
+  INVULNERABILITY_SPHERE,
   JACKET,
   JACKET_BIT,
   JACKET_HEAVY,
@@ -102,11 +111,11 @@ const ARMOUR = new Map<number, { amount: number; cap: number; share: number; add
 /**
  * Weapons, grouped the way the creatures are grouped.
  *
- * This game has three and the files place seven, so they go by what they are
+ * This game has five and the files place seven, so they go by what they are
  * for: the two shotguns are the scattergun, the rapid-fire ones are the
- * sidearm, the launcher is the launcher. The chainsaw has no answer here --
- * there is nothing you swing -- so it is left where it stands, the same way an
- * unmapped creature number puts nothing down.
+ * sidearm, the launcher is the launcher. The saw used to have no answer here --
+ * there was nothing you swung -- and it now has one of its own, which is the
+ * only weapon in these files that maps to itself.
  *
  * `ammo` is what comes in the box. The original hands you rounds with a weapon
  * and this keeps that, which is most of what picking up a second shotgun is for.
@@ -118,7 +127,33 @@ const WEAPON_THINGS = new Map<number, { weapon: number; ammo: number }>([
   [2004, { weapon: 0, ammo: 40 }],
   [2006, { weapon: 0, ammo: 40 }],
   [2003, { weapon: 2, ammo: 2 }],
+  // The saw, which comes with nothing because it consumes nothing.
+  [2005, { weapon: 4, ammo: 0 }],
 ])
+
+/**
+ * The powerups, by what they set going.
+ *
+ * Six of the original's six. How long each lasts is not here -- `powers.ts`
+ * owns that -- so a map cannot have an opinion about the length of a shield.
+ */
+const POWER_THINGS = new Map<number, Power>([
+  [2022, 'shield'],
+  [2023, 'rage'],
+  [2024, 'blur'],
+  [2025, 'suit'],
+  [2026, 'chart'],
+  [2045, 'sight'],
+])
+
+/**
+ * What comes in the pack, beyond what it lets you carry.
+ *
+ * The original's clip of each. The two free weapons are left out rather than
+ * given zero, because the list is read by position and a trailing zero would
+ * only invite somebody to put a number there.
+ */
+const PACK_ROUNDS: readonly number[] = [10, 4, 1]
 
 const HEALTH = new Map<number, number>([
   [2014, 2], // the small scattered one
@@ -175,6 +210,17 @@ const PICTURE = new Map<number, string>([
   [39, 'RSKU'],
   [6, 'YKEY'],
   [38, 'YSKU'],
+  // The powerups and the pack. `SUIT` is the one of these that had never been
+  // baked, which is why the radiation suit was the one powerup that could not
+  // even be drawn.
+  [2022, 'PINV'],
+  [2023, 'PSTR'],
+  [2024, 'PINS'],
+  [2025, 'SUIT'],
+  [2026, 'PMAP'],
+  [2045, 'PVIS'],
+  [8, 'BPAK'],
+  [2005, 'CSAW'],
 ])
 
 /** What this supply's picture is called in a file, or null if nothing is known. */
@@ -220,6 +266,14 @@ const LOOKS = new Map<number, Sprite>([
   [2006, BFG_PICKUP],
   [2005, CHAINSAW_PICKUP],
   [8, BACKPACK_PICKUP],
+  // The keys, in the colour they open and the shape the map chose.
+  // The powerups, each its own.
+  [2022, INVULNERABILITY_SPHERE],
+  [2023, BERSERK_PACK],
+  [2024, BLUR_SPHERE],
+  [2025, HAZARD_SUIT],
+  [2026, CHART],
+  [2045, GOGGLES],
   // The keys, in the colour they open and the shape the map chose.
   [5, COBALT_KEY],
   [40, COBALT_SKULL],
@@ -268,6 +322,15 @@ export function supplyFor(type: number): Supply | null {
     return { sprite, grant: { kind: 'weapon', weapon: weapon.weapon, ammo: weapon.ammo }, radius: 0.45 }
   }
 
+  const power = POWER_THINGS.get(type)
+  if (power !== undefined) {
+    return { sprite: LOOKS.get(type) ?? SPHERE, grant: { kind: 'power', power }, radius: 0.4 }
+  }
+
+  if (type === 8) {
+    return { sprite: LOOKS.get(type) ?? CANISTER, grant: { kind: 'pack', rounds: PACK_ROUNDS }, radius: 0.45 }
+  }
+
   const colour = keyColourOf(type)
   if (colour !== null) {
     return { sprite: LOOKS.get(type) ?? COBALT_KEY, grant: { kind: 'key', key: colour }, radius: 0.5 }
@@ -278,5 +341,13 @@ export function supplyFor(type: number): Supply | null {
 
 /** Every thing type that leaves something to pick up, for checks to count against. */
 export function supplyTypes(): number[] {
-  return [...HEALTH.keys(), ...AMMO.keys(), ...ARMOUR.keys(), ...WEAPON_THINGS.keys(), ...KEYS.keys()]
+  return [
+    ...HEALTH.keys(),
+    ...AMMO.keys(),
+    ...ARMOUR.keys(),
+    ...WEAPON_THINGS.keys(),
+    ...POWER_THINGS.keys(),
+    8,
+    ...KEYS.keys(),
+  ]
 }

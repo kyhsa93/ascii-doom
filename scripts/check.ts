@@ -73,8 +73,22 @@ import {
   type Billboard,
   type Sprite,
 } from '../src/columns/sprite.ts'
-import { LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, fire } from '../src/game/weapons.ts'
+import { CHAINSAW, FISTS, LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, asSwung, fire } from '../src/game/weapons.ts'
 import {
+  BLUR_WOBBLE,
+  LASTS,
+  POWERS,
+  RAGE_MULTIPLIER,
+  SIGHT_FLOOR,
+  freshPowers,
+  grantPower,
+  holds,
+  leftOn,
+  tickPowers,
+  type Power,
+} from '../src/game/powers.ts'
+import {
+  AMMO_CAPACITY,
   LEVELS,
   STARTING_AMMO,
   STARTING_HEALTH,
@@ -114,7 +128,7 @@ import {
   type ActorState,
   updateActors,
 } from '../src/game/ai.ts'
-import { collect, isUseful, takeDamage, type Carrier, type Pickup } from '../src/game/pickups.ts'
+import { capacityOf, collect, isUseful, takeDamage, type Carrier, type Pickup } from '../src/game/pickups.ts'
 import { blast,
   spawnProjectile,
   sweep,
@@ -1331,6 +1345,8 @@ test('starting a level keeps what you earned and takes back the keys', () => {
     armour: 0,
     armourShare: 0,
     weapons: new Set([0, 1, 2]),
+    powers: freshPowers(),
+    pack: false,
   }
 
   const state = startLevel(1, carrier)
@@ -1394,6 +1410,8 @@ test('dying hands back the starting kit; finishing a level does not', () => {
     armour: 0,
     armourShare: 0,
     weapons: new Set([0, 1, 2]),
+    powers: freshPowers(),
+    pack: false,
   }
   const again = restartLevel(1, died)
 
@@ -1415,6 +1433,8 @@ test('dying hands back the starting kit; finishing a level does not', () => {
     armour: 0,
     armourShare: 0,
     weapons: new Set([0, 1, 2]),
+    powers: freshPowers(),
+    pack: false,
   }
   startLevel(1, moved)
   assert(moved.health === 12, `walking into the next level healed to ${moved.health}`)
@@ -3006,6 +3026,8 @@ test('a supply from a file is taken by the same rule as one written here', () =>
     armour: 0,
     armourShare: 0,
     weapons: new Set([0, 1, 2]),
+    powers: freshPowers(),
+    pack: false,
   }
 
   const taken = collect(state.pickups, supply.x, supply.y, PLAYER_RADIUS, carrier)
@@ -3036,7 +3058,9 @@ test('only the numbers this game has a supply for leave anything behind', () => 
   // gain by. A lamp that heals you is worse than a lamp that is missing.
   assert(supplyFor(2035) === null, 'a barrel was turned into a supply')
   assert(supplyFor(2028) === null, 'a floor lamp was turned into a supply')
-  assert(supplyFor(2005) === null, 'the chainsaw became a supply, and there is nothing here to swing')
+  // This line read `supplyFor(2005) === null` for as long as there was nothing
+  // to swing, and it was right for exactly that long. There is a saw now.
+  assert(supplyFor(2005)?.grant.kind === 'weapon', 'the chainsaw is in the files and still leaves nothing')
   assert(supplyFor(3001) === null, 'a monster was turned into a supply')
 
   for (const type of supplyTypes()) {
@@ -3588,6 +3612,8 @@ function explorer(def: (typeof LEVELS)[number]) {
     armour: 0,
     armourShare: 0,
     weapons: new Set([0, 1, 2]),
+    powers: freshPowers(),
+    pack: false,
   }
 
   const dt = 1 / 60
@@ -4415,6 +4441,8 @@ function carrier(overrides: Partial<Carrier> = {}): Carrier {
     armour: 0,
     armourShare: 0,
     weapons: new Set([0, 1, 2]),
+    powers: freshPowers(),
+    pack: false,
     ...overrides,
   }
 }
@@ -4475,7 +4503,12 @@ test('every weapon can be resupplied somewhere in the level', () => {
   for (const pickup of LEVEL_1_PICKUPS) {
     if (pickup.grant.kind === 'ammo') supplied.add(pickup.grant.weapon)
   }
-  const missing = WEAPONS.map((weapon, index) => ({ weapon, index })).filter(({ index }) => !supplied.has(index))
+  // Only the ones that spend anything. A fist needs no box of fists, and a saw
+  // asked for one would be a rule that cannot be satisfied rather than a level
+  // that is missing something.
+  const missing = WEAPONS.map((weapon, index) => ({ weapon, index })).filter(
+    ({ weapon, index }) => weapon.cost > 0 && !supplied.has(index),
+  )
   assert(
     missing.length === 0,
     `nothing in the level resupplies ${missing.map(({ weapon }) => weapon.name).join(', ')}`,
@@ -5728,6 +5761,422 @@ test('walking does not put a floater back on the ground', () => {
   for (let step = 0; step < 40; step++) moveBody(level, floater, 0.05, 0)
   const still = floater.floor - level.sectors[floater.sector]!.floor
   close(still, rose, 1e-9, 'the height a floater kept after walking two metres')
+})
+
+
+console.log('\nthe powerups')
+
+test('a grid too narrow for five panels drops the powerup clock first', () => {
+  /*
+   * Which panel goes is deliberate, and it is deliberate in the priority numbers
+   * rather than in the order they happen to be written in: `layoutBar` drops the
+   * lowest priority first and settles equals by source order, so giving the
+   * clock the same priority as the keys would have decided a real question --
+   * "on a small screen, do you see your keys or your shield?" -- by where
+   * somebody put a line. So the numbers moved up and the clock took the bottom.
+   */
+  const panels = [
+    { label: 'HEALTH', value: '100%', priority: 5 },
+    { label: 'SIDEARM', value: '60', priority: 4 },
+    { label: 'KEYS', value: 'cobalt crimson', priority: 3 },
+    { label: 'AREA', value: 'the outpost', priority: 2 },
+    { label: 'POWER', value: 'shld 30 +1', priority: 1 },
+  ]
+  const labelsAt = (width: number): string[] =>
+    (layoutBar(width, 40, panels)?.panels ?? []).map((panel) => panel.label)
+
+  const wide = labelsAt(120)
+  assert(wide.length === 5, `a hundred and twenty columns held ${wide.length} panels`)
+
+  // Narrow enough that five will not fit but four will. Found by walking down
+  // rather than picked, so the check does not rest on arithmetic done by hand.
+  let width = 120
+  while (width > NARROWEST && labelsAt(width).length === 5) width--
+  const narrow = labelsAt(width)
+  assert(narrow.length === 4, `at ${width} columns the bar held ${narrow.length} panels`)
+  assert(!narrow.includes('POWER'), `at ${width} columns the bar kept the clock and dropped ${wide.filter((label) => !narrow.includes(label)).join(', ')}`)
+  assert(narrow.includes('KEYS') && narrow.includes('AREA'), `at ${width} columns the bar reads ${narrow.join(' ')}`)
+})
+
+test('a clock starts, runs down, and says when it ran out', () => {
+  const powers = freshPowers()
+  assert(powers.length === POWERS.length, 'a fresh set of clocks is the wrong length')
+  assert(
+    powers.every((left) => left === 0),
+    'a fresh set of clocks has one already running',
+  )
+  assert(!holds(powers, 'shield'), 'a shield was held before one was found')
+
+  grantPower(powers, 'shield')
+  assert(holds(powers, 'shield'), 'a shield was found and is not held')
+  close(leftOn(powers, 'shield'), LASTS.shield, 1e-9, 'the seconds a new shield starts with')
+
+  // Down to the last tenth, and then out. Both halves matter: a clock that
+  // stops reporting is a powerup that never ends, and one that reports early is
+  // one that ends while the status line still shows it.
+  const ended: Power[] = []
+  for (let t = 0; t < LASTS.shield - 0.1; t += 0.1) ended.push(...tickPowers(powers, 0.1))
+  assert(ended.length === 0, `something ran out early: ${ended.join(', ')}`)
+  assert(holds(powers, 'shield'), 'the shield ran out before its time')
+  const out = tickPowers(powers, 0.2)
+  assert(out.includes('shield'), 'the shield ran out without saying so')
+  assert(!holds(powers, 'shield'), 'the shield was reported gone and is still held')
+  assert(leftOn(powers, 'shield') === 0, 'a clock that ran out is showing a negative')
+})
+
+test('the two that never run out never run out', () => {
+  const powers = freshPowers()
+  grantPower(powers, 'rage')
+  grantPower(powers, 'chart')
+  // An hour, a step at a time, which is longer than anybody plays one level.
+  for (let t = 0; t < 3600; t += 1) {
+    const ended = tickPowers(powers, 1)
+    assert(ended.length === 0, `${ended.join(', ')} ran out after ${t}s and should not`)
+  }
+  assert(holds(powers, 'rage') && holds(powers, 'chart'), 'a lasting powerup was spent')
+})
+
+test('a second one found puts the clock back to the top rather than adding to it', () => {
+  const powers = freshPowers()
+  grantPower(powers, 'blur')
+  tickPowers(powers, 20)
+  close(leftOn(powers, 'blur'), LASTS.blur - 20, 1e-9, 'the seconds left after twenty')
+  grantPower(powers, 'blur')
+  close(leftOn(powers, 'blur'), LASTS.blur, 1e-9, 'the seconds left after finding a second one')
+})
+
+test('every powerup the files place is picked up, drawn as itself, and named', () => {
+  // The six of the original's six, each with its own picture. They stood in
+  // these maps for a round as things that projected and occluded and granted
+  // nothing, which is the state this check exists to stop coming back.
+  const kinds = new Map<number, Power>([
+    [2022, 'shield'],
+    [2023, 'rage'],
+    [2024, 'blur'],
+    [2025, 'suit'],
+    [2026, 'chart'],
+    [2045, 'sight'],
+  ])
+  for (const [type, power] of kinds) {
+    const supply = supplyFor(type)
+    assert(supply !== null, `thing ${type} is a powerup in the files and leaves nothing here`)
+    assert(
+      supply.grant.kind === 'power' && supply.grant.power === power,
+      `thing ${type} grants something other than ${power}`,
+    )
+    assert(supply.sprite.rows.length > 0, `thing ${type} has an empty picture`)
+  }
+
+  const pack = supplyFor(8)
+  assert(pack?.grant.kind === 'pack', 'the pack is in sixty-eight maps and leaves nothing here')
+})
+
+test('no two things a map puts down are drawn with the same picture', () => {
+  /*
+   * Thirty-four supply types, thirty-four pictures.
+   *
+   * The rule the whole picture table exists for, and the one it is easiest to
+   * lose: before that table, `supplyFor` answered with whichever of five
+   * pictures was nearest the idea -- a stimpack and a soulsphere were both the
+   * field kit, a shotgun on the floor was a box of rounds, and armour of either
+   * weight was drawn with a key. Nothing failed. The table was added and this
+   * check was not, so the next supply to arrive without art of its own would
+   * have been drawn as whatever the fallback reached for.
+   *
+   * Stated across every type rather than within each class, because the
+   * within-a-class version is the one that passes while a suit is drawn as a
+   * soulsphere -- which is exactly the mistake a fallback makes.
+   */
+  const byShape = new Map<string, number[]>()
+  for (const type of supplyTypes()) {
+    const supply = supplyFor(type)
+    if (supply === null) continue
+    const shape = supply.sprite.rows.join('|')
+    byShape.set(shape, [...(byShape.get(shape) ?? []), type])
+  }
+  const shared = [...byShape.values()].filter((types) => types.length > 1)
+  assert(
+    shared.length === 0,
+    `these things are drawn with each other's pictures: ${shared.map((types) => types.join(' and ')).join('; ')}`,
+  )
+})
+
+test('the pack doubles what you can carry, and what is in it fills the raised ceiling', () => {
+  const kit = carrier({ ammo: [60, 24], ammoMax: [60, 24] })
+  assert(capacityOf(kit, 0) === 60, 'a ceiling changed before a pack was found')
+
+  // Full, so the only thing the pack can be worth is the ceiling. This is the
+  // case that would have failed silently had `isUseful` read `ammoMax` straight:
+  // it would have refused the pack because there was nowhere to put the clip.
+  const pickup = {
+    x: 0,
+    y: 0,
+    z: 0,
+    light: 1,
+    sprite: ALL_SPRITES.KIT!,
+    grant: { kind: 'pack', rounds: [10, 4] } as const,
+    radius: 0.4,
+    taken: false,
+  }
+  assert(isUseful(pickup, kit), 'a pack was refused by somebody who could not carry more without it')
+  const got = collect([pickup], 0, 0, 0.3, kit)
+  assert(got.length === 1, 'the pack was not taken')
+  assert(kit.pack, 'the pack was taken and nothing can carry more')
+  assert(capacityOf(kit, 0) === 120, `the ceiling went to ${capacityOf(kit, 0)} rather than doubling`)
+  const afterPack = kit.ammo[0] ?? 0
+  assert(afterPack === 70, `the clip in the pack left ${afterPack} rather than 70`)
+
+  // And nothing overfills, against the raised ceiling rather than the old one.
+  const clip = {
+    x: 0,
+    y: 0,
+    z: 0,
+    light: 1,
+    sprite: ALL_SPRITES.KIT!,
+    grant: { kind: 'ammo', weapon: 0, amount: 1000 } as const,
+    radius: 0.4,
+    taken: false,
+  }
+  collect([clip], 0, 0, 0.3, kit)
+  const afterClip = kit.ammo[0] ?? 0
+  assert(afterClip === 120, `a canister filled past the doubled ceiling to ${afterClip}`)
+
+  // A second pack is worth the clip in it, and worth nothing at all once there
+  // is nowhere to put that either. Filling the shells first is the point: the
+  // first version of this stopped at the rounds and the pack was still useful,
+  // because the doubled ceiling for the second weapon had room in it.
+  const second = { ...pickup, taken: false, grant: { kind: 'pack', rounds: [10, 4] } as const }
+  assert(isUseful(second, kit), 'a second pack was refused by somebody with room for the shells in it')
+  kit.ammo[1] = capacityOf(kit, 1)
+  assert(!isUseful(second, kit), 'a second pack was worth taking by somebody already full')
+})
+
+test('a powerup already running is worth taking again; the two that last are not', () => {
+  const kit = carrier()
+  const at = (grant: { kind: 'power'; power: Power }) => ({
+    x: 0,
+    y: 0,
+    z: 0,
+    light: 1,
+    sprite: ALL_SPRITES.KIT!,
+    grant,
+    radius: 0.4,
+    taken: false,
+  })
+
+  const shield = at({ kind: 'power', power: 'shield' })
+  assert(isUseful(shield, kit), 'a shield was refused by somebody without one')
+  collect([shield], 0, 0, 0.3, kit)
+  assert(holds(kit.powers, 'shield'), 'a shield was taken and is not held')
+  assert(isUseful(at({ kind: 'power', power: 'shield' }), kit), 'a second shield, which would put the clock back, was refused')
+
+  const chart = at({ kind: 'power', power: 'chart' })
+  collect([chart], 0, 0, 0.3, kit)
+  assert(!isUseful(at({ kind: 'power', power: 'chart' }), kit), 'a second chart was taken for nothing')
+
+  // Rage fills you up as well, which is the one powerup that touches anything
+  // but its own clock -- and the reason a second one is worth having when hurt.
+  const hurt = carrier({ health: 30 })
+  collect([at({ kind: 'power', power: 'rage' })], 0, 0, 0.3, hurt)
+  assert(hurt.health === hurt.maxHealth, `rage left ${hurt.health} health rather than filling up`)
+  assert(!isUseful(at({ kind: 'power', power: 'rage' }), hurt), 'a second rage was taken at full health for nothing')
+  hurt.health = 40
+  assert(isUseful(at({ kind: 'power', power: 'rage' }), hurt), 'a rage was refused by somebody it would have healed')
+})
+
+test('rage makes the bare hand heavy and leaves the saw alone', () => {
+  close(asSwung(FISTS, false).damage, FISTS.damage, 1e-9, 'an unraged fist')
+  close(asSwung(FISTS, true).damage, FISTS.damage * RAGE_MULTIPLIER, 1e-9, 'a raged fist')
+  // The original multiplies the fist and not the saw, and a saw at ten times its
+  // damage would be the only decision left in the game.
+  assert(asSwung(CHAINSAW, true) === CHAINSAW, 'rage changed the saw')
+  assert(asSwung(SIDEARM, true) === SIDEARM, 'rage changed a gun')
+  // Same object back when nothing applies, so the common case allocates nothing.
+  assert(asSwung(FISTS, false) === FISTS, 'an unraged swing allocated a new weapon')
+})
+
+test('the two free weapons cost nothing and reach about as far as claws do', () => {
+  for (const weapon of [FISTS, CHAINSAW]) {
+    assert(weapon.cost === 0, `${weapon.name} costs ammunition`)
+    assert(weapon.melee === true, `${weapon.name} is not marked as something swung`)
+    assert(weapon.projectile === undefined, `${weapon.name} throws something`)
+    // The widest reach a creature has is nine tenths, from its own edge. Plus
+    // the player's radius, this is the distance at which the two of you can just
+    // touch -- if a swing reached much further it would be a gun with no ammo.
+    close(weapon.range, 0.9 + PLAYER_RADIUS, 1e-9, `what ${weapon.name} reaches`)
+  }
+  assert(WEAPONS.includes(FISTS) && WEAPONS.includes(CHAINSAW), 'a weapon exists and is not in the list')
+  // Appended rather than inserted: everything indexes weapons by position, and
+  // the three that were there have to keep the numbers a save on disk used.
+  assert(WEAPONS[0] === SIDEARM && WEAPONS[1] === SCATTERGUN && WEAPONS[2] === LAUNCHER, 'the weapon list was renumbered')
+  assert(STARTING_AMMO.length === WEAPONS.length, 'a weapon has no reserve at the start of a run')
+  assert(AMMO_CAPACITY.length === WEAPONS.length, 'a weapon has no ceiling')
+  for (const weapon of [3, 4]) {
+    assert(AMMO_CAPACITY[weapon] === 0, `weapon ${weapon} costs nothing and can still hold rounds`)
+  }
+})
+
+test('a fist and a saw are in hand on the terms the original gives them', () => {
+  const kit = freshCarrier()
+  assert(kit.weapons.has(3), 'a run begins without hands')
+  assert(!kit.weapons.has(4), 'a run begins with a saw the maps are meant to hide')
+  assert(!kit.pack, 'a run begins with a pack')
+  assert(kit.powers.every((left) => left === 0), 'a run begins under an effect')
+})
+
+test('powerups end at the exit and the pack does not', () => {
+  const kit = freshCarrier()
+  grantPower(kit.powers, 'shield')
+  grantPower(kit.powers, 'rage')
+  kit.pack = true
+  startLevel(1, kit)
+  assert(!holds(kit.powers, 'shield'), 'a shield was carried into the next level')
+  assert(!holds(kit.powers, 'rage'), 'rage was carried into the next level')
+  assert(kit.pack, 'the pack was taken away at the exit, and a bag is not an effect')
+
+  // Dying is the other direction: it hands back the kit you began with, and you
+  // began without a bag.
+  grantPower(kit.powers, 'suit')
+  restartLevel(0, kit)
+  assert(!holds(kit.powers, 'suit'), 'a suit survived dying')
+  assert(!kit.pack, 'the pack survived dying')
+})
+
+test('a save carries the clocks, including the ones that never run out', () => {
+  const state = loadLevel(LEVEL_1_DEF)
+  const kit = freshCarrier()
+  grantPower(kit.powers, 'shield')
+  tickPowers(kit.powers, 7)
+  grantPower(kit.powers, 'chart')
+  kit.pack = true
+
+  const extras = { secrets: new Set<number>(), seen: new Set<Line>(), kills: 0, shotsFired: 0 }
+  const save = snapshot(0, state, kit, extras)
+  /*
+   * Through JSON, which is the trip that matters.
+   *
+   * `JSON.stringify(Infinity)` is the string "null", so a clock that never runs
+   * out comes back as zero unless somebody has arranged otherwise. This check
+   * would have passed on the objects alone.
+   */
+  const back = JSON.parse(JSON.stringify(save)) as typeof save
+  const landed = freshCarrier()
+  restore(back, loadLevel(LEVEL_1_DEF), landed)
+  close(leftOn(landed.powers, 'shield'), LASTS.shield - 7, 1e-9, 'the shield a save brought back')
+  assert(holds(landed.powers, 'chart'), 'a chart did not survive a save')
+  assert(leftOn(landed.powers, 'chart') === Infinity, 'a chart came back with a clock that will run out')
+  assert(landed.pack, 'a pack did not survive a save')
+})
+
+test('being hard to see makes a hitscanner miss, and does not stop it biting', () => {
+  /*
+   * Measured rather than asserted about the option: what blur is for is that the
+   * shots go past you.
+   *
+   * The same pinned sequence of rolls for both runs, not one fixed number. A
+   * fixed 0.5 puts every shot dead centre and the two runs land identically --
+   * the aim error is a multiplier on how far off centre the roll already was --
+   * and a fixed 1 sends every shot to the edge of the cone and misses in both.
+   * Either way the check passes or fails for a reason that has nothing to do
+   * with blur. A spread of rolls is what a spread of shots needs.
+   */
+  // Eight metres, the longest clear line this level has, measured by the check
+  // above rather than guessed at here.
+  const awake = (kind: ActorKind, x: number, y: number, angle: number): Actor => {
+    const actor = actorAt(x, y, angle, kind)
+    actor.state = 'chasing'
+    actor.awake = true
+    return actor
+  }
+  const straight = damageOver(awake(SHOOTER_KIND, 24, 4, Math.PI), bodyAt(16, 4), 20, 0)
+  assert(straight > 0, 'the gunman never hit at all, so the measurement means nothing')
+
+  const blurred = damageOver(awake(SHOOTER_KIND, 24, 4, Math.PI), bodyAt(16, 4), 20, BLUR_WOBBLE)
+  assert(blurred < straight, `blurred took ${blurred} and unblurred took ${straight}`)
+
+  // And a creature close enough to bite does not have to aim. The original's
+  // arrangement, and the reason a blurred player still cannot stand in a mouth.
+  const bitten = damageOver(awake(CRAWLER_KIND, 16.8, 4, Math.PI), bodyAt(16, 4), 4, BLUR_WOBBLE)
+  assert(bitten > 0, 'a blurred player was never bitten, and blur is not armour')
+})
+
+/**
+ * Total damage a single creature lands on a body, with the aim error given.
+ *
+ * The rolls come from a seeded generator, reseeded here, so two calls with
+ * different aim errors are handed the same sequence and the only difference
+ * between them is the one being measured.
+ */
+function damageOver(actor: Actor, target: Body, seconds: number, aimWobble: number): number {
+  const random = seeded(20260927)
+  let damage = 0
+  const step = 1 / 60
+  for (let t = 0; t < seconds; t += step) {
+    damage += updateActors(LEVEL_1, [actor], target, 1.6, step, { random, aimWobble }).damage
+  }
+  return damage
+}
+
+test('the goggles light a dark room without flattening it', () => {
+  const lit = (lightFloor: number): Framebuffer => {
+    const fb = new Framebuffer(80, 40)
+    fb.clear(0, 0, 0, 0)
+    const view: View = { x: SPAWN.x, y: SPAWN.y, z: 1.6, angle: SPAWN.angle, sector: sectorAt(LEVEL_1, SPAWN.x, SPAWN.y), fovY: DEFAULT_FOV_Y }
+    renderView(fb, LEVEL_1, view, 0.5, { lightFloor })
+    return fb
+  }
+  const dark = lit(0)
+  const bright = lit(SIGHT_FLOOR)
+  const total = (fb: Framebuffer): number => {
+    let sum = 0
+    for (let i = 0; i < fb.color.length; i++) sum += fb.color[i]!
+    return sum
+  }
+  assert(total(bright) > total(dark), 'the goggles made no difference to the picture')
+
+  /*
+   * And distance still dims. The original's goggles are flat full bright, which
+   * on a character grid takes away the only depth cue there is: a corridor with
+   * no falloff reads as a wall of glyphs rather than as somewhere you can see.
+   * So the floor goes under the sector's light and the falloff stays on top.
+   */
+  let near = 0
+  let far = 0
+  let nearCells = 0
+  let farCells = 0
+  for (let i = 0; i < bright.depth.length; i++) {
+    const depth = bright.depth[i]!
+    if (depth <= 0) continue
+    const luma = bright.color[i * 3]! + bright.color[i * 3 + 1]! + bright.color[i * 3 + 2]!
+    // Depth is stored as one over the distance, so a bigger number is nearer.
+    if (depth > 1 / 3) {
+      near += luma
+      nearCells++
+    } else if (depth < 1 / 8) {
+      far += luma
+      farCells++
+    }
+  }
+  assert(nearCells > 20 && farCells > 20, `not enough of the picture to compare: ${nearCells} near, ${farCells} far`)
+  assert(near / nearCells > far / farCells, 'with the goggles on, the far end of the room is as bright as the near end')
+})
+
+test('the goggles light what is standing in the room as well as the room', () => {
+  // Both passes or neither. Lighting the walls and leaving the creatures dark
+  // does not look like night vision, it looks like the sprite pass is broken.
+  const shine = (lightFloor: number): number => {
+    const fb = new Framebuffer(80, 40)
+    fb.clear(0, 0, 0, 0)
+    const view: View = { x: 10, y: 4, z: 1.6, angle: 0, sector: sectorAt(LEVEL_1, 10, 4), fovY: DEFAULT_FOV_Y }
+    const thing = { x: 14, y: 4, z: 0, light: 0.3, sprite: TROOPER }
+    drawBillboards(fb, view, 0.5, [thing], { lightFloor })
+    let sum = 0
+    for (let i = 0; i < fb.color.length; i++) sum += fb.color[i]!
+    return sum
+  }
+  const dark = shine(0)
+  assert(dark > 0, 'nothing was drawn at all, so the comparison means nothing')
+  assert(shine(SIGHT_FLOOR) > dark, 'the goggles left the creatures in the dark')
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

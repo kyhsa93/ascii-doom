@@ -13,10 +13,11 @@ against a character grid.
 What is in it now: sector-based maps, a column renderer for walls with
 horizontal spans for floors and ceilings, light that falls off with distance,
 billboard creatures that wake when they see you and swing when they reach you,
-one that throws bolts instead of closing the distance, two instant weapons and
-one that throws, doors and lifts, teleports, supplies you walk over, keys and
-the doors that ask for them, and an exit that ends a level, tallies what you
-did and hands you to the next one.
+one that throws bolts instead of closing the distance, two instant weapons, one
+that throws and two swung at arm's length, doors and lifts, teleports, supplies
+you walk over, six powerups that run on clocks, keys and the doors that ask for
+them, and an exit that ends a level, tallies what you did and hands you to the
+next one.
 
 There is an automap, drawn from what you have actually been able to see rather
 than from the level file: the renderer marks a wall the moment a column of the
@@ -100,7 +101,7 @@ priority and says more in one row than a cramped bar says in three.
 | `↑` `↓` | look up and down |
 | `Shift` | run |
 | `Space` | fire |
-| `1` `2` `3` | sidearm, scattergun, launcher |
+| `1` `2` `3` `4` `5` | sidearm, scattergun, launcher, fists, chainsaw |
 | `E` | open what you are facing |
 | `Tab` | the automap |
 
@@ -367,11 +368,65 @@ are seventeen hundred of those bits across the two files, and modelling them as
 "set to one" made every one of them vanish on contact for anybody already
 wearing more than a single point.
 
-Weapons arrive as the rounds they carry. This game has three and the files
+Weapons arrive as the rounds they carry. This game has five and the files
 place seven, so they go by what they are for — the two shotguns are the
-scattergun, the rapid-fire ones the sidearm, the launcher the launcher — and
-since you start holding all three, what a weapon on the floor is worth is its
-ammunition. The chainsaw has no answer here and is left where it stands.
+scattergun, the rapid-fire ones the sidearm, the launcher the launcher, the saw
+the saw — and since you start holding everything but the saw, what a weapon on
+the floor is usually worth is its ammunition.
+
+The saw and the bare hands were the two the sentence above used to exclude, on
+the grounds that there was nothing here to swing. Both are free and both reach
+about as far as a creature's claws do — the same distance beyond your own edge
+that they reach beyond theirs, which is measured off the widest reach in the
+game rather than chosen. The fists are the thing you still have when the
+reserves are gone; the saw does more damage a second than anything else here and
+only against what it is touching, which makes it the answer to a corridor and
+the wrong answer to a room. Neither was added for completeness: the powerups
+needed them, because one of the original's six multiplies a fist and there were
+no fists.
+
+The powerups grant, and did not for a round. Two hundred and fifty-six of them
+stand across these maps, and for a while they were drawn and inert — the
+pictures were baked, the things were placed, and walking into one did nothing
+at all. All six now run on clocks rather than flags, because what is interesting
+about a shield is that it runs out while you are still in the room you took it
+into.
+
+| | | |
+| --- | --- | --- |
+| shield | 30s | nothing can touch you, the floor included |
+| suit | 60s | the channel underfoot cannot burn you |
+| blur | 60s | creatures with guns fire wide; anything close enough to bite still bites |
+| goggles | 120s | a dark room is lit as brightly as a lit one, and its far end is still its far end |
+| berserk | the level | your fists land ten times as hard, and you are filled up on the spot |
+| chart | the level | the whole map at once |
+
+Two of those do not run out, and they say so with an infinite clock rather than
+a flag of their own: one field counts down and one rule reads it, so "lasts
+thirty seconds" and "lasts the level" are a number in a table rather than a
+second code path. The only place that has to know is the save, because
+`JSON.stringify(Infinity)` is the string `null` and would come back as zero.
+
+The goggles are the one that is deliberately not the original's. Theirs are flat
+full brightness everywhere, which on a character grid takes away the only depth
+cue there is — a corridor with no falloff reads as a wall of glyphs rather than
+as somewhere you can see. So the floor goes *under* the sector's light and the
+distance falloff stays on top of it: a dark room becomes a lit room, and it is
+still a room.
+
+The pack doubles what you can carry and comes with a clip of each. A multiplier
+on the carrier rather than a bigger ceiling on the weapon, read through one
+function, because the ceiling was consulted in four places and the pack would
+have worked in whichever of them got edited. Powerups end at the exit the way
+the original's do; the pack does not, because a bag is not an effect.
+
+One of the six had never been drawable. Of the eight supply pictures the baker
+takes out of a WAD, `SUIT` had simply never been in the list — so the radiation
+suit, the one item you most need to recognise from across a room, could not even
+be the thing that grants nothing. It is in the list now, along with the held
+frames for the fist and the saw, and the rest of the baked art came back byte
+for byte identical, which is what says the bake was rerun against the same
+Freedoom it was written from.
 
 A file you open still brings its own pictures, which matters for a WAD whose
 art is not Freedoom's. A creature or a supply the file has a drawing for is

@@ -15,6 +15,7 @@ import { LEVEL_1_DEF } from './level1.ts'
 import { LEVEL_2_DEF } from './level2.ts'
 import { loadLevel, type LevelDef, type LevelState } from './levels.ts'
 import type { Carrier } from './pickups.ts'
+import { freshPowers } from './powers.ts'
 
 export const LEVELS: readonly LevelDef[] = [LEVEL_1_DEF, LEVEL_2_DEF]
 
@@ -35,9 +36,16 @@ export function nextLevel(index: number): number | null {
  * its own doors, and one brought forward would open something it was never
  * meant to — which would also quietly falsify the check that every lock has a
  * key in the same level, since that check assumes you arrive with none.
+ *
+ * Nor do the powerups: a shield taken at the end of one level is a shield spent
+ * walking into the next one's first room, and the original ends every one of
+ * them at the exit. The pack is the exception, because it is a bag rather than
+ * an effect -- what you can carry is yours once you have found something to
+ * carry it in.
  */
 export function startLevel(index: number, carrier: Carrier): LevelState {
   carrier.keys.clear()
+  carrier.powers = freshPowers()
   return loadLevel(levelOrThrow(index))
 }
 
@@ -49,8 +57,17 @@ export function startLevel(index: number, carrier: Carrier): LevelState {
  * frame loop is also a loadout nothing can check.
  */
 export const STARTING_HEALTH = 100
-export const STARTING_AMMO: readonly number[] = [60, 24, 8]
-export const AMMO_CAPACITY: readonly number[] = [120, 48, 24]
+/*
+ * Two zeroes at the end for the two that cost nothing.
+ *
+ * The fists and the saw are indexed alongside the rest because everything here
+ * reads a weapon's reserve by its position, and a weapon left out of these
+ * lists would read as one with no ammunition and refuse to fire. A ceiling of
+ * zero is right rather than merely harmless: it is what makes a canister
+ * useless to them and stops the pack pretending to double something.
+ */
+export const STARTING_AMMO: readonly number[] = [60, 24, 8, 0, 0]
+export const AMMO_CAPACITY: readonly number[] = [120, 48, 24, 0, 0]
 
 export function freshCarrier(): Carrier {
   return {
@@ -73,8 +90,14 @@ export function freshCarrier(): Carrier {
      * launcher stands on fifty-eight of the sixty-eight and the scattergun on
      * fifty-seven -- and picking one up now means something for the rounds it
      * carries even where the weapon itself is already held.
+     *
+     * The fists are in there too, and cannot be taken out: they are the thing
+     * you still have when the reserves are gone. The saw is not -- it is found,
+     * thirty-seven times across the maps.
      */
-    weapons: new Set([0, 1, 2]),
+    weapons: new Set([0, 1, 2, 3]),
+    powers: freshPowers(),
+    pack: false,
   }
 }
 
@@ -120,7 +143,11 @@ export function refillCarrier(carrier: Carrier): void {
   carrier.keys.clear()
   carrier.armour = 0
   carrier.armourShare = 0
-  carrier.weapons = new Set([0, 1, 2])
+  carrier.weapons = new Set([0, 1, 2, 3])
+  carrier.powers = freshPowers()
+  // The bag goes back too. Dying hands back the kit you began with, and you
+  // began without one.
+  carrier.pack = false
 }
 
 function levelOrThrow(index: number): LevelDef {
