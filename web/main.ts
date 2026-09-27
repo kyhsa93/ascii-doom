@@ -617,7 +617,7 @@ function startLevel(index: number): void {
 }
 
 /** Opens a map from a file, from the beginning, with the kit a run starts with. */
-function enterWad(bytes: Uint8Array, mapName: string): void {
+function enterWad(bytes: Uint8Array, mapName: string, fromDisk = true): void {
   // The measured cell aspect, because a picture out of the file is sampled
   // into characters and the number decides how many columns that is worth.
   // Wrong, it costs detail rather than shape -- but it is measured here and
@@ -645,7 +645,20 @@ function enterWad(bytes: Uint8Array, mapName: string): void {
    * did not exist, and then quietly said "one drawn from the file" about a file
    * with no pictures in it.
    */
+  /*
+   * And only for a file the person went and found.
+   *
+   * The maps that ship are cut down by this project's own converter -- five
+   * lumps each, no sprites -- so they can never carry a picture, and telling
+   * somebody who picked one off the menu that their file has no pictures in it
+   * is this game complaining about its own data. They get the level's name,
+   * which is what the original puts there.
+   */
   const drawn = next.fromFile
+  if (!fromDisk) {
+    say(mapName)
+    return
+  }
   say(drawn === 0 ? `${mapName} · no pictures in that file` : `${mapName} · ${drawn} drawn from the file`)
 }
 
@@ -1562,7 +1575,7 @@ function step(): void {
             })
             .then((bytes) => {
               titleUp = false
-              enterWad(bytes, asked)
+              enterWad(bytes, asked, false)
             })
             // Said rather than thrown, the way the file picker's failures are:
             // a map that will not load leaves you on the title with a reason.
@@ -3216,5 +3229,5 @@ document.getElementById('meetaccept')?.addEventListener('click', () => {
   })()
 })
 
-keys.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1 2 3 weapon · E use'
+keys.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1-7 weapon · E use'
 requestAnimationFrame(frame)

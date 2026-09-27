@@ -1938,6 +1938,7 @@ const listOfMaps = await readOpened(shippedPage)
 await hold(shippedPage, ' ')
 await shippedPage.waitForTimeout(1500)
 const playingAShippedMap = await readOpened(shippedPage)
+const shippedNotice = await topLine(shippedPage)
 await shippedPage.close()
 
 check('the maps that ship can be reached and played', () => {
@@ -1957,6 +1958,23 @@ check('the maps that ship can be reached and played', () => {
   assert(
     playingAShippedMap.level === listOfMaps.menuLabel,
     `picked ${listOfMaps.menuLabel} and ended up in ${playingAShippedMap.level}`,
+  )
+  /*
+   * And it announces the map rather than complaining about it.
+   *
+   * These maps are cut down by this project's own converter -- five lumps each,
+   * no sprites -- so the line that tells somebody their file had no pictures in
+   * it was this game complaining about its own data to a person who picked a
+   * level off a menu. Found by playing rather than by any check: it is the first
+   * thing on screen and it reads like an error.
+   */
+  assert(
+    shippedNotice.includes(listOfMaps.menuLabel),
+    `picking ${listOfMaps.menuLabel} said "${shippedNotice}"`,
+  )
+  assert(
+    !shippedNotice.includes('no pictures'),
+    `picking a map off the menu complained: "${shippedNotice}"`,
   )
   assert(playingAShippedMap.lines > 100, `${playingAShippedMap.level} came up with ${playingAShippedMap.lines} walls`)
 })
