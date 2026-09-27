@@ -37,6 +37,7 @@ import { liftsFrom } from './wadlifts.ts'
 import { supplyFor, supplyPictureFor } from './waditems.ts'
 import { atHeight, atWidth } from '../columns/bakedart.ts'
 import { creatureArtFor, creatureFor, creaturePictureFor } from './wadthings.ts'
+import { decorFor, placeDecor, type Decor } from './waddecor.ts'
 import { teleportsFrom } from './wadteleport.ts'
 import { taggedFrom } from './wadswitch.ts'
 
@@ -156,6 +157,7 @@ export function wadLevelState(
   // exactly here and nowhere else afterwards.
   let fromFile = 0
   const wanted = SKILL_BIT[skill]
+  const decor: Decor[] = []
   for (const thing of map.things) {
     if (thing.sector < 0) continue
     // A thing that is not on this skill is not on this map. The original hides
@@ -220,6 +222,21 @@ export function wadLevelState(
         radius: supply.radius,
         taken: false,
       })
+      continue
+    }
+
+    /*
+     * And the furniture, which is everything left.
+     *
+     * Last of the three, because the order is a whitelist read in order of
+     * consequence: a number that is a creature must not also be a lamp. Nothing
+     * here is picked up or fought -- what it does is stand in the room, take
+     * light from it, occlude what is behind it and, if the original says it is
+     * solid, stop you walking through it.
+     */
+    const furniture = decorFor(thing.type)
+    if (furniture !== null) {
+      decor.push(placeDecor(furniture, thing.x, thing.y, room.floor, room.ceiling, room.light))
     }
   }
 
@@ -266,6 +283,7 @@ export function wadLevelState(
     player: spawnPlayer(map.level, map.spawn.x, map.spawn.y, map.spawn.angle),
     actors,
     pickups,
+    decor,
     /**
      * The doors you press open and the platforms a marked wall calls.
      *

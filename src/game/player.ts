@@ -124,8 +124,28 @@ const scratch: [number, number] = [0, 0]
  * meeting at a sharp angle can push a position out through the far side — and
  * standing still for one frame is a great deal better than falling out of the
  * world.
+ *
+ * `obstacles` are things on the floor that cannot be walked through, pushed out
+ * of in the same passes as the walls so that a corner between a wall and a
+ * pillar settles like any other corner. Empty by default, and empty for every
+ * body in the game until the furniture arrived: what a creature does when it
+ * meets you is a question about combat rather than about geometry, and it is
+ * still answered by walking through you.
  */
-export function moveBody(level: Level, body: Body, dx: number, dy: number): boolean {
+export interface Obstacle {
+  readonly x: number
+  readonly y: number
+  /** Zero for one that does not block, so a caller can hand over its whole list. */
+  readonly radius: number
+}
+
+export function moveBody(
+  level: Level,
+  body: Body,
+  dx: number,
+  dy: number,
+  obstacles: readonly Obstacle[] = [],
+): boolean {
   let nx = body.x + dx
   let ny = body.y + dy
 
@@ -150,6 +170,28 @@ export function moveBody(level: Level, body: Body, dx: number, dy: number): bool
         continue
       }
       const push = (body.radius - distance) / distance
+      nx += ox * push
+      ny += oy * push
+    }
+    for (const thing of obstacles) {
+      // Its own radius, not the sum. A candle carries zero because you step over
+      // it, and testing the sum let the body's own radius do the blocking -- every
+      // candle in the game stopped you a stride short of itself.
+      if (thing.radius <= 0) continue
+      const reach = thing.radius + body.radius
+      const ox = nx - thing.x
+      const oy = ny - thing.y
+      const distance = Math.hypot(ox, oy)
+      if (distance >= reach) continue
+      touched = true
+      if (distance < 1e-9) {
+        // Standing exactly where the thing is, which happens when a map puts a
+        // start on top of one. No direction to be pushed along, so undo the step.
+        nx = body.x
+        ny = body.y
+        continue
+      }
+      const push = (reach - distance) / distance
       nx += ox * push
       ny += oy * push
     }

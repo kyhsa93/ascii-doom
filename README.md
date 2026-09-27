@@ -101,7 +101,7 @@ priority and says more in one row than a cramped bar says in three.
 | `↑` `↓` | look up and down |
 | `Shift` | run |
 | `Space` | fire |
-| `1` `2` `3` `4` `5` | sidearm, scattergun, launcher, fists, chainsaw |
+| `1`…`7` | the original's seven slots — `1` twice goes fist to saw, `3` twice goes scattergun to twinbore |
 | `E` | open what you are facing |
 | `Tab` | the automap |
 
@@ -368,22 +368,49 @@ are seventeen hundred of those bits across the two files, and modelling them as
 "set to one" made every one of them vanish on contact for anybody already
 wearing more than a single point.
 
-Weapons arrive as the rounds they carry. This game has five and the files
-place seven, so they go by what they are for — the two shotguns are the
-scattergun, the rapid-fire ones the sidearm, the launcher the launcher, the saw
-the saw — and since you start holding everything but the saw, what a weapon on
-the floor is usually worth is its ammunition.
+Weapons arrive as the rounds they carry, and nothing is folded any more. This
+paragraph spent three rounds explaining what was being thrown away: the two
+shotguns were both the scattergun, the chaingun and the plasma rifle and the BFG
+were all the sidearm, and the chainsaw was left where it stood because there was
+nothing here to swing. All nine are here.
 
-The saw and the bare hands were the two the sentence above used to exclude, on
-the grounds that there was nothing here to swing. Both are free and both reach
-about as far as a creature's claws do — the same distance beyond your own edge
-that they reach beyond theirs, which is measured off the widest reach in the
-game rather than chosen. The fists are the thing you still have when the
-reserves are gone; the saw does more damage a second than anything else here and
-only against what it is touching, which makes it the answer to a corridor and
-the wrong answer to a room. Neither was added for completeness: the powerups
-needed them, because one of the original's six multiplies a fist and there were
-no fists.
+| slot | | |
+| --- | --- | --- |
+| 1 | fists, chainsaw | free, at arm's length |
+| 2 | sidearm | bullets |
+| 3 | scattergun, twinbore | shells |
+| 4 | autogun | bullets |
+| 5 | launcher | rockets |
+| 6 | arc rifle | cells |
+| 7 | cannon | cells |
+
+The reserves are four rather than one per weapon, which they had to become. Two
+guns now draw on the same shells and two more on the same cells, and that is the
+whole of what makes a second shotgun worth finding: it is a better way to spend
+what you are carrying rather than a second pile of it. The ceilings are the
+original's — two hundred, fifty, fifty, three hundred — which the pack doubles,
+and which is what makes a cannon shot cost something at forty a pull.
+
+The two free weapons reach about as far as a creature's claws do — the same
+distance beyond your own edge that they reach beyond theirs, measured off the
+widest reach in the game rather than chosen. The fists are the thing you still
+have when the reserves are gone; the saw does more damage a second than anything
+else here and only against what it is touching, which makes it the answer to a
+corridor and the wrong answer to a room.
+
+The keyboard moved to the original's seven slots at the same time. It had been
+asking for weapons by position in the weapon list, which worked while that list
+was also the order you would want to press them in. It is not: the list is
+append-only, because everything from a save on disk to a map's shotgun indexes
+it, so the fist ended up fourth. A slot is what a key means.
+
+What you start holding is the one place this does not follow the original, and
+the reason is content rather than principle. The original starts you with a
+pistol and finds you everything else; the two levels written for this project
+supply ammunition and no guns, so arriving with only a sidearm would mean
+crossing them with shells you cannot spend. You keep the three that were always
+there, and the four new ones are found — which is what makes an arms display
+worth having.
 
 The powerups grant, and did not for a round. Two hundred and fifty-six of them
 stand across these maps, and for a while they were drawn and inert — the
@@ -427,6 +454,41 @@ be the thing that grants nothing. It is in the list now, along with the held
 frames for the fist and the saw, and the rest of the baked art came back byte
 for byte identical, which is what says the bake was rerun against the same
 Freedoom it was written from.
+
+The rooms are furnished. Three thousand nine hundred things across these
+sixty-eight maps are lamps, pillars, trees, torches, stalagmites, corpses and
+bodies hanging from ceilings, and for most of this project's life the importer
+had no answer for any of them — so a room the map had filled came out bare, and
+the emptiest maps in the game were the ones that had been decorated most.
+
+Which number is which picture, whether you can walk through it and whether it
+hangs are read out of the original's own table rather than recalled: the editor
+number, the spawn state's sprite, `MF_SOLID` and `MF_SPAWNCEILING`. That is the
+one thing about the furniture that is not a judgement.
+
+The sizes are a judgement, and worth being plain about. Every picture in this
+project was given its height by eye, and those choices amount to anywhere
+between twenty-two and seventy-six pixels of artwork per metre of world — a
+factor of three, measured across the thirty-one supplies. There is no existing
+scale to match, so the furniture is sized by one rule at the median of it. That
+makes it right about itself even where it is not right about a trooper: a candle
+comes out at knee height, a floor lamp at chest height, a tree at three metres,
+and the corpses land within a hand's breadth of the heights the creatures they
+are corpses of were given — which is the closest thing to a confirmation
+available.
+
+Five of the corpses cost nothing at all. A dead trooper is the trooper's own
+fallen frame, which has been baked since creatures arrived, laid down to the
+width it stood at for the reason the importer lays the others down that way.
+
+Solid furniture stops you, which meant teaching bodies to be pushed out of
+things and not only out of walls. It is the narrow version of that: creatures
+still walk through you and you through them, because what a creature does when
+it reaches you is a question about combat rather than about geometry. A pillar
+has never moved, so pushing out of one is well defined. How far out is taken from
+how wide the picture is drawn rather than from the original's collision box —
+that box is sixteen or twenty map units whatever the thing looks like, and those
+units are not this game's.
 
 A file you open still brings its own pictures, which matters for a WAD whose
 art is not Freedoom's. A creature or a supply the file has a drawing for is

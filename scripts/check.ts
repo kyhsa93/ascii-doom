@@ -61,6 +61,7 @@ import * as FREEDOOM from '../src/game/freedoomart.ts'
 import { TROOPER } from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
+import { decorFor, decorTypes, placeDecor } from '../src/game/waddecor.ts'
 import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { crossings } from '../src/columns/crossing.ts'
 import { flatMaterial, surfaceMaterials, wallMaterial } from '../src/columns/wadsurface.ts'
@@ -2310,8 +2311,26 @@ test('nothing is baked that the game never names', () => {
    * why the chaingun and the BFG were never baked in hand. This is the same
    * judgement, made by a check instead of by remembering.
    */
-  const baked = Object.keys(FREEDOOM as unknown as Record<string, unknown>)
+  /*
+   * The pictures, and only the pictures.
+   *
+   * This was every export of the generated file, which was the same thing until
+   * the converter started emitting a table of pixel heights alongside the art.
+   * That table is named by the file that sizes the furniture -- through an import
+   * this check cannot see, because it greps for the name and the name is there --
+   * and it was reported as an unused picture anyway. Asking what is a picture is
+   * the question that was always meant.
+   */
+  const everything = FREEDOOM as unknown as Record<string, unknown>
+  const baked = Object.keys(everything).filter((name) => {
+    const value = everything[name]
+    return typeof value === 'object' && value !== null && Array.isArray((value as { rows?: unknown }).rows)
+  })
   assert(baked.length > 10, `only ${baked.length} pictures came out of the converter`)
+  assert(
+    baked.length < Object.keys(everything).length,
+    'the generated file exports nothing but pictures, so this filter is measuring nothing',
+  )
 
   /*
    * Every source the game is built from, rather than a list of files.
@@ -6335,6 +6354,132 @@ test('a cannon shot costs what the reserve can barely hold', () => {
     ARC_RIFLE.interval < CANNON.interval,
     'the cannon fires faster than the arc rifle',
   )
+})
+
+
+console.log('\nthe furniture')
+
+test('every number a map furnishes a room with leaves something standing', () => {
+  /*
+   * Three thousand nine hundred things across the sixty-eight maps, and the
+   * whole of what the importer used to do with them was nothing. The counts are
+   * what makes this worth a check rather than an assertion: the floor lamp alone
+   * is five hundred of them, on thirty-eight of the maps.
+   */
+  const types = decorTypes()
+  assert(types.length > 50, `only ${types.length} kinds of furniture are known`)
+  for (const type of types) {
+    const found = decorFor(type)
+    assert(found !== null, `type ${type} is in the table and stands nothing up`)
+    assert(found.sprite.rows.length > 0, `type ${type} stands up an empty picture`)
+    assert(found.sprite.height > 0, `type ${type} stands up something with no height`)
+    // Knee height to twice a person. Nothing in the original's furniture is
+    // smaller than a blood splat or taller than a tree, and a number outside
+    // this range means a pixel height was read off the wrong picture.
+    assert(
+      found.sprite.height >= 0.05 && found.sprite.height <= 3.2,
+      `type ${type} is ${found.sprite.height.toFixed(2)}m tall`,
+    )
+  }
+
+  // And nothing that is already something else. The importer reads the three
+  // tables in order of consequence, so a number that is a creature must not also
+  // be a lamp -- a monster quietly turned into furniture is a monster that never
+  // attacks and never dies.
+  for (const type of types) {
+    assert(creatureFor(type) === null, `type ${type} is both a creature and furniture`)
+    assert(supplyFor(type) === null, `type ${type} is both a supply and furniture`)
+  }
+})
+
+test('what the original calls solid is what you cannot walk through', () => {
+  // A pillar is the case that matters: five of these thing numbers are pillars
+  // and until now you walked through all of them.
+  const pillar = decorFor(30)
+  assert(pillar !== null, 'the tall green pillar is not furniture')
+  const standing = placeDecor(pillar, 10, 4, 0, 4, 1)
+  assert(standing.radius > 0, 'a solid pillar pushes nothing out of the way')
+
+  // A candle is the other case, and it is the commoner one: two hundred and
+  // fifty-three candles, every one of them something you step over.
+  const candle = decorFor(34)
+  assert(candle !== null, 'the candle is not furniture')
+  assert(placeDecor(candle, 10, 4, 0, 4, 1).radius === 0, 'a candle blocks the way')
+
+  /*
+   * Measured by walking into it rather than by reading the radius.
+   *
+   * `moveBody` is where this had to be added, and a radius that nothing consults
+   * is the shape of bug this project has shipped before: the field was right and
+   * the movement never asked.
+   */
+  // Along the long clear line this level has, which the shooting checks measured
+  // at eight metres: from sixteen towards twenty-four, with the pillar at twenty.
+  const blocked = bodyAt(16, 4)
+  const inTheWay = [{ ...placeDecor(pillar, 20, 4, 0, 4, 1) }]
+  for (let step = 0; step < 60; step++) moveBody(LEVEL_1, blocked, 0.1, 0, inTheWay)
+  const edge = 20 - inTheWay[0]!.radius - PLAYER_RADIUS
+  assert(
+    blocked.x <= edge + 1e-6,
+    `walked to ${blocked.x.toFixed(2)}, past a pillar whose near edge is ${edge.toFixed(2)}`,
+  )
+
+  // And the same walk with nothing in the way goes further, or the check above
+  // would be passing on a wall it never reached.
+  const clear = bodyAt(16, 4)
+  for (let step = 0; step < 60; step++) moveBody(LEVEL_1, clear, 0.1, 0)
+  assert(clear.x > blocked.x + 0.2, `the pillar made no difference: ${clear.x.toFixed(2)} against ${blocked.x.toFixed(2)}`)
+
+  // A candle in the same spot stops nobody.
+  const past = bodyAt(16, 4)
+  const looseCandle = [placeDecor(candle, 20, 4, 0, 4, 1)]
+  for (let step = 0; step < 60; step++) moveBody(LEVEL_1, past, 0.1, 0, looseCandle)
+  close(past.x, clear.x, 1e-9, 'where a walk past a candle ends')
+})
+
+test('what hangs from a ceiling hangs from it', () => {
+  /*
+   * Eighteen of these thing numbers carry `MF_SPAWNCEILING`, and a hung body
+   * placed by its floor is a body lying on the floor -- which is what every one
+   * of the two hundred-odd of them would have been.
+   */
+  const hung = decorFor(63)
+  assert(hung !== null, 'the hanging body is not furniture')
+  const high = placeDecor(hung, 10, 4, 0, 4, 1)
+  close(high.z + hung.sprite.height, 4, 1e-9, 'where the top of a hung body sits against a ceiling of 4')
+  assert(high.z > 0, 'a hung body was placed on the floor')
+
+  // In a lower room it hangs lower, which is the whole point of reading the
+  // ceiling rather than using a constant.
+  const low = placeDecor(hung, 10, 4, 0, 2.5, 1)
+  close(low.z + hung.sprite.height, 2.5, 1e-9, 'where it sits under a lower ceiling')
+  assert(low.z < high.z, 'the room made no difference to how high it hangs')
+
+  // And what stands, stands on the floor it was put on.
+  const lamp = decorFor(2028)
+  assert(lamp !== null, 'the floor lamp is not furniture')
+  close(placeDecor(lamp, 10, 4, 1.5, 4, 1).z, 1.5, 1e-9, 'where a floor lamp stands')
+})
+
+test('a map from a file arrives furnished', () => {
+  /*
+   * The end-to-end half. Everything above could pass while the importer never
+   * called any of it, which is exactly how these thing numbers spent the project
+   * so far: the tables that would have answered for them did not exist, and
+   * nothing failed.
+   */
+  const bytes = readFileSync('web/public/maps/MAP01.wad')
+  const state = wadLevelState(new Uint8Array(bytes), 'MAP01', 3)
+  assert(state.decor.length > 0, 'a real map came through with nothing standing in any room')
+  const solid = state.decor.filter((piece) => piece.radius > 0)
+  assert(solid.length > 0, 'nothing in a real map can be bumped into')
+  const hung = state.decor.filter((piece) => piece.z > 0.5)
+  assert(hung.length + solid.length > 0, 'a real map placed furniture but none of it anywhere')
+  for (const piece of state.decor) {
+    assert(Number.isFinite(piece.x) && Number.isFinite(piece.y), 'a piece of furniture has no position')
+    assert(piece.light >= 0, 'a piece of furniture is lit by nothing')
+    assert(sectorAt(state.level, piece.x, piece.y) >= 0, 'a piece of furniture stands outside the map')
+  }
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

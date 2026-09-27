@@ -20,6 +20,7 @@ import { spawnActor, type Actor, type ActorKind } from './ai.ts'
 import { makeGoal, type Goal } from './exit.ts'
 import { makeMover, type Mover, type MoverKind } from './movers.ts'
 import type { Pickup } from './pickups.ts'
+import type { Decor } from './waddecor.ts'
 import { spawnPlayer, type Player } from './player.ts'
 
 /** Where a creature stands before anything has noticed you. */
@@ -57,6 +58,17 @@ export interface LevelState {
   readonly player: Player
   readonly actors: Actor[]
   readonly pickups: Pickup[]
+  /**
+   * The furniture: what stands in the rooms without being fought or collected.
+   *
+   * Empty for every level written here, which furnish themselves out of the
+   * creatures and supplies they place. A map from a file brings thousands --
+   * lamps, pillars, trees, corpses and the bodies that hang -- and none of them
+   * does anything but occupy the room and, sometimes, refuse to be walked
+   * through. Given to every level rather than to some, so nothing has to ask
+   * whether the field is there.
+   */
+  readonly decor: Decor[]
   readonly movers: Mover[]
   readonly goal: Goal
   /**
@@ -188,6 +200,9 @@ export function loadLevel(def: LevelDef): LevelState {
     // and a template that remembers having been collected is a level that can
     // only be played once.
     pickups: def.pickups.map((pickup) => ({ ...pickup, taken: false })),
+    // Nothing: a level written here furnishes itself out of what it fights and
+    // what it hands over.
+    decor: [],
     movers,
     goal: makeGoal(exitSector),
     liftSectors: movers

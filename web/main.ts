@@ -1643,7 +1643,7 @@ function step(): void {
         player.sector = landed
         player.floor = level.sectors[landed]!.floor + (player.hover ?? 0)
       }
-    } else moveBody(level, player, dx * speed, dy * speed)
+    } else moveBody(level, player, dx * speed, dy * speed, state.decor)
   }
 
   /*
@@ -1664,7 +1664,7 @@ function step(): void {
     const tsy = Math.sin(mate.angle + Math.PI / 2)
     const tdx = tfx * asked.forward + tsx * asked.strafe
     const tdy = tfy * asked.forward + tsy * asked.strafe
-    if (tdx !== 0 || tdy !== 0) moveBody(level, mate, tdx * theirSpeed, tdy * theirSpeed)
+    if (tdx !== 0 || tdy !== 0) moveBody(level, mate, tdx * theirSpeed, tdy * theirSpeed, state.decor)
   }
 
   /*
@@ -2083,6 +2083,12 @@ function frame(now: number): void {
   worldBright = meanBrightness(fb)
 
   visible.length = 0
+  /*
+   * The furniture first, though the order does not decide anything: billboards
+   * are sorted by depth before they are drawn. A lamp behind a creature is
+   * behind it because it is further away, not because it was pushed first.
+   */
+  for (const piece of state.decor) visible.push(piece)
   for (const pickup of pickups) {
     if (!pickup.taken) visible.push(pickup)
   }

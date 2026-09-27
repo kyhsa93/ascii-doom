@@ -48,6 +48,10 @@ const CREATURES: readonly (readonly [string, string])[] = [
   ['VILE', 'REVIVER'],
   ['CYBR', 'TITAN'],
   ['SPID', 'MATRIARCH'],
+  // The player, for the three corpses the maps place of one. Baked as a creature
+  // because what is wanted is the fallen frame, and that is the one thing only
+  // the creature path works out.
+  ['PLAY', 'MARINE'],
 ]
 
 const SUPPLIES: readonly (readonly [string, string])[] = [
@@ -159,6 +163,68 @@ const INTERFACE: readonly (readonly [string, string, number])[] = [
   ['PLSGB0', 'ARC_RIFLE_FIRING', 14],
   ['BFGGA0', 'CANNON_HELD', 14],
   ['BFGGB0', 'CANNON_FIRING', 14],
+]
+
+
+/**
+ * The furniture: lamps, pillars, trees, corpses and the things that hang.
+ *
+ * Four thousand of these stand across the sixty-eight maps and not one of them
+ * was drawn, which made a room the map had filled a room this game showed empty.
+ * They are their own list rather than more supplies because of what they are
+ * not: nothing here is picked up, and the numbers that matter about them --
+ * whether you can walk through one, how wide it is, whether it hangs -- come out
+ * of the original's own table rather than being chosen here. See `waddecor.ts`.
+ *
+ * The corpses of creatures are absent on purpose. A dead trooper is the trooper's
+ * own fallen frame, which is already baked, so five of these thing numbers cost
+ * nothing at all.
+ */
+const DECOR: readonly (readonly [string, string])[] = [
+  ['BRS1', 'BRAIN_POOL'],
+  ['CAND', 'CANDLE'],
+  ['CBRA', 'CANDELABRA'],
+  ['CEYE', 'EVIL_EYE'],
+  ['COL1', 'TALL_GREEN_PILLAR'],
+  ['COL2', 'SHORT_GREEN_PILLAR'],
+  ['COL3', 'TALL_RED_PILLAR'],
+  ['COL4', 'SHORT_RED_PILLAR'],
+  ['COL5', 'HEART_PILLAR'],
+  ['COL6', 'SKULL_PILLAR'],
+  ['COLU', 'FLOOR_LAMP'],
+  ['ELEC', 'TECHNO_COLUMN'],
+  ['FCAN', 'BURNING_BARREL'],
+  ['FSKU', 'FLOATING_SKULL'],
+  ['GOR1', 'HANGING_TWITCHING'],
+  ['GOR2', 'HANGING_ARMS_OUT'],
+  ['GOR3', 'HANGING_BODY'],
+  ['GOR4', 'HANGING_ONE_LEG'],
+  ['GOR5', 'HANGING_LEG'],
+  ['HDB1', 'HANGING_GUTTED'],
+  ['HDB2', 'HANGING_GUTTED_OPEN'],
+  ['HDB3', 'HANGING_TORSO'],
+  ['HDB4', 'HANGING_TORSO_DOWN'],
+  ['HDB5', 'HANGING_TORSO_OPEN'],
+  ['HDB6', 'HANGING_TORSO_SPLIT'],
+  ['POB1', 'BLOOD_POOL'],
+  ['POB2', 'BLOOD_POOL_WIDE'],
+  ['POL1', 'IMPALED_BODY'],
+  ['POL2', 'SKULL_KEBAB'],
+  ['POL3', 'SKULL_PILE'],
+  ['POL4', 'SKULL_ON_POLE'],
+  ['POL5', 'FLESH_POOL'],
+  ['POL6', 'TWITCHING_BODY'],
+  ['SMBT', 'SHORT_BLUE_TORCH'],
+  ['SMGT', 'SHORT_GREEN_TORCH'],
+  ['SMIT', 'STALAGMITE'],
+  ['SMRT', 'SHORT_RED_TORCH'],
+  ['TBLU', 'BLUE_TORCH'],
+  ['TGRN', 'GREEN_TORCH'],
+  ['TLMP', 'TALL_LAMP'],
+  ['TLP2', 'SHORT_LAMP'],
+  ['TRE1', 'BURNT_TREE'],
+  ['TRE2', 'BIG_TREE'],
+  ['TRED', 'RED_TORCH'],
 ]
 
 /**
@@ -318,6 +384,20 @@ if (files.length === 0) {
 }
 
 const made: Baked[] = []
+/**
+ * How tall each picture is in the file, in pixels.
+ *
+ * Emitted alongside the art because the alternative is somebody choosing a size
+ * for each of a hundred things by eye. In the original a sprite's pixel height
+ * *is* its height in map units, so one number divided by the units in a metre
+ * gives the size it should be drawn at -- measured rather than guessed, and it
+ * lands within a few hundredths of the sizes that were guessed for the supplies.
+ *
+ * Not the mobj height from the original's table, which is its collision box and
+ * is wrong for this: a floor lamp is sixteen units tall to walk into and eighty
+ * pixels tall to look at.
+ */
+const tall = new Map<string, number>()
 const done = new Set<string>()
 for (const path of files) {
   const bytes = new Uint8Array(readFileSync(path))
@@ -339,7 +419,7 @@ for (const path of files) {
     if (picture !== null) made.push(encode(name, picture))
   }
 
-  for (const [prefix, name] of [...CREATURES, ...SUPPLIES]) {
+  for (const [prefix, name] of [...CREATURES, ...SUPPLIES, ...DECOR]) {
     if (done.has(prefix)) continue
     const standing = frontFacing(art.sprites, prefix)
     if (standing === null) continue
@@ -349,6 +429,7 @@ for (const path of files) {
     const upright = spriteFromPicture(readPicture(view, at), art.palette, { height: 1 }, CELL_ASPECT)
     if (upright === null) continue
     made.push(encode(name, upright))
+    tall.set(name, pictureSize(view, at).height)
 
     const dead = deathFrame(view, art.sprites, prefix, pictureSize(view, at).height)
     if (dead === null) continue
@@ -363,7 +444,7 @@ for (const path of files) {
   }
 }
 
-const missing = [...CREATURES, ...SUPPLIES, ...INTERFACE]
+const missing = [...CREATURES, ...SUPPLIES, ...DECOR, ...INTERFACE]
   .filter(([prefix]) => !done.has(prefix))
   .map(([prefix]) => prefix)
 if (missing.length > 0) console.error(`no picture found for: ${missing.join(', ')}`)
@@ -389,6 +470,17 @@ import type { Sprite } from '../columns/sprite.ts'
 
 console.log(header)
 console.log(made.map(emit).join('\n'))
+console.log(`
+/**
+ * How tall each picture is in the file, in pixels.
+ *
+ * Divided by the units in a metre this is the size a thing should be drawn at,
+ * because in the original a sprite's pixel height is its height in map units.
+ * Here so that nothing has to choose a size for a hundred things by eye.
+ */
+export const PIXEL_HEIGHT: Readonly<Record<string, number>> = {
+${[...tall.entries()].map(([name, height]) => `  ${name}: ${height},`).join('\n')}
+}`)
 console.error(
   `baked ${made.length} pictures; colours per picture ${Math.min(...made.map((b) => b.colours))}..` +
     `${Math.max(...made.map((b) => b.colours))}, quantised below full only on ` +
