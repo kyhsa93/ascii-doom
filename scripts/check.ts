@@ -64,6 +64,7 @@ import { TROOPER } from '../src/game/freedoomart.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../src/columns/wadpic.ts'
 import { keyColourOf, supplyFor, supplyTypes } from '../src/game/waditems.ts'
 import { decorFor, decorTypes, placeDecor } from '../src/game/waddecor.ts'
+import { bossKindFor, bossRoomFrom, isBossTarget } from '../src/game/wadboss.ts'
 import { creatureFor, creaturePictureFor, creatureTypes } from '../src/game/wadthings.ts'
 import { crossings } from '../src/columns/crossing.ts'
 import { flatMaterial, surfaceMaterials, wallMaterial } from '../src/columns/wadsurface.ts'
@@ -6827,6 +6828,125 @@ test('every line special the shipped maps carry is read, bar the one there is no
     scrolls += map.specials.filter((entry) => entry.special === NOTHING_TO_SCROLL).length
   }
   assert(scrolls > 100, `only ${scrolls} scrolling walls, so the exemption is carrying nothing`)
+})
+
+
+console.log('\nthe last map')
+
+test('the two things that can be shot and are not creatures arrive with the original\'s health', () => {
+  /*
+   * Nineteen things across three maps, and the smallest count in the whole
+   * importer -- which is why they were last and why they matter: they are the end
+   * of the second campaign, and a map whose ending is unread is a map you cannot
+   * finish.
+   */
+  const brain = bossKindFor(88)
+  const hanging = bossKindFor(72)
+  assert(brain !== null, 'the brain is not something this game can shoot')
+  assert(hanging !== null, 'the hanging target is not something this game can shoot')
+  assert(brain.health === 250, `the brain has ${brain.health} health rather than the original's 250`)
+  assert(hanging.health === 100, `the hanging one has ${hanging.health} rather than 100`)
+  // Targets rather than fights: no reach, no gun, no speed. A brain that chased
+  // you would be a monster, and the room is about the room.
+  for (const kind of [brain, hanging]) {
+    assert(kind.speed === 0, `${kind.name} walks`)
+    assert(kind.reach === 0, `${kind.name} can reach you`)
+    assert(kind.damage === 0, `${kind.name} hits for ${kind.damage}`)
+    assert(kind.ranged === undefined, `${kind.name} carries a gun`)
+    assert(isBossTarget(kind), `${kind.name} is not counted as one of the things that opens the way`)
+  }
+  // And an ordinary creature is not one of them, or the rule that opens the way
+  // would be "kill everything".
+  assert(!isBossTarget(CRAWLER_KIND), 'an ordinary creature counts as a boss target')
+  assert(bossKindFor(3004) === null, 'a trooper arrives as boss machinery')
+})
+
+test('the spots and the thing that throws at them are found, and are invisible', () => {
+  const spots: WadThing[] = [
+    { type: 87, x: 1, y: 1, angle: 0, sector: 0, skills: 7 },
+    { type: 87, x: 2, y: 2, angle: 0, sector: 0, skills: 7 },
+    { type: 89, x: 3, y: 3, angle: 0, sector: 0, skills: 7 },
+  ]
+  const room = bossRoomFrom(spots)
+  assert(room.spots.length === 2, `${room.spots.length} spots came off a map with two`)
+  assert(room.spits, 'a map with something throwing was read as having nothing')
+
+  // Both halves or neither: spots with nothing throwing at them are invisible
+  // markers, and something throwing with nowhere to aim has nothing to do.
+  assert(!bossRoomFrom(spots.filter((thing) => thing.type === 87)).spits, 'spots alone claimed a thrower')
+  assert(bossRoomFrom(spots.filter((thing) => thing.type === 89)).spots.length === 0, 'a thrower alone claimed spots')
+
+  // And neither of them is furniture or a supply, so nothing draws them.
+  for (const type of [87, 89]) {
+    assert(decorFor(type) === null, `the marker ${type} is drawn as furniture`)
+    assert(supplyFor(type) === null, `the marker ${type} can be picked up`)
+    assert(creatureFor(type) === null, `the marker ${type} arrives as a creature`)
+  }
+})
+
+test('the last map arrives with its ending, and the other three with theirs', () => {
+  /*
+   * Measured off the shipped maps rather than described: MAP30 has ten spots, one
+   * brain, one thrower and no room carrying the tag the original opens -- so
+   * killing the brain there ends the level, because there is nowhere left to walk
+   * to. MAP11 and MAP27 have the tag and no thrower, so killing what hangs there
+   * opens a way instead. Two endings, and which one a map gets is the map's doing.
+   */
+  const last = wadLevelState(new Uint8Array(readFileSync('web/public/maps/MAP30.wad')), 'MAP30', 3)
+  assert(last.bossRoom.spits, 'the last map throws nothing')
+  assert(last.bossRoom.spots.length === 10, `${last.bossRoom.spots.length} spots on the last map`)
+  assert(last.bossDoors.length === 0, `the last map has ${last.bossDoors.length} doors to open, so it ends by walking out`)
+  const brains = last.actors.filter((actor) => isBossTarget(actor.kind))
+  assert(brains.length === 1, `${brains.length} shootable things in the last room`)
+  for (const spot of last.bossRoom.spots) {
+    assert(sectorAt(last.level, spot.x, spot.y) >= 0, 'a spawn spot is outside the map')
+  }
+
+  const puzzle = wadLevelState(new Uint8Array(readFileSync('web/public/maps/MAP11.wad')), 'MAP11', 3)
+  assert(!puzzle.bossRoom.spits, 'a map with no thrower was read as having one')
+  const hanging = puzzle.actors.filter((actor) => isBossTarget(actor.kind))
+  assert(hanging.length === 5, `${hanging.length} hanging targets on a map with five`)
+  assert(puzzle.bossDoors.length > 0, 'the map with a room tagged for it has nothing to open')
+  for (const door of puzzle.bossDoors) {
+    assert(door.kind.open > door.kind.shut, 'the way out opens downwards')
+    assert(last.movers.includes(door) || puzzle.movers.includes(door), 'a boss door is not among the movers stepped each frame')
+  }
+})
+
+test('every thing the shipped maps place is answered by one of the tables', () => {
+  /*
+   * The whole-set gate for things, and the twin of the one for line specials.
+   *
+   * It can exist because the sixty-eight maps are in this repository, so "have we
+   * missed one" is a measurement. Twenty-six thousand seven hundred and
+   * thirty-nine things, and the number unanswered went four thousand one hundred
+   * and fifty-seven, then three thousand nine hundred and nineteen, then nineteen,
+   * then none.
+   *
+   * The starts and the two invisible markers are excluded by name, because they
+   * are consumed somewhere a per-type table cannot answer for: a start becomes
+   * the player and a marker becomes a row in the boss room.
+   */
+  const CONSUMED_ELSEWHERE = new Set([1, 2, 3, 4, 11, 14, 87, 89])
+  const unanswered = new Map<number, number>()
+  let things = 0
+  for (const file of readdirSync('web/public/maps').filter((name) => name.endsWith('.wad'))) {
+    const map = readMap(new Uint8Array(readFileSync(`web/public/maps/${file}`)), file.replace('.wad', ''))
+    for (const thing of map.things) {
+      things++
+      if (CONSUMED_ELSEWHERE.has(thing.type)) continue
+      if (creatureFor(thing.type) !== null) continue
+      if (supplyFor(thing.type) !== null) continue
+      if (decorFor(thing.type) !== null) continue
+      if (bossKindFor(thing.type) !== null) continue
+      unanswered.set(thing.type, (unanswered.get(thing.type) ?? 0) + 1)
+    }
+  }
+  assert(things > 20000, `only ${things} things across the shipped maps`)
+  assert(
+    unanswered.size === 0,
+    `unanswered things: ${[...unanswered.entries()].map(([type, count]) => `${type} (${count})`).join(', ')}`,
+  )
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

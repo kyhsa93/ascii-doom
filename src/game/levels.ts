@@ -22,6 +22,7 @@ import { makeMover, type Mover, type MoverKind } from './movers.ts'
 import type { Pickup } from './pickups.ts'
 import type { Decor } from './waddecor.ts'
 import type { LightChange } from './wadlights.ts'
+import type { BossRoom } from './wadboss.ts'
 import { spawnPlayer, type Player } from './player.ts'
 
 /** Where a creature stands before anything has noticed you. */
@@ -77,6 +78,22 @@ export interface LevelState {
    * written. A map from a file may turn a light on behind you.
    */
   readonly lightLines: ReadonlyMap<Line, LightChange>
+  /**
+   * The spots the last map throws things at, and whether anything throws them.
+   *
+   * Empty for every level written here and for sixty-five of the sixty-eight a
+   * file can bring. It is the end of the second campaign, which is reason enough
+   * for a field: a map whose ending is unread is a map you cannot finish.
+   */
+  readonly bossRoom: BossRoom
+  /**
+   * What opens when every shootable thing in that room is dead.
+   *
+   * These movers are in `movers` like any other and no line points at them,
+   * because no line asks for them: the original acts on a tag when the last one
+   * dies. The page decides when they have been earned.
+   */
+  readonly bossDoors: readonly Mover[]
   readonly movers: Mover[]
   readonly goal: Goal
   /**
@@ -212,6 +229,8 @@ export function loadLevel(def: LevelDef): LevelState {
     // what it hands over.
     decor: [],
     lightLines: new Map(),
+    bossRoom: { spots: [], spits: false },
+    bossDoors: [],
     movers,
     goal: makeGoal(exitSector),
     liftSectors: movers

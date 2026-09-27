@@ -87,6 +87,9 @@ const SUPPLIES: readonly (readonly [string, string])[] = [
   // is what the rest of the art in here is.
   // The two the maps place two hundred and thirty-eight of and this game had
   // nothing to do with, so they were never given pictures either.
+  // The two things on the last map that can be shot and are not creatures.
+  ['BBRN', 'BOSS_BRAIN'],
+  ['KEEN', 'HANGING_KEEN'],
   ['CELL', 'CELL_CHARGE'],
   ['CELP', 'CELL_PACK'],
   ['PLSS', 'PLASMA_BOLT'],

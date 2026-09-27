@@ -21,7 +21,7 @@
  * what fits through a door long before anybody noticed.
  */
 
-import type { Line } from '../columns/level.ts'
+import type { Level, Line } from '../columns/level.ts'
 import type { Sprite } from '../columns/sprite.ts'
 import { readArt, readMap } from '../columns/wad.ts'
 import { deathFrame, frontFacing, pictureSize, readPicture, spriteFromPicture } from '../columns/wadpic.ts'
@@ -38,6 +38,7 @@ import { supplyFor, supplyPictureFor } from './waditems.ts'
 import { atHeight, atWidth } from '../columns/bakedart.ts'
 import { creatureArtFor, creatureFor, creaturePictureFor } from './wadthings.ts'
 import { decorFor, placeDecor, type Decor } from './waddecor.ts'
+import { BOSS_TAG, bossKindFor, bossRoomFrom } from './wadboss.ts'
 import { lightsFrom } from './wadlights.ts'
 import { stairsFrom } from './wadstairs.ts'
 import { teleportsFrom } from './wadteleport.ts'
@@ -169,6 +170,24 @@ export function wadLevelState(
     const room = map.level.sectors[thing.sector]
     if (!room) continue
 
+    /*
+     * The two things on the last map that can be shot and are not creatures.
+     *
+     * Asked before the creature table, because they are not in it and never will
+     * be: a brain does not chase you, and putting it there would mean a row
+     * whose every field says "no".
+     */
+    const boss = bossKindFor(thing.type)
+    if (boss !== null) {
+      const here = map.level.sectors[thing.sector]
+      if (here !== undefined) {
+        const actor = spawnActor(boss, thing.x, thing.y, thing.sector, here.floor, here.ceiling)
+        actor.angle = thing.angle
+        actors.push(actor)
+      }
+      continue
+    }
+
     const kind = creatureFor(thing.type)
     if (kind) {
       // Standing is fitted to the creature's own height; the corpse is fitted
@@ -279,6 +298,28 @@ export function wadLevelState(
     new Set([...platforms.map((platform) => platform.sector), ...machines.movers.map((mover) => mover.sector)]),
   )
 
+  /*
+   * The way out of the boss room, which no line asks for.
+   *
+   * Every other machine in a file is named by a line; this one is named by a
+   * number the original acts on when the last shootable thing in the room dies.
+   * So the movers are built here and handed to the page with nothing pointing at
+   * them -- the page is what decides they have been earned.
+   */
+  const bossOwned = new Set([
+    ...platforms.map((platform) => platform.sector),
+    ...machines.movers.map((mover) => mover.sector),
+  ])
+  const bossDoors: Mover[] = []
+  for (const sector of map.tagged.get(BOSS_TAG) ?? []) {
+    if (bossOwned.has(sector)) continue
+    const room = map.level.sectors[sector]
+    if (room === undefined) continue
+    const above = lowestNeighbourCeiling(map.level, sector)
+    if (above === null || above <= room.ceiling) continue
+    bossDoors.push(makeMover(sector, { surface: 'ceiling', shut: room.ceiling, open: above, speed: 1.6, wait: 0 }))
+  }
+
   const liftLines = new Map<Line, readonly Mover[]>()
   const crossedLines = new Map<Line, readonly Mover[]>(machines.crossed)
   for (const [line, built] of steps.crossed) {
@@ -315,7 +356,7 @@ export function wadLevelState(
      * heights and a lift is a floor with two heights, and `updateMovers` has
      * never needed to know which it is looking at.
      */
-    movers: [...doors, ...platforms, ...machines.movers, ...steps.movers],
+    movers: [...doors, ...platforms, ...machines.movers, ...steps.movers, ...bossDoors],
     /**
      * Where the map ends, if it ends anywhere this game can notice.
      *
@@ -355,6 +396,14 @@ export function wadLevelState(
      * lit it is a corridor this game gives you no torch for.
      */
     lightLines: lightsFrom(map.level, map.specials, map.tagged),
+    /**
+     * Where the last map throws things from, and where they land.
+     *
+     * Nineteen things across three maps, and the end of the second campaign.
+     */
+    bossRoom: bossRoomFrom(map.things),
+    /** And what opens when every shootable thing in that room is dead. */
+    bossDoors,
     /** Lines that work something out of sight, which is most of what a map does. */
     crossedLines,
     /** And the walls that do, beyond the ones that call a platform. */
@@ -382,4 +431,24 @@ export function wadLevelState(
     liftSectors: [],
     fromFile,
   }
+}
+
+/**
+ * The lowest ceiling of the rooms sharing a line with this one.
+ *
+ * The same measurement the tagged machines make, written again here rather than
+ * imported, because the version there is inside a builder that wants a whole
+ * table of specials. Two callers is not yet a reason to move it; three would be.
+ */
+function lowestNeighbourCeiling(level: Level, sector: number): number | null {
+  let found: number | null = null
+  for (const line of level.lines) {
+    if (line.back === null) continue
+    const other = line.front === sector ? line.back : line.back === sector ? line.front : null
+    if (other === null || other === sector) continue
+    const room = level.sectors[other]
+    if (room === undefined) continue
+    found = found === null ? room.ceiling : Math.min(found, room.ceiling)
+  }
+  return found
 }

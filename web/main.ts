@@ -25,6 +25,7 @@ import {
   isAlive,
   normalizeAngle,
   provoke,
+  spawnActor,
   updateActors,
   type Actor,
 } from '../src/game/ai.ts'
@@ -84,6 +85,8 @@ import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
 import { capacityOf, collect, heldOf, takeDamage, type Carrier } from '../src/game/pickups.ts'
 import { AMMO_KINDS, indexOfAmmo } from '../src/game/ammo.ts'
+import { isBossTarget } from '../src/game/wadboss.ts'
+import { creatureFor } from '../src/game/wadthings.ts'
 import { supplyFor } from '../src/game/waditems.ts'
 import {
   BLUR_WOBBLE,
@@ -163,6 +166,25 @@ let litLines = new Set<Line>()
  * one place in this loop where building the list would cost more than the test.
  */
 let padLines: Line[] = []
+/**
+ * Seconds between the last map's spawns.
+ *
+ * Declared here beside the clock that uses it rather than with the other
+ * constants further down. This file has had four variables read before their
+ * declaration, and the cost is not an error at the site -- it is a page that
+ * does not boot.
+ */
+const SPAWN_INTERVAL = 4.5
+
+/**
+ * Seconds until the last map throws the next thing into the room.
+ *
+ * Four and a half, which is the original's interval near enough: long enough to
+ * deal with what arrived and short enough that dealing with it is the whole of
+ * what you are doing. Reset with the level, because a clock that carries over is
+ * a clock that fires in the first room of the next one.
+ */
+let spawnIn = SPAWN_INTERVAL
 /** Where each creature stood before this tick, so a crossing can be asked about. */
 const wasAt: { x: number; y: number }[] = []
 /**
@@ -486,6 +508,8 @@ function enterLevel(
   usedTeleports = new Set<Line>()
   litLines = new Set<Line>()
   padLines = []
+  spawnIn = SPAWN_INTERVAL
+  bossDoorsOpen = false
   foundSecrets = new Set<number>()
   advanceIn = 0
   deadFor = 0
@@ -1082,6 +1106,18 @@ function applyCheat(asked: Cheat): void {
 const CRUSH_DAMAGE = 34
 
 /**
+ * What the last map throws, by the numbers a file uses for them.
+ *
+ * A spread of what this game has rather than the original's weighted list, and
+ * read through the same table a map's own monsters come from -- so a creature
+ * thrown into the room is the same creature the room could have been built with.
+ */
+const SPAWNED: readonly number[] = [3004, 9, 3001, 3002, 3005, 65, 3003]
+
+/** Whether the way out of the boss room has already been opened. */
+let bossDoorsOpen = false
+
+/**
  * Turns a light line on, once.
  *
  * Once because the brightness each one sets was measured against the map as
@@ -1232,6 +1268,38 @@ function hurtActor(index: number, amount: number, by: number): void {
   // a rocket -- or by a barrel it was standing beside -- would finish the level
   // uncounted.
   if (isCreature(actor)) kills++
+
+  /*
+   * And the way out, if that was the last thing in the room worth shooting.
+   *
+   * Checked on a death rather than every tick: it is the one question in this
+   * loop whose answer only changes when something dies, and a map with no such
+   * things never asks it at all.
+   */
+  if (isBossTarget(actor.kind) && !bossDoorsOpen) {
+    const left = actors.filter((other) => isBossTarget(other.kind) && isAlive(other))
+    if (left.length === 0) {
+      bossDoorsOpen = true
+      /*
+       * Two endings, and which one the map gets is the map's own doing.
+       *
+       * Three of the four maps that place these give a room the tag the original
+       * opens, so killing the last one opens the way and you walk out. The last
+       * map gives no room that tag at all -- there is nowhere left to walk to,
+       * and what the original does there is end the level. Measured rather than
+       * assumed: MAP11 and MAP27 have one such room each, MAP30 has none.
+       */
+      if (state.bossDoors.length > 0) {
+        for (const door of state.bossDoors) activate(door)
+        say('the way out')
+        noise('door')
+      } else if (finishNow(state.goal)) {
+        advanceIn = 3.5
+        say('that was the last of them')
+        noise('switch')
+      }
+    }
+  }
 
   const goes = actor.kind.explodes
   if (goes === undefined) return
@@ -1990,6 +2058,34 @@ function step(): void {
   // Filled on the first tick of a level rather than when it loads, because a
   // level arrives from four different places and one of them would forget.
   if (padLines.length === 0 && state.teleportLines.size > 0) padLines = [...state.teleportLines.keys()]
+
+  /*
+   * And the last map's clock, which throws something into the room on its own.
+   *
+   * The original flies a cube to the spot and spawns on arrival; this spawns at
+   * the spot. A cube is a projectile whose only job is to be watched, and the
+   * room it would be crossing is already full of things to watch.
+   *
+   * Rolled through the seeded generator like every other roll in the game, so a
+   * recording of this fight plays back as the fight it was.
+   */
+  if (state.bossRoom.spits && state.bossRoom.spots.length > 0) {
+    spawnIn -= STEP
+    if (spawnIn <= 0) {
+      spawnIn = SPAWN_INTERVAL
+      const spot = state.bossRoom.spots[Math.floor(rolls() * state.bossRoom.spots.length)]
+      const type = SPAWNED[Math.floor(rolls() * SPAWNED.length)]
+      const kind = type === undefined ? null : creatureFor(type)
+      const room = spot === undefined ? undefined : level.sectors[spot.sector]
+      if (spot !== undefined && kind !== null && room !== undefined) {
+        const born = spawnActor(kind, spot.x, spot.y, spot.sector, room.floor, room.ceiling)
+        born.awake = true
+        born.state = 'chasing'
+        actors.push(born)
+        noise('teleport')
+      }
+    }
+  }
 
   const bodies = mate === null ? [player, ...actors] : [player, mate, ...actors]
   const firstActor = mate === null ? 1 : 2
