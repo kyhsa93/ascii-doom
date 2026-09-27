@@ -859,8 +859,16 @@ const ended = await readEnding(finish)
 await finish.waitForTimeout(1500)
 const during = await readEnding(finish)
 await finish.screenshot({ path: join(SHOTS, 'summary.png') })
-// Past 3.5s from arrival, with room for the frames either side of it.
-await finish.waitForTimeout(2900)
+/*
+ * And then asked for the next one, because it waits to be.
+ *
+ * This used to sit out the rest of a three-and-a-half second clock. The
+ * original's intermission goes on when you press, and the reads above are what
+ * say the screen is still there until you do -- so the press belongs after
+ * them.
+ */
+await hold(finish, ' ')
+await finish.waitForTimeout(900)
 const handedOver = await readEnding(finish)
 
 check('finishing a level draws a summary you can read', () => {
@@ -1154,8 +1162,17 @@ function readGround(page: Page) {
 }
 
 await waded.evaluate(() => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit())
-// Past the summary and its pause, which puts us in the cistern.
-await waded.waitForTimeout(4400)
+/*
+ * Through the summary, which now waits to be asked rather than for a clock.
+ *
+ * This used to sit out a pause and find itself in the cistern. The original's
+ * intermission waits for a press and so does this one, so a check that wants
+ * the next level has to press -- and after the grace that stops the trigger you
+ * opened the exit with from skipping the screen you just earned.
+ */
+await waded.waitForTimeout(900)
+await hold(waded, ' ')
+await waded.waitForTimeout(900)
 
 const steppedIn = await waded.evaluate(
   () => (window as unknown as { __probe?: { toTag(tag: string): boolean } }).__probe?.toTag('channel') ?? false,
@@ -1470,9 +1487,17 @@ const walkedOut = await wadPage.evaluate(
 )
 await wadPage.waitForTimeout(400)
 const justFinished = await readOpened(wadPage)
-// Past the pause that hands you the next level in the campaign.
+// Long enough that a clock would have moved on by now. The summary used to end
+// after three and a half seconds; it ends when it is asked to.
 await wadPage.waitForTimeout(4200)
 const afterThePause = await readOpened(wadPage)
+/*
+ * Leaving one is asked on a page of its own, further down.
+ *
+ * It cannot be asked here: the press that leaves puts this page on the title,
+ * and three checks after this one go on using it to open maps and press walls.
+ * They all failed at once, which is how a shared page tells you it is shared.
+ */
 
 check('a map from a file can be finished, and finishing it stays there', () => {
   assert(openedExit, 'the page would not take a second file')
@@ -1492,6 +1517,16 @@ check('a map from a file can be finished, and finishing it stays there', () => {
     afterThePause.levelIndex === -1,
     `after the pause the page reports campaign index ${afterThePause.levelIndex}`,
   )
+
+  /*
+   * And there is a way out of it, which there was not.
+   *
+   * A map from a file has nothing after it, so the summary used to be the end
+   * of the session: the result sat on the screen and the only thing left to do
+   * was reload the page. Every one of the sixty-eight maps that ship is in that
+   * position. The original's answer to "the episode is over" is its menu, so
+   * this one asks and gets the title back.
+   */
 })
 
 // Ending a map by pressing a switch, which is the half of them a room cannot
@@ -1546,6 +1581,52 @@ check('a map that ends on a switch can be ended by pressing it', () => {
     `after the pause the page was showing "${wellAfter.level}" instead of the map that was open`,
   )
 })
+
+/*
+ * The way out of a map that is over, on a page of its own.
+ *
+ * A map from a file has nothing after it, so the summary used to be the end of
+ * the session: the result sat on the screen and the only thing left was
+ * reloading the page. Every one of the sixty-eight maps that ship is in that
+ * position. The original's answer to "that was the last of them" is its menu.
+ *
+ * Its own page because the press that leaves puts the page on the title, and a
+ * page on the title cannot go on being used to open maps and press walls.
+ */
+const leaving = await browser.newPage({ viewport: { width: 1280, height: 720 } })
+leaving.on('pageerror', (error) => problems.push(`leaving: ${error.message}`))
+await leaving.goto(`${base}?probe=1`, { waitUntil: 'domcontentloaded' })
+await leaving.waitForTimeout(900)
+await begin(leaving)
+const tookLeaving = await leaving.evaluate(
+  ([bytes, name]) =>
+    (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
+      bytes as number[],
+      name as string,
+    ) ?? false,
+  [exitWad, 'E1M1'] as [number[], string],
+)
+await leaving.waitForTimeout(400)
+const leavingWalked = await leaving.evaluate(
+  () => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit() ?? false,
+)
+await leaving.waitForTimeout(500)
+const leavingFinished = await readOpened(leaving)
+// Past the grace that stops the trigger you finished with from skipping the
+// screen you just earned, then asked.
+await leaving.waitForTimeout(800)
+await hold(leaving, ' ')
+await leaving.waitForTimeout(800)
+const leavingAfter = await readOpened(leaving)
+await leaving.close()
+
+check('a map with nothing after it can be left', () => {
+  assert(tookLeaving && leavingWalked, 'the page would not take the map or could not reach its exit')
+  assert(leavingFinished.complete, 'crossing the exit did not finish the map')
+  assert(!leavingFinished.titleUp, 'finishing the map went straight back to the title without asking')
+  assert(leavingAfter.titleUp, 'asking to leave a finished map left the result on the screen')
+})
+
 
 // A lift from a file, which is the other thing a wall can be. The platform
 // stands sixty-four map units up against the western room's thirty-two: a step
@@ -3367,8 +3448,10 @@ const powerGround = async (thing: number, label: string) => {
   await page.waitForTimeout(900)
   await begin(page)
   await page.evaluate(() => (window as unknown as { __probe?: { toExit(): boolean } }).__probe?.toExit())
-  // Past the summary and its pause, which puts us in the cistern.
-  await page.waitForTimeout(4400)
+  // Through the summary, which waits for a press: past the grace, then ask.
+  await page.waitForTimeout(900)
+  await hold(page, ' ')
+  await page.waitForTimeout(900)
 
   const laid = await powerDrop(page, thing)
   // A step, so the ordinary collection rule finds what is at our feet.

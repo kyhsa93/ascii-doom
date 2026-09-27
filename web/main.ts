@@ -466,7 +466,15 @@ let mapAsked = false
 /** Map units to a grid row. Close enough in to read a room, wide enough to place it. */
 const MAP_SCALE = 0.55
 /** Seconds left on the summary before the next level starts. */
-let advanceIn = 0
+/**
+ * Seconds the summary has been up.
+ *
+ * Counted rather than counted down, because what it is for is a grace before a
+ * press is listened to and not a deadline: the screen stays until somebody asks
+ * for the next thing.
+ */
+let summaryFor = 0
+const SUMMARY_GRACE = 0.6
 /**
  * Seconds spent dead.
  *
@@ -536,7 +544,7 @@ function enterLevel(
   spawnIn = SPAWN_INTERVAL
   bossDoorsOpen = false
   foundSecrets = new Set<number>()
-  advanceIn = 0
+  summaryFor = 0
   deadFor = 0
   seen = new Set<Line>()
   mapOpen = false
@@ -853,6 +861,24 @@ const down = (event: KeyboardEvent) => {
   // Tab would otherwise walk the focus ring out of the game.
   if (event.key.startsWith('Arrow') || event.key === ' ' || event.key === 'Tab') event.preventDefault()
   held.add(event.key.length === 1 ? event.key.toLowerCase() : event.key)
+  /*
+   * Out of the level and back to the title, which is what the original's escape
+   * key reaches.
+   *
+   * Handled here rather than as an `Intent`, and that is the point of it: an
+   * intent is a thing the simulation does, which means it is recorded into a
+   * demo and sent over the wire to the other player. Leaving is neither. It is
+   * the same category as the file input's own listener -- something the page
+   * does, not something the body does.
+   *
+   * A run is saved on arriving in a level, so the title comes back offering to
+   * continue the one just left.
+   */
+  if (event.key === 'Escape' && !titleUp) {
+    event.preventDefault()
+    toTitle()
+    return
+  }
   // Typed rather than bound: the letters go into the buffer whatever else they
   // are doing, and a word takes effect on its last one. Not while the title is
   // up, where the same letters are walking a cursor.
@@ -1279,6 +1305,25 @@ function meanBrightness(fb: Framebuffer): number {
   return cells === 0 ? 0 : sum / cells
 }
 
+/**
+ * Back to the title, which is the way out of a map that is over.
+ *
+ * The original's answer to "the episode has ended" is its menu, and this page
+ * had no way back to one at all: the only thing that ever set the title up
+ * again was opening a file. So a finished map -- which is every map that ships,
+ * none of which has anything after it -- ended in a result screen with nothing
+ * to do but reload the page.
+ *
+ * The level is left loaded behind it. Choosing something from the menu builds
+ * whatever was chosen, and until then the title is drawn over a frozen room,
+ * which is what the title has always been drawn over.
+ */
+function toTitle(): void {
+  titleUp = true
+  menu = titleMenu()
+  say('')
+}
+
 function hurtPlayer(amount: number): void {
   if (amount <= 0) return
   // Nothing can hurt you, and nothing needs to know that but this. The shield
@@ -1332,7 +1377,6 @@ function hurtActor(index: number, amount: number, by: number): void {
         say('the way out')
         noise('door')
       } else if (finishNow(state.goal)) {
-        advanceIn = 3.5
         say('that was the last of them')
         noise('switch')
       }
@@ -1639,19 +1683,32 @@ function step(): void {
   }
 
   if (goal.reached) {
-    // The level is over: nothing walks, nothing fires, nothing closes in behind
-    // the summary. After a pause the next one starts, or the last one stays.
-    //
-    // Before the death branch deliberately: a bolt still in the air when you
-    // stepped into the exit does not take the level back off you.
-    // A map opened from a file has no place in the campaign's order, so there
-    // is nothing after it. Without this `nextLevel(-1)` answers 0 and finishing
-    // someone else's map would quietly hand you the outpost -- which was
-    // unreachable only because a file had no exit to reach until now.
+    /*
+     * The level is over: nothing walks, nothing fires, nothing closes in behind
+     * the summary. It waits for a press, which is what the original's
+     * intermission does.
+     *
+     * It used to wait for a clock -- three and a half seconds and then the next
+     * level whether you had read the tally or not -- and on any map with nothing
+     * after it, which is all sixty-eight that ship, it waited for nothing at
+     * all: the result sat there and there was no way out of it but reloading
+     * the page.
+     *
+     * Before the death branch deliberately: a bolt still in the air when you
+     * stepped into the exit does not take the level back off you.
+     *
+     * A map opened from a file has no place in the campaign's order, so there is
+     * nothing after it. Without this `nextLevel(-1)` answers 0 and finishing
+     * someone else's map would quietly hand you the outpost.
+     */
     const next = wadSource ? null : nextLevel(levelIndex)
-    if (next !== null) {
-      advanceIn -= STEP
-      if (advanceIn <= 0) startLevel(next)
+    summaryFor += STEP
+    const asked = mergeIntents(keyboardIntent(held), touchIntent(touch as TouchState))
+    // A grace first, because the trigger that opened the exit switch is usually
+    // still held when the summary arrives -- the same reason dying has one.
+    if (summaryFor >= SUMMARY_GRACE && (asked.fire || asked.use)) {
+      if (next !== null) startLevel(next)
+      else toTitle()
     }
     return
   }
@@ -2068,7 +2125,6 @@ function step(): void {
       const facing = lineInFront(level, player.x, player.y, player.angle)
       if (facing) {
         if (state.exitLines.has(facing) && finishNow(goal)) {
-          advanceIn = 3.5
           noise('switch')
           say('that was the last of them')
         }
@@ -2271,7 +2327,6 @@ function step(): void {
 
   // Last, so that walking into the exit on this step counts on this step.
   if (reachExit(goal, player.sector, STEP)) {
-    advanceIn = 3.5
     say(nextLevel(levelIndex) !== null ? 'level complete' : 'that was the last of them')
   }
 }
@@ -2454,9 +2509,11 @@ function frame(now: number): void {
     })
   }
 
-  if (goal.reached) {
+  if (goal.reached && !titleUp) {
     // Drawn over the frozen frame rather than replacing it, so the room you
-    // finished in is still behind the result.
+    // finished in is still behind the result. Not once the title is back: the
+    // way out of a finished map is the title, and the result following it there
+    // would be printed over the menu.
     const lines = summaryLines({
       seconds: goal.elapsed,
       kills,
@@ -2465,7 +2522,7 @@ function frame(now: number): void {
       supplies: pickups.length,
       secrets: level.sectors.filter((sector) => sector.special === 9).length,
       found: foundSecrets.size,
-    })
+    }, !wadSource && nextLevel(levelIndex) !== null)
     summaryLayout(fb.width, fb.height, lines).forEach((piece, index) => {
       drawText(fb, piece.col, piece.row, piece.text, {
         color: index === 0 ? vec3(1.2, 1, 0.6) : vec3(0.85, 0.85, 0.8),
@@ -2982,6 +3039,18 @@ if (new URLSearchParams(location.search).has('probe')) {
       return putIn(state.level.sectors.findIndex((sector) => sector.tag === tag))
     },
     /**
+     * Stand in a room by number, which is the general form of the line above.
+     *
+     * A tag is what a level written here calls a room, and a map from a file
+     * mostly has none -- so asking for "the room with the open sky in it" can
+     * only be done by index, worked out wherever the level can be built without
+     * a browser. Added for exactly that: a picture of the sky needed a way to be
+     * standing under one, and walking to it kept ending at a wall.
+     */
+    toSector(index: number): boolean {
+      return putIn(index)
+    },
+    /**
      * Open a map from bytes, the way a file would.
      *
      * Takes a plain array rather than a `Uint8Array`: what crosses into a page
@@ -3266,5 +3335,6 @@ document.getElementById('meetaccept')?.addEventListener('click', () => {
   })()
 })
 
-keys.textContent = 'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1-7 weapon · E use'
+keys.textContent =
+  'W A S D move · ← → turn · ↑ ↓ look · Shift run · Space fire · 1-7 weapon · E use · Esc leave'
 requestAnimationFrame(frame)

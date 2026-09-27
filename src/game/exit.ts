@@ -143,7 +143,17 @@ export function deathLines(): string[] {
   return ['YOU DIED', 'fire to try again']
 }
 
-export function summaryLines(tally: Tally): string[] {
+/**
+ * What the summary says, and what to do about it.
+ *
+ * `more` is whether there is another level after this one, because the line at
+ * the bottom is the only part of this screen that is an instruction and it has
+ * to be the right one. The original's intermission waits for a press and says
+ * so; this one used to wait for a clock and say nothing, which on the maps that
+ * ship -- none of which has anything after it -- meant a result screen you could
+ * look at for ever and do nothing with.
+ */
+export function summaryLines(tally: Tally, more: boolean): string[] {
   const minutes = Math.floor(tally.seconds / 60)
   const seconds = Math.floor(tally.seconds % 60)
   const clock = `${minutes}:${String(seconds).padStart(2, '0')}`
@@ -156,5 +166,8 @@ export function summaryLines(tally: Tally): string[] {
   // Only where there were any. A map with nothing hidden in it should not be
   // told it found none.
   if (tally.secrets > 0) lines.push(`secrets   ${tally.found} / ${tally.secrets}`)
+  // Blank, then the instruction, so it reads as a separate thing from the tally
+  // rather than as one more number.
+  lines.push('', more ? 'fire for the next one' : 'fire to leave')
   return lines
 }

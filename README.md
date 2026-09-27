@@ -58,6 +58,16 @@ in the original: sludge you could herd things into would turn every hazard into
 a weapon. What sits in it is always optional, and the way to an exit never
 runs through it.
 
+Finishing a level shows the tally and then waits, which is what the original's
+intermission does. It used to wait for a clock instead — three and a half
+seconds and then the next level whether you had read the counts or not — and on
+a map with nothing after it, which is every one of the sixty-eight that ship, it
+waited for nothing at all: the result sat on the screen and the only thing left
+to do was reload the page. A press goes to the next level where there is one and
+back to the title where there is not, and the screen says which of those it is
+about to do. `Esc` does the same thing mid-level, which is the other half of
+what the original's menu key is for.
+
 Running out of health ends the run rather than leaving you walking around
 unarmed. Everything stops, the room you died in stays on screen behind the
 panel, and firing starts that level again with the kit you began it with — the
@@ -182,6 +192,7 @@ fixed sitting over the grid.
 | `1`…`7` | the original's seven slots — `1` twice goes fist to saw, `3` twice goes scattergun to twinbore |
 | `E` | open what you are facing |
 | `Tab` | the automap |
+| `Esc` | leave the level and go back to the title |
 
 On a touch screen the same controls appear as a stick and three buttons, and
 the keyboard ones keep working if there is one attached.

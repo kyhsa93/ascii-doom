@@ -4019,7 +4019,10 @@ test('the summary fits the screen it is shown on', () => {
   // this screen has never been looked at. The risk is not the wide grid but the
   // narrow one — at 49 columns the longest of these lines is most of the width,
   // and centring it carelessly starts it off the left edge.
-  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3, secrets: 0, found: 0 })
+  const lines = summaryLines(
+    { seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3, secrets: 0, found: 0 },
+    true,
+  )
 
   for (const [width, height] of [
     [163, 50],
@@ -4043,15 +4046,31 @@ test('the summary fits the screen it is shown on', () => {
   }
 })
 
-test('the summary reads as a clock and a pair of counts', () => {
-  const lines = summaryLines({ seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3, secrets: 0, found: 0 })
-  assert(lines.length === 4, `expected four lines, got ${lines.length}`)
+test('the summary reads as a clock, a pair of counts, and a way out', () => {
+  const tally = { seconds: 95.4, kills: 3, creatures: 5, collected: 2, supplies: 3, secrets: 0, found: 0 }
+  const lines = summaryLines(tally, true)
+  assert(lines.length === 6, `expected six lines, got ${lines.length}`)
   assert(lines[1]!.includes('1:35'), `ninety-five seconds rendered as ${JSON.stringify(lines[1])}`)
   assert(lines[2]!.includes('3 / 5'), `kills rendered as ${JSON.stringify(lines[2])}`)
   assert(lines[3]!.includes('2 / 3'), `supplies rendered as ${JSON.stringify(lines[3])}`)
 
+  /*
+   * And the line that says what to do about it, which is the only instruction on
+   * this screen and has to be the right one.
+   *
+   * It had none. The original's intermission waits for a press and says so; this
+   * waited for a clock and said nothing, and on a map with nothing after it --
+   * which is every one of the sixty-eight that ship -- it waited for nothing at
+   * all. A result you can look at for ever and cannot leave.
+   */
+  assert(lines[4] === '', `the instruction is not set apart: ${JSON.stringify(lines.slice(4))}`)
+  assert(lines[5]!.includes('next'), `with another level to come it says ${JSON.stringify(lines[5])}`)
+  const last = summaryLines(tally, false)
+  assert(last[5]!.includes('leave'), `with nothing to come it says ${JSON.stringify(last[5])}`)
+  assert(last[5] !== lines[5], 'the last level and the others are offered the same thing')
+
   // Under a minute still reads as a clock rather than as a bare number.
-  const quick = summaryLines({ seconds: 7, kills: 0, creatures: 1, collected: 0, supplies: 1, secrets: 0, found: 0 })
+  const quick = summaryLines({ seconds: 7, kills: 0, creatures: 1, collected: 0, supplies: 1, secrets: 0, found: 0 }, true)
   assert(quick[1]!.includes('0:07'), `seven seconds rendered as ${JSON.stringify(quick[1])}`)
 
   /*
@@ -4064,9 +4083,36 @@ test('the summary reads as a clock and a pair of counts', () => {
    * in the files do have them, and leaving the line out there would hide the
    * one count the original is best known for.
    */
-  const hidden = summaryLines({ seconds: 30, kills: 1, creatures: 2, collected: 1, supplies: 2, secrets: 3, found: 1 })
-  assert(hidden.length === 5, `a map with secrets in it produced ${hidden.length} lines`)
+  const hidden = summaryLines({ seconds: 30, kills: 1, creatures: 2, collected: 1, supplies: 2, secrets: 3, found: 1 }, true)
+  assert(hidden.length === 7, `a map with secrets in it produced ${hidden.length} lines`)
   assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
+})
+
+test('a finished map offers the one thing the original offers, and names it right', () => {
+  /*
+   * The whole of what was wrong with this screen: it said what you had done and
+   * nothing about what to do next.
+   *
+   * With another level to come the original's intermission goes to it on a
+   * press; with nothing to come, the original's answer to "that was the last of
+   * them" is its menu. Both of those are a press, so both need a line saying so
+   * -- and they must not be the same line, because they do different things.
+   */
+  const tally = { seconds: 12, kills: 0, creatures: 0, collected: 0, supplies: 0, secrets: 0, found: 0 }
+  const onward = summaryLines(tally, true)
+  const last = summaryLines(tally, false)
+
+  for (const lines of [onward, last]) {
+    const instruction = lines[lines.length - 1]!
+    assert(instruction.trim().length > 0, 'the summary ends on a blank line')
+    assert(/fire/i.test(instruction), `the summary does not say what to press: ${JSON.stringify(instruction)}`)
+    // Set apart from the counts, or it reads as one more of them.
+    assert(lines[lines.length - 2] === '', 'the instruction is not separated from the tally')
+  }
+  assert(
+    onward[onward.length - 1] !== last[last.length - 1],
+    'a level with another after it is offered the same thing as the last one',
+  )
 })
 
 console.log('\nthe maps that ship')

@@ -56,6 +56,26 @@ const size = onPhone ? { width: 390, height: 844 } : { width: 1000, height: 680 
 const built = wadLevelState(new Uint8Array(readFileSync(`web/public/maps/${map}.wad`)), map, 3)
 const spawn = built.player
 /**
+ * The rooms with an open sky over them, biggest first.
+ *
+ * By index, because that is what the page can be asked to stand in: a map from
+ * a file has no tags to speak of. Biggest first because a large courtyard is
+ * where the sky is worth photographing -- a light well two metres across fills
+ * none of the frame.
+ */
+function skySectors(): number[] {
+  return built.level.sectors
+    .map((sector, index) => ({ index, sector }))
+    .filter(({ sector }) => sector.sky)
+    .sort(
+      (a, b) =>
+        (b.sector.maxX - b.sector.minX) * (b.sector.maxY - b.sector.minY) -
+        (a.sector.maxX - a.sector.minX) * (a.sector.maxY - a.sector.minY),
+    )
+    .map(({ index }) => index)
+}
+
+/**
  * Somewhere under an open sky, when asked for one.
  *
  * Found from the lines that touch a sky sector rather than from its shape: a
@@ -85,16 +105,22 @@ const ranked = built.decor
   .map((d) => ({ d, dist: Math.hypot(d.x - spawn.x, d.y - spawn.y) }))
   .filter((n) => n.dist > 1.5 && n.dist < 30)
   .sort((a, b) => (want === 'tallest' ? b.d.sprite.height - a.d.sprite.height : a.dist - b.dist))
+const rooms = want === 'sky' ? skySectors() : []
 const sky = want === 'sky' ? underTheSky() : null
 const target =
   sky === null
     ? ranked[0]
     : { d: sky as unknown as (typeof built.decor)[number], dist: Math.hypot(sky.x - spawn.x, sky.y - spawn.y) }
-if (target === undefined) { console.log(`${map}: nothing within reach`); process.exit(0) }
+if (target === undefined) {
+  console.log(`${map}: nothing within reach`)
+  process.exit(0)
+}
 const bearing = Math.atan2(target.d.y - spawn.y, target.d.x - spawn.x)
 console.log(
-  `${map}: ${built.decor.length} pieces. walking to one ${target.d.sprite.height.toFixed(2)}m tall, ` +
-    `${target.dist.toFixed(1)}m away, radius ${target.d.radius.toFixed(2)}, standing at z ${target.d.z.toFixed(2)}`,
+  `${map}: ${built.decor.length} pieces, ${rooms.length} rooms under an open sky. ` +
+    (want === 'sky'
+      ? `standing in the largest of them`
+      : `walking to one ${target.d.sprite.height.toFixed(2)}m tall, ${target.dist.toFixed(1)}m away`),
 )
 
 const browser = await chromium.launch()
@@ -105,51 +131,94 @@ const page = await browser.newPage({
 page.on('pageerror', (e) => console.error('page error:', e.message))
 await page.goto(`${base}?probe`, { waitUntil: 'domcontentloaded' })
 await page.waitForTimeout(1200)
-await page.keyboard.down(' '); await page.waitForTimeout(220); await page.keyboard.up(' ')
+await page.keyboard.down(' ')
+await page.waitForTimeout(220)
+await page.keyboard.up(' ')
 await page.waitForTimeout(600)
 const raw = [...new Uint8Array(readFileSync(`web/public/maps/${map}.wad`))]
 await page.evaluate(
   ([bytes, name]) =>
     (window as unknown as { __probe?: { loadWad(b: number[], n: string): boolean } }).__probe?.loadWad(
-      bytes as number[], name as string),
+      bytes as number[],
+      name as string,
+    ),
   [raw, map] as [number[], string],
 )
 await page.waitForTimeout(1200)
 
-const where = () => page.evaluate(() => {
-  const d = (window as unknown as { __doom?: Record<string, number> }).__doom ?? {}
-  return { x: d.x ?? 0, y: d.y ?? 0, angle: d.angle ?? 0 }
-})
+const where = () =>
+  page.evaluate(() => {
+    const d = (window as unknown as { __doom?: Record<string, number> }).__doom ?? {}
+    return { x: d.x ?? 0, y: d.y ?? 0, angle: d.angle ?? 0 }
+  })
 
-// Turned by watching the angle rather than by guessing at a duration.
-for (let tries = 0; tries < 40; tries++) {
-  const now = await where()
-  let off = bearing - now.angle
-  while (off > Math.PI) off -= Math.PI * 2
-  while (off < -Math.PI) off += Math.PI * 2
-  if (Math.abs(off) < 0.04) break
-  const key = off > 0 ? 'ArrowLeft' : 'ArrowRight'
-  const ms = Math.min(220, Math.max(24, Math.round(Math.abs(off) * 150)))
-  await page.keyboard.down(key); await page.waitForTimeout(ms); await page.keyboard.up(key)
-  await page.waitForTimeout(60)
-}
-await page.waitForTimeout(200)
-await page.screenshot({ path: join(SHOTS, `${map}${onPhone ? '-phone' : ''}-facing.png`) })
-console.log('facing it:', JSON.stringify(await where()))
+if (want === 'sky') {
+  /*
+   * Stood in the room rather than walked to it.
+   *
+   * Two rounds of this script walked toward an outdoor sector and ended at a
+   * wall both times -- it walks in a straight line and a map is not a straight
+   * line. Standing there is the same door the browser checks use to reach an
+   * exit: a way to arrive rather than a way to skip, because what is being
+   * looked at is the frame and not the journey.
+   */
+  let stood = -1
+  for (const index of rooms) {
+    const ok = await page.evaluate(
+      (n) => (window as unknown as { __probe?: { toSector(i: number): boolean } }).__probe?.toSector(n) ?? false,
+      index,
+    )
+    if (ok) {
+      stood = index
+      break
+    }
+  }
+  console.log(stood < 0 ? 'could not stand in any of them' : `standing in room ${stood}`)
+  await page.waitForTimeout(400)
+  // A full turn on the spot: the sky is over one part of a courtyard and a roof
+  // over the rest, so one look would say nothing either way.
+  for (let step = 0; step < 8; step++) {
+    await page.screenshot({ path: join(SHOTS, `${map}-sky-${step}.png`) })
+    await page.keyboard.down('ArrowRight')
+    await page.waitForTimeout(330)
+    await page.keyboard.up('ArrowRight')
+    await page.waitForTimeout(220)
+  }
+  await browser.close()
+  server.close()
+} else {
+  for (let tries = 0; tries < 40; tries++) {
+    const now = await where()
+    let off = bearing - now.angle
+    while (off > Math.PI) off -= Math.PI * 2
+    while (off < -Math.PI) off += Math.PI * 2
+    if (Math.abs(off) < 0.04) break
+    const key = off > 0 ? 'ArrowLeft' : 'ArrowRight'
+    const ms = Math.min(220, Math.max(24, Math.round(Math.abs(off) * 150)))
+    await page.keyboard.down(key)
+    await page.waitForTimeout(ms)
+    await page.keyboard.up(key)
+    await page.waitForTimeout(60)
+  }
+  await page.waitForTimeout(200)
+  await page.screenshot({ path: join(SHOTS, `${map}${onPhone ? '-phone' : ''}-facing.png`) })
+  console.log('facing it:', JSON.stringify(await where()))
 
-// And closer, stopping when the thing itself stops us.
-for (let step = 0; step < 120; step++) {
-  await page.keyboard.down('w'); await page.waitForTimeout(150); await page.keyboard.up('w')
-  await page.waitForTimeout(60)
-  const now = await where()
-  if (Math.hypot(target.d.x - now.x, target.d.y - now.y) < target.d.radius + 0.6) break
+  for (let step = 0; step < 120; step++) {
+    await page.keyboard.down('w')
+    await page.waitForTimeout(150)
+    await page.keyboard.up('w')
+    await page.waitForTimeout(60)
+    const now = await where()
+    if (Math.hypot(target.d.x - now.x, target.d.y - now.y) < target.d.radius + 0.6) break
+  }
+  await page.waitForTimeout(300)
+  const ended = await where()
+  console.log(
+    `ended ${Math.hypot(target.d.x - ended.x, target.d.y - ended.y).toFixed(2)}m from it ` +
+      `(its radius is ${target.d.radius.toFixed(2)}, yours 0.35)`,
+  )
+  await page.screenshot({ path: join(SHOTS, `${map}${onPhone ? '-phone' : ''}-close.png`) })
+  await browser.close()
+  server.close()
 }
-await page.waitForTimeout(300)
-const ended = await where()
-console.log(
-  `ended ${Math.hypot(target.d.x - ended.x, target.d.y - ended.y).toFixed(2)}m from it ` +
-    `(its radius is ${target.d.radius.toFixed(2)}, yours 0.35)`,
-)
-await page.screenshot({ path: join(SHOTS, `${map}${onPhone ? '-phone' : ''}-close.png`) })
-await browser.close()
-server.close()
