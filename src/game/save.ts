@@ -33,7 +33,7 @@ import type { ActorState } from './ai.ts'
  * failure of a half-understood save is a level that looks right and is wrong
  * somewhere nobody looks.
  */
-export const SAVE_VERSION = 2
+export const SAVE_VERSION = 3
 
 export interface Save {
   readonly version: number
@@ -41,6 +41,7 @@ export interface Save {
   readonly levelIndex: number
   readonly carrier: {
     readonly health: number
+    /** The four reserves, which used to be one number per weapon. */
     readonly ammo: readonly number[]
     readonly keys: readonly string[]
     readonly armour: number

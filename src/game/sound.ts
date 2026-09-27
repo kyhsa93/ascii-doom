@@ -36,6 +36,10 @@ export type Noise =
   | 'noAmmo'
   | 'fists'
   | 'chainsaw'
+  | 'twinbore'
+  | 'autogun'
+  | 'arc'
+  | 'cannon'
   | 'powerUp'
   | 'powerDown'
 
@@ -65,6 +69,17 @@ const SHAPES: Record<Noise, Shape> = {
   sidearm: { length: 0.12, grit: 0.7, from: 420, to: 140, level: 0.5, cutoff: 3200 },
   scattergun: { length: 0.3, grit: 0.85, from: 300, to: 70, level: 0.7, cutoff: 2200 },
   launcher: { length: 0.36, grit: 0.6, from: 260, to: 60, level: 0.7, cutoff: 1600 },
+  // Both barrels: the scattergun's shape, longer and deeper, because what is
+  // different about it is the mass of what leaves rather than the mechanism.
+  twinbore: { length: 0.42, grit: 0.9, from: 240, to: 55, level: 0.85, cutoff: 1900 },
+  // Ten a second, so it has to be shorter than a tenth of a second or the gun is
+  // one continuous noise. Brighter and thinner than the sidearm.
+  autogun: { length: 0.07, grit: 0.75, from: 520, to: 220, level: 0.4, cutoff: 3800 },
+  // The one that rises rather than falls, because what leaves the muzzle is not
+  // an explosion. Nine a second, so it is short.
+  arc: { length: 0.08, grit: 0.3, from: 600, to: 900, level: 0.35, cutoff: 5200 },
+  // The longest and lowest thing in the table. Forty cells leaving at once.
+  cannon: { length: 0.8, grit: 0.55, from: 150, to: 35, level: 0.95, cutoff: 800 },
   // A swing is short, soft and low: nothing goes off, something lands.
   fists: { length: 0.09, grit: 0.55, from: 200, to: 90, level: 0.35, cutoff: 1200 },
   // Eight of these a second, so it has to be shorter than its own interval or

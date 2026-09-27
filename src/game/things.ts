@@ -57,6 +57,10 @@ import {
   INVULNERABILITY,
   LAUNCHER_PICKUP,
   LIGHT_AMP,
+  CANNON_SHELL,
+  CELL_CHARGE,
+  CELL_PACK,
+  PLASMA_BOLT,
   RADIATION_SUIT,
   MEDIKIT,
   MEGASPHERE,
@@ -129,6 +133,12 @@ export const SHELL_BOX: Sprite = atHeight(SHELLS, 0.45)
 export const SHELL_CARTON: Sprite = atHeight(SHELL_CRATE, 0.5)
 export const SLUG_CRATE: Sprite = atHeight(ROCKET, 0.5)
 export const SLUG_CARTON: Sprite = atHeight(ROCKET_BOX, 0.55)
+// Cells, loose and by the pack. These had no picture of their own for as long as
+// nothing here spent them, which a check noticed the moment they became a
+// supply: both fell through to the canister and the three of them came out
+// indistinguishable on the floor.
+export const CELL_CANISTER: Sprite = atHeight(CELL_CHARGE, 0.35)
+export const CELL_CARTON: Sprite = atHeight(CELL_PACK, 0.5)
 
 /** The jackets, and the scrap you scavenge. */
 export const JACKET: Sprite = atHeight(ARMOUR, 0.55)
@@ -204,6 +214,19 @@ export const BOLT: Sprite = {
  * from it by mass rather than by colour, since at this size the two are a
  * handful of cells each.
  */
+/**
+ * What the two cell-fed weapons throw, out of the file rather than drawn here.
+ *
+ * The two above are hand-drawn literals from when a bolt and a slug were the
+ * only things in the air, and they stay: they are a drifter's bolt and a
+ * launcher's slug, which are this project's own weapons. These two are the
+ * file's own pictures, at the sizes the original gives them -- a bolt small
+ * enough to be a stream and a shell large enough that one of them arriving is
+ * the event.
+ */
+export const ARC_BOLT: Sprite = atHeight(PLASMA_BOLT, 0.3)
+export const CANNON_BALL: Sprite = atHeight(CANNON_SHELL, 0.85)
+
 export const SLUG: Sprite = {
   rows: [
     '  ,--.  ',
@@ -237,7 +260,7 @@ export const LEVEL_1_PICKUPS: Pickup[] = [
     z: 0,
     light: 0.95,
     sprite: CANISTER,
-    grant: { kind: 'ammo', weapon: 0, amount: 15 },
+    grant: { kind: 'ammo', ammo: 'bullets', amount: 15 },
     radius: 0.4,
     taken: false,
   },
@@ -258,7 +281,7 @@ export const LEVEL_1_PICKUPS: Pickup[] = [
     z: 0,
     light: 1,
     sprite: SHELL_BOX,
-    grant: { kind: 'ammo', weapon: 1, amount: 8 },
+    grant: { kind: 'ammo', ammo: 'shells', amount: 8 },
     radius: 0.4,
     taken: false,
   },
@@ -270,7 +293,7 @@ export const LEVEL_1_PICKUPS: Pickup[] = [
     z: 0,
     light: 0.72,
     sprite: SLUG_CRATE,
-    grant: { kind: 'ammo', weapon: 2, amount: 6 },
+    grant: { kind: 'ammo', ammo: 'rockets', amount: 6 },
     radius: 0.4,
     taken: false,
   },

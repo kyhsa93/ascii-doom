@@ -40,6 +40,12 @@ import {
 import { deathLines, finishNow, reachExit, summaryLayout, summaryLines } from '../src/game/exit.ts'
 import { layoutHud } from '../src/game/hud.ts'
 import {
+  ARC_RIFLE_FIRING,
+  ARC_RIFLE_HELD,
+  AUTOGUN_FIRING,
+  AUTOGUN_HELD,
+  CANNON_FIRING,
+  CANNON_HELD,
   CHAINSAW_FIRING,
   CHAINSAW_HELD,
   FISTS_FIRING,
@@ -52,6 +58,8 @@ import {
   SIDEARM_FIRING,
   SIDEARM_HELD,
   TROOPER,
+  TWINBORE_FIRING,
+  TWINBORE_HELD,
 } from '../src/game/freedoomart.ts'
 import { BAR_ROWS, centreOf, layoutBar } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
@@ -74,7 +82,8 @@ import { mapNames } from '../src/columns/wad.ts'
 import { wadLevelState, type Skill } from '../src/game/wadlevel.ts'
 import { aimAt, type AimTarget } from '../src/game/autoaim.ts'
 import { activate, moverInFront, updateMovers, type Mover } from '../src/game/movers.ts'
-import { capacityOf, collect, takeDamage, type Carrier } from '../src/game/pickups.ts'
+import { capacityOf, collect, heldOf, takeDamage, type Carrier } from '../src/game/pickups.ts'
+import { AMMO_KINDS, indexOfAmmo } from '../src/game/ammo.ts'
 import { supplyFor } from '../src/game/waditems.ts'
 import {
   BLUR_WOBBLE,
@@ -86,7 +95,7 @@ import {
 } from '../src/game/powers.ts'
 import { blast, sweep, updateProjectiles, type Projectile } from '../src/game/projectiles.ts'
 import { EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_RADIUS, eyeHeight, moveBody, type Body } from '../src/game/player.ts'
-import { WEAPONS, asSwung, fire } from '../src/game/weapons.ts'
+import { SLOTS, WEAPONS, asSwung, fire, weaponInSlot } from '../src/game/weapons.ts'
 
 const screen = document.getElementById('screen')!
 // Declared here rather than beside its listener: the menu opens it too, and a
@@ -977,7 +986,7 @@ function applyCheat(asked: Cheat): void {
     // the one it replaces -- the original's version of this word hands you
     // backpack-sized reserves and this is what that amounts to here.
     carrier.pack = true
-    for (let i = 0; i < carrier.ammo.length; i++) carrier.ammo[i] = capacityOf(carrier, i)
+    for (const kind of AMMO_KINDS) carrier.ammo[indexOfAmmo(kind)] = capacityOf(carrier, kind)
     for (let i = 0; i < WEAPONS.length; i++) carrier.weapons.add(i)
     for (const colour of ['cobalt', 'crimson', 'amber']) carrier.keys.add(colour)
     say('every key and a full kit')
@@ -1041,7 +1050,17 @@ function applyCheat(asked: Cheat): void {
  * launcher", which meant the two free weapons both went off with a rocket's
  * report the moment they existed.
  */
-const SHOT_NOISE: readonly Noise[] = ['sidearm', 'scattergun', 'launcher', 'fists', 'chainsaw']
+const SHOT_NOISE: readonly Noise[] = [
+  'sidearm',
+  'scattergun',
+  'launcher',
+  'fists',
+  'chainsaw',
+  'twinbore',
+  'autogun',
+  'arc',
+  'cannon',
+]
 
 /**
  * What each powerup says on the way in and on the way out.
@@ -1211,7 +1230,10 @@ function pullTrigger(
   const { level, actors, player } = state
   const held = WEAPONS[weaponAt]
   if (held === undefined) return cooling
-  if (!wants || cooling > 0 || (kit.ammo[weaponAt] ?? 0) < held.cost) return cooling
+  // The reserve the weapon spends, which two of them share with another weapon
+  // and two of them do not have at all.
+  if (!wants || cooling > 0) return cooling
+  if (held.ammo !== undefined && heldOf(kit, held.ammo) < held.cost) return cooling
   /*
    * What rage does, applied here rather than inside `fire`.
    *
@@ -1222,7 +1244,9 @@ function pullTrigger(
    * passed in as `kit`.
    */
   const weapon = asSwung(held, holds(kit.powers, 'rage'))
-  kit.ammo[weaponAt] = (kit.ammo[weaponAt] ?? 0) - weapon.cost
+  if (weapon.ammo !== undefined) {
+    kit.ammo[indexOfAmmo(weapon.ammo)] = heldOf(kit, weapon.ammo) - weapon.cost
+  }
   if (own) {
     flash = 0.06
     shotsFired++
@@ -1562,6 +1586,18 @@ function step(): void {
   if (intent.weapon >= 0 && intent.weapon < WEAPONS.length && carrier.weapons.has(intent.weapon)) {
     weaponIndex = intent.weapon
   }
+  /*
+   * And a slot, which is what a key asks for.
+   *
+   * Resolved here because only the page knows what is held, and pressing the key
+   * for the slot already in hand moves to the next weapon in it -- which is how
+   * the original moves between a fist and a saw, or between one shotgun and the
+   * other. A slot holding nothing you have found leaves the weapon alone.
+   */
+  if (intent.slot >= 0 && intent.slot < SLOTS.length) {
+    const asked = weaponInSlot(intent.slot, weaponIndex, carrier.weapons)
+    if (asked >= 0) weaponIndex = asked
+  }
   touch.weapon = -1
 
   // The rising edge, not the state: a device says the map is being asked for,
@@ -1729,9 +1765,13 @@ function step(): void {
       const grant = taken.grant
       noise(grant.kind === 'weapon' ? 'weaponUp' : 'pickup')
       if (grant.kind === 'health') say(`+${grant.amount} health`)
-      else if (grant.kind === 'ammo') say(`+${grant.amount} ${WEAPONS[grant.weapon]?.name ?? 'rounds'}`)
+      else if (grant.kind === 'ammo') say(`+${grant.amount} ${grant.ammo}`)
       else if (grant.kind === 'armour') say(`armour ${carrier.armour}`)
-      else if (grant.kind === 'weapon') say(`${WEAPONS[grant.weapon]?.name ?? 'a weapon'} — ${carrier.ammo[grant.weapon] ?? 0} rounds`)
+      else if (grant.kind === 'weapon') {
+        const gun = WEAPONS[grant.weapon]
+        const reserve = gun?.ammo === undefined ? '' : ` — ${heldOf(carrier, gun.ammo)} ${gun.ammo}`
+        say(`${gun?.name ?? 'a weapon'}${reserve}`)
+      }
       else if (grant.kind === 'power') {
         // The one powerup whose whole effect is on a thing the page owns: the
         // set of lines the automap has been shown. The cheat that does this
@@ -1780,6 +1820,10 @@ function step(): void {
     mateCarrier.weapons.has(theirAsk.weapon)
   ) {
     mateWeapon = theirAsk.weapon
+  }
+  if (theirAsk !== null && theirAsk.slot >= 0 && theirAsk.slot < SLOTS.length) {
+    const asked = weaponInSlot(theirAsk.slot, mateWeapon, mateCarrier.weapons)
+    if (asked >= 0) mateWeapon = asked
   }
 
   /*
@@ -2139,6 +2183,9 @@ function frame(now: number): void {
   const sector = level.sectors[player.sector]
   const keys = [...carrier.keys].join(' ')
   const powers = powerLine(carrier.powers)
+  // What is left of what this weapon spends. Two of the nine spend nothing, and a
+  // zero beside their name reads as a gun you cannot fire.
+  const reserve = weapon.ammo === undefined ? '--' : `${heldOf(carrier, weapon.ammo)}`
 
   /*
    * The bar the original has, where there is room for it, and the single line
@@ -2164,7 +2211,7 @@ function frame(now: number): void {
     { label: 'HEALTH', value: `${carrier.health}%`, priority: 5 },
     // A weapon that costs nothing has no reserve to show, and a zero beside
     // FISTS reads as a gun you cannot fire.
-    { label: weapon.name.toUpperCase(), value: weapon.cost === 0 ? '--' : `${carrier.ammo[weaponIndex]}`, priority: 4 },
+    { label: weapon.name.toUpperCase(), value: reserve, priority: 4 },
     { label: 'KEYS', value: keys === '' ? '--' : keys, priority: 3 },
     { label: 'AREA', value: state.def.name, priority: 2 },
     { label: 'POWER', value: powers === '' ? '--' : powers, priority: 1 },
@@ -2243,6 +2290,10 @@ function frame(now: number): void {
       recoiling ? LAUNCHER_FIRING : LAUNCHER_HELD,
       recoiling ? FISTS_FIRING : FISTS_HELD,
       recoiling ? CHAINSAW_FIRING : CHAINSAW_HELD,
+      recoiling ? TWINBORE_FIRING : TWINBORE_HELD,
+      recoiling ? AUTOGUN_FIRING : AUTOGUN_HELD,
+      recoiling ? ARC_RIFLE_FIRING : ARC_RIFLE_HELD,
+      recoiling ? CANNON_FIRING : CANNON_HELD,
     ][weaponIndex]
     if (held !== undefined) {
       const foot = (bar !== null ? bar.top : fb.height - 1) - 1
@@ -2255,7 +2306,7 @@ function frame(now: number): void {
   // the one reading a narrow line can do without.
   const line = bar !== null ? [] : layoutHud(fb.width, [
     { text: `${carrier.health}`, align: 'left', priority: 5 },
-    { text: weapon.cost === 0 ? weapon.name : `${weapon.name} ${carrier.ammo[weaponIndex]}`, align: 'left', priority: 4 },
+    { text: weapon.ammo === undefined ? weapon.name : `${weapon.name} ${reserve}`, align: 'left', priority: 4 },
     { text: keys === '' ? '' : `keys ${keys}`, align: 'left', priority: 3 },
     { text: `${state.def.name} · ${fps.toFixed(0)} fps`, align: 'right', priority: 2 },
     { text: powers, align: 'left', priority: 1 },
@@ -2341,7 +2392,8 @@ function frame(now: number): void {
     awake: actors.filter((actor) => actor.awake && isCreature(actor)).length,
     alive: actors.filter((actor) => isAlive(actor) && isCreature(actor)).length,
     weapon: weapon.name,
-    ammo: carrier.ammo[weaponIndex],
+    ammo: weapon.ammo === undefined ? -1 : heldOf(carrier, weapon.ammo),
+    reserve: weapon.ammo ?? '',
     /*
      * What the status line says about the powerups, rather than the clocks
      * themselves.

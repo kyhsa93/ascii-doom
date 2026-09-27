@@ -17,6 +17,7 @@
  * is worse than a lamp that is missing.
  */
 
+import type { Ammo } from './ammo.ts'
 import type { PickupGrant } from './pickups.ts'
 import type { Power } from './powers.ts'
 import {
@@ -26,6 +27,8 @@ import {
   BFG_PICKUP,
   BONUS_VIAL,
   CANISTER,
+  CELL_CANISTER,
+  CELL_CARTON,
   CHAINGUN_PICKUP,
   CHAINSAW_PICKUP,
   CLIP_CARTON,
@@ -111,24 +114,25 @@ const ARMOUR = new Map<number, { amount: number; cap: number; share: number; add
 /**
  * Weapons, grouped the way the creatures are grouped.
  *
- * This game has five and the files place seven, so they go by what they are
- * for: the two shotguns are the scattergun, the rapid-fire ones are the
- * sidearm, the launcher is the launcher. The saw used to have no answer here --
- * there was nothing you swung -- and it now has one of its own, which is the
- * only weapon in these files that maps to itself.
+ * Nothing is folded any more. This game has all nine the files place, so every
+ * one of these maps to itself -- which is what this comment used to spend a
+ * paragraph explaining away: the two shotguns were both the scattergun, the two
+ * rapid-fire guns were both the sidearm, and the saw was left where it stood.
  *
- * `ammo` is what comes in the box. The original hands you rounds with a weapon
- * and this keeps that, which is most of what picking up a second shotgun is for.
+ * `rounds` is what comes in the box, into the reserve the weapon spends. The
+ * original hands you ammunition with a gun and this keeps that, which is most of
+ * what picking up a second shotgun is for -- and now that the two draw on the
+ * same shells, it is all of it.
  */
-const WEAPON_THINGS = new Map<number, { weapon: number; ammo: number }>([
-  [2001, { weapon: 1, ammo: 8 }],
-  [82, { weapon: 1, ammo: 8 }],
-  [2002, { weapon: 0, ammo: 20 }],
-  [2004, { weapon: 0, ammo: 40 }],
-  [2006, { weapon: 0, ammo: 40 }],
-  [2003, { weapon: 2, ammo: 2 }],
-  // The saw, which comes with nothing because it consumes nothing.
-  [2005, { weapon: 4, ammo: 0 }],
+const WEAPON_THINGS = new Map<number, { weapon: number; ammo: Ammo | null; rounds: number }>([
+  [2001, { weapon: 1, ammo: 'shells', rounds: 8 }],
+  [82, { weapon: 5, ammo: 'shells', rounds: 8 }],
+  [2002, { weapon: 6, ammo: 'bullets', rounds: 20 }],
+  [2004, { weapon: 7, ammo: 'cells', rounds: 40 }],
+  [2006, { weapon: 8, ammo: 'cells', rounds: 40 }],
+  [2003, { weapon: 2, ammo: 'rockets', rounds: 2 }],
+  // The saw, which comes with nothing because it spends nothing.
+  [2005, { weapon: 4, ammo: null, rounds: 0 }],
 ])
 
 /**
@@ -153,7 +157,7 @@ const POWER_THINGS = new Map<number, Power>([
  * given zero, because the list is read by position and a trailing zero would
  * only invite somebody to put a number there.
  */
-const PACK_ROUNDS: readonly number[] = [10, 4, 1]
+const PACK_ROUNDS: readonly number[] = [10, 4, 1, 20]
 
 const HEALTH = new Map<number, number>([
   [2014, 2], // the small scattered one
@@ -168,14 +172,22 @@ const HEALTH = new Map<number, number>([
   [83, 100],
 ])
 
-/** Rounds, by the weapon this game indexes them under: 0 sidearm, 1 scattergun, 2 launcher. */
-const AMMO = new Map<number, { weapon: number; amount: number }>([
-  [2007, { weapon: 0, amount: 10 }],
-  [2048, { weapon: 0, amount: 50 }],
-  [2008, { weapon: 1, amount: 4 }],
-  [2049, { weapon: 1, amount: 20 }],
-  [2010, { weapon: 2, amount: 1 }],
-  [2046, { weapon: 2, amount: 5 }],
+/**
+ * Rounds, by the reserve they go into and the amount the original puts in each.
+ *
+ * The cells were the two numbers this table could not hold before: two hundred
+ * and thirty-eight of them stand across these maps and there was nothing here
+ * that spent cells, so they were the one supply the importer knowingly dropped.
+ */
+const AMMO = new Map<number, { ammo: Ammo; amount: number }>([
+  [2007, { ammo: 'bullets', amount: 10 }],
+  [2048, { ammo: 'bullets', amount: 50 }],
+  [2008, { ammo: 'shells', amount: 4 }],
+  [2049, { ammo: 'shells', amount: 20 }],
+  [2010, { ammo: 'rockets', amount: 1 }],
+  [2046, { ammo: 'rockets', amount: 5 }],
+  [2047, { ammo: 'cells', amount: 20 }],
+  [17, { ammo: 'cells', amount: 100 }],
 ])
 
 /**
@@ -204,6 +216,8 @@ const PICTURE = new Map<number, string>([
   [2049, 'SBOX'],
   [2010, 'ROCK'],
   [2046, 'BROK'],
+  [2047, 'CELL'],
+  [17, 'CELP'],
   [5, 'BKEY'],
   [40, 'BSKU'],
   [13, 'RKEY'],
@@ -257,6 +271,8 @@ const LOOKS = new Map<number, Sprite>([
   [2049, SHELL_CARTON],
   [2010, SLUG_CRATE],
   [2046, SLUG_CARTON],
+  [2047, CELL_CANISTER],
+  [17, CELL_CARTON],
   // The guns, each its own, whatever this game folds it into.
   [2001, SHOTGUN_PICKUP],
   [82, DOUBLE_SHOTGUN_PICKUP],
@@ -283,6 +299,20 @@ const LOOKS = new Map<number, Sprite>([
   [38, AMBER_TOKEN],
 ])
 
+/**
+ * What to draw for a reserve when the table above has no picture of its own.
+ *
+ * A fallback nothing should reach -- every supply in these files has its own
+ * picture -- kept because `LOOKS` is a whitelist and a number added to one table
+ * and not the other should come out as the wrong box rather than as a crash.
+ */
+const FALLBACK_AMMO: Readonly<Record<Ammo, Sprite>> = {
+  bullets: CANISTER,
+  shells: SHELL_BOX,
+  rockets: SLUG_CRATE,
+  cells: CANISTER,
+}
+
 export function supplyFor(type: number): Supply | null {
   const heals = HEALTH.get(type)
   if (heals !== undefined) {
@@ -291,11 +321,9 @@ export function supplyFor(type: number): Supply | null {
 
   const rounds = AMMO.get(type)
   if (rounds !== undefined) {
-    const sprite =
-      LOOKS.get(type) ?? (rounds.weapon === 0 ? CANISTER : rounds.weapon === 1 ? SHELL_BOX : SLUG_CRATE)
     return {
-      sprite,
-      grant: { kind: 'ammo', weapon: rounds.weapon, amount: rounds.amount },
+      sprite: LOOKS.get(type) ?? FALLBACK_AMMO[rounds.ammo],
+      grant: { kind: 'ammo', ammo: rounds.ammo, amount: rounds.amount },
       radius: 0.4,
     }
   }
@@ -317,9 +345,11 @@ export function supplyFor(type: number): Supply | null {
 
   const weapon = WEAPON_THINGS.get(type)
   if (weapon !== undefined) {
-    const sprite =
-      LOOKS.get(type) ?? (weapon.weapon === 0 ? CANISTER : weapon.weapon === 1 ? SHELL_BOX : SLUG_CRATE)
-    return { sprite, grant: { kind: 'weapon', weapon: weapon.weapon, ammo: weapon.ammo }, radius: 0.45 }
+    return {
+      sprite: LOOKS.get(type) ?? (weapon.ammo === null ? CANISTER : FALLBACK_AMMO[weapon.ammo]),
+      grant: { kind: 'weapon', weapon: weapon.weapon, ammo: weapon.ammo, rounds: weapon.rounds },
+      radius: 0.45,
+    }
   }
 
   const power = POWER_THINGS.get(type)

@@ -73,7 +73,24 @@ import {
   type Billboard,
   type Sprite,
 } from '../src/columns/sprite.ts'
-import { CHAINSAW, FISTS, LAUNCHER, SCATTERGUN, SIDEARM, WEAPONS, asSwung, fire } from '../src/game/weapons.ts'
+import {
+  ARC_RIFLE,
+  AUTOGUN,
+  CANNON,
+  CHAINSAW,
+  FISTS,
+  LAUNCHER,
+  SCATTERGUN,
+  SIDEARM,
+  SLOTS,
+  TWINBORE,
+  WEAPONS,
+  asSwung,
+  fire,
+  slotOf,
+  weaponInSlot,
+} from '../src/game/weapons.ts'
+import { AMMO_KINDS, indexOfAmmo, type Ammo } from '../src/game/ammo.ts'
 import {
   BLUR_WOBBLE,
   LASTS,
@@ -128,7 +145,7 @@ import {
   type ActorState,
   updateActors,
 } from '../src/game/ai.ts'
-import { capacityOf, collect, isUseful, takeDamage, type Carrier, type Pickup } from '../src/game/pickups.ts'
+import { capacityOf, collect, heldOf, isUseful, takeDamage, type Carrier, type Pickup } from '../src/game/pickups.ts'
 import { blast,
   spawnProjectile,
   sweep,
@@ -1339,8 +1356,8 @@ test('starting a level keeps what you earned and takes back the keys', () => {
   const carrier: Carrier = {
     health: 42,
     maxHealth: 100,
-    ammo: [17, 3, 1],
-    ammoMax: [120, 48, 24],
+    ammo: [17, 3, 1, 0],
+    ammoMax: [200, 50, 50, 300],
     keys: new Set(['amber', 'cobalt']),
     armour: 0,
     armourShare: 0,
@@ -1353,7 +1370,7 @@ test('starting a level keeps what you earned and takes back the keys', () => {
 
   assert(carrier.keys.size === 0, `arrived holding ${[...carrier.keys].join(', ')}`)
   assert(carrier.health === 42, `health was reset to ${carrier.health}`)
-  assert(carrier.ammo.join(',') === '17,3,1', `ammunition became ${carrier.ammo.join(',')}`)
+  assert(carrier.ammo.join(',') === '17,3,1,0', `ammunition became ${carrier.ammo.join(',')}`)
   assert(state.def === LEVELS[1], 'started the wrong level')
   assert(
     state.pickups.every((pickup) => !pickup.taken),
@@ -4432,8 +4449,8 @@ function carrier(overrides: Partial<Carrier> = {}): Carrier {
   return {
     health: 100,
     maxHealth: 100,
-    ammo: [10, 4],
-    ammoMax: [60, 24],
+    ammo: [10, 4, 0, 0],
+    ammoMax: [60, 24, 24, 40],
     keys: new Set<string>(),
     // Before the spread, not after: `Partial<Carrier>` makes every field
     // optional, so a default written after it is a default that might not be
@@ -4472,13 +4489,13 @@ test('nothing overfills', () => {
   collect([pickupAt(1, 1, { kind: 'health', amount: 25 })], 1, 1, 0.35, nearlyFull)
   assert(nearlyFull.health === 100, `health overfilled to ${nearlyFull.health}`)
 
-  const stocked = carrier({ ammo: [55, 4] })
-  collect([pickupAt(1, 1, { kind: 'ammo', weapon: 0, amount: 20 })], 1, 1, 0.35, stocked)
+  const stocked = carrier({ ammo: [55, 4, 0, 0] })
+  collect([pickupAt(1, 1, { kind: 'ammo', ammo: 'bullets', amount: 20 })], 1, 1, 0.35, stocked)
   assert(stocked.ammo[0] === 60, `ammunition overfilled to ${stocked.ammo[0]}`)
 })
 
 test('reach is the sum of both radii, and the edge of it is the edge', () => {
-  const pickup = pickupAt(0, 0, { kind: 'ammo', weapon: 1, amount: 8 })
+  const pickup = pickupAt(0, 0, { kind: 'ammo', ammo: 'shells', amount: 8 })
   const reach = pickup.radius + 0.35
 
   const outside = carrier({ ammo: [10, 0] })
@@ -4499,16 +4516,23 @@ test('every weapon can be resupplied somewhere in the level', () => {
   // It was false until the same commit that added this, so it has not been
   // watched failing — what makes it worth keeping is that the next weapon
   // added without a box of its own will not get past here.
-  const supplied = new Set<number>()
+  const supplied = new Set<Ammo>()
   for (const pickup of LEVEL_1_PICKUPS) {
-    if (pickup.grant.kind === 'ammo') supplied.add(pickup.grant.weapon)
+    if (pickup.grant.kind === 'ammo') supplied.add(pickup.grant.ammo)
   }
-  // Only the ones that spend anything. A fist needs no box of fists, and a saw
-  // asked for one would be a rule that cannot be satisfied rather than a level
-  // that is missing something.
-  const missing = WEAPONS.map((weapon, index) => ({ weapon, index })).filter(
-    ({ weapon, index }) => weapon.cost > 0 && !supplied.has(index),
-  )
+  /*
+   * Only what the weapons you arrive with actually spend.
+   *
+   * This asked about every weapon in the game until there were nine of them, at
+   * which point it was asking the first level to stock a cannon nobody can find
+   * there -- the four found weapons are found in the files, not here. And it
+   * asked per weapon rather than per reserve, which stopped meaning anything the
+   * moment two weapons shared one.
+   */
+  const arrivesWith = [...freshCarrier().weapons]
+  const missing = arrivesWith
+    .map((index) => ({ weapon: WEAPONS[index]!, index }))
+    .filter(({ weapon }) => weapon.ammo !== undefined && !supplied.has(weapon.ammo))
   assert(
     missing.length === 0,
     `nothing in the level resupplies ${missing.map(({ weapon }) => weapon.name).join(', ')}`,
@@ -5222,16 +5246,25 @@ test('a weapon you already hold is still worth its rounds', () => {
   // Every one of the sixty-eight maps places a weapon, and this game starts
   // with all three of them. If holding one made the pickup worthless, most of
   // what a map leaves lying about would be scenery.
-  const armed = carrier({ ammo: [10, 4], weapons: new Set([0, 1, 2]) })
-  const shotgun = pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 8 })
+  const armed = carrier({ ammo: [10, 4, 0, 0], weapons: new Set([0, 1, 2]) })
+  const shotgun = pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 'shells', rounds: 8 })
   assert(isUseful(shotgun, armed), 'a weapon already held was called useless while its rounds were short')
   collect([shotgun], 0, 0, 1, armed)
-  close(armed.ammo[1] ?? 0, 12, 1e-9, 'rounds after taking a weapon already held')
+  close(heldOf(armed, 'shells'), 12, 1e-9, 'shells after taking a weapon already held')
 
   // Full up on that ammunition, it is worth nothing and is left where it is.
-  const full = carrier({ ammo: [10, 24], ammoMax: [60, 24], weapons: new Set([0, 1, 2]) })
-  assert(!isUseful(pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 8 }), full),
-    'a weapon held with full ammunition was still worth taking')
+  const full = carrier({ ammo: [10, 24, 0, 0], ammoMax: [60, 24, 24, 0], weapons: new Set([0, 1, 2]) })
+  assert(
+    !isUseful(pickupAt(0, 0, { kind: 'weapon', weapon: 1, ammo: 'shells', rounds: 8 }), full),
+    'a weapon held with full ammunition was still worth taking',
+  )
+  // And the two that spend nothing are worth nothing twice, which is the case a
+  // "rounds are short" rule cannot express: a saw has no reserve to be short of.
+  const sawn = carrier({ weapons: new Set([0, 1, 2, 3, 4]) })
+  assert(
+    !isUseful(pickupAt(0, 0, { kind: 'weapon', weapon: 4, ammo: null, rounds: 0 }), sawn),
+    'a second saw was worth taking',
+  )
 })
 
 console.log('\nblasts')
@@ -5902,8 +5935,8 @@ test('no two things a map puts down are drawn with the same picture', () => {
 })
 
 test('the pack doubles what you can carry, and what is in it fills the raised ceiling', () => {
-  const kit = carrier({ ammo: [60, 24], ammoMax: [60, 24] })
-  assert(capacityOf(kit, 0) === 60, 'a ceiling changed before a pack was found')
+  const kit = carrier({ ammo: [60, 24, 0, 0], ammoMax: [60, 24, 24, 40] })
+  assert(capacityOf(kit, 'bullets') === 60, 'a ceiling changed before a pack was found')
 
   // Full, so the only thing the pack can be worth is the ceiling. This is the
   // case that would have failed silently had `isUseful` read `ammoMax` straight:
@@ -5914,7 +5947,7 @@ test('the pack doubles what you can carry, and what is in it fills the raised ce
     z: 0,
     light: 1,
     sprite: ALL_SPRITES.KIT!,
-    grant: { kind: 'pack', rounds: [10, 4] } as const,
+    grant: { kind: 'pack', rounds: [10, 4, 1, 20] } as const,
     radius: 0.4,
     taken: false,
   }
@@ -5922,8 +5955,11 @@ test('the pack doubles what you can carry, and what is in it fills the raised ce
   const got = collect([pickup], 0, 0, 0.3, kit)
   assert(got.length === 1, 'the pack was not taken')
   assert(kit.pack, 'the pack was taken and nothing can carry more')
-  assert(capacityOf(kit, 0) === 120, `the ceiling went to ${capacityOf(kit, 0)} rather than doubling`)
-  const afterPack = kit.ammo[0] ?? 0
+  assert(
+    capacityOf(kit, 'bullets') === 120,
+    `the ceiling went to ${capacityOf(kit, 'bullets')} rather than doubling`,
+  )
+  const afterPack = heldOf(kit, 'bullets')
   assert(afterPack === 70, `the clip in the pack left ${afterPack} rather than 70`)
 
   // And nothing overfills, against the raised ceiling rather than the old one.
@@ -5933,21 +5969,21 @@ test('the pack doubles what you can carry, and what is in it fills the raised ce
     z: 0,
     light: 1,
     sprite: ALL_SPRITES.KIT!,
-    grant: { kind: 'ammo', weapon: 0, amount: 1000 } as const,
+    grant: { kind: 'ammo', ammo: 'bullets', amount: 1000 } as const,
     radius: 0.4,
     taken: false,
   }
   collect([clip], 0, 0, 0.3, kit)
-  const afterClip = kit.ammo[0] ?? 0
+  const afterClip = heldOf(kit, 'bullets')
   assert(afterClip === 120, `a canister filled past the doubled ceiling to ${afterClip}`)
 
   // A second pack is worth the clip in it, and worth nothing at all once there
   // is nowhere to put that either. Filling the shells first is the point: the
   // first version of this stopped at the rounds and the pack was still useful,
   // because the doubled ceiling for the second weapon had room in it.
-  const second = { ...pickup, taken: false, grant: { kind: 'pack', rounds: [10, 4] } as const }
+  const second = { ...pickup, taken: false, grant: { kind: 'pack', rounds: [10, 4, 1, 20] } as const }
   assert(isUseful(second, kit), 'a second pack was refused by somebody with room for the shells in it')
-  kit.ammo[1] = capacityOf(kit, 1)
+  for (const kind of AMMO_KINDS) kit.ammo[indexOfAmmo(kind)] = capacityOf(kit, kind)
   assert(!isUseful(second, kit), 'a second pack was worth taking by somebody already full')
 })
 
@@ -6009,11 +6045,10 @@ test('the two free weapons cost nothing and reach about as far as claws do', () 
   // Appended rather than inserted: everything indexes weapons by position, and
   // the three that were there have to keep the numbers a save on disk used.
   assert(WEAPONS[0] === SIDEARM && WEAPONS[1] === SCATTERGUN && WEAPONS[2] === LAUNCHER, 'the weapon list was renumbered')
-  assert(STARTING_AMMO.length === WEAPONS.length, 'a weapon has no reserve at the start of a run')
-  assert(AMMO_CAPACITY.length === WEAPONS.length, 'a weapon has no ceiling')
-  for (const weapon of [3, 4]) {
-    assert(AMMO_CAPACITY[weapon] === 0, `weapon ${weapon} costs nothing and can still hold rounds`)
-  }
+  // The reserves are no longer one per weapon, so this asked the wrong question
+  // for one round: it wanted a ceiling for the fists. What it should ask is that
+  // the two which spend nothing name no reserve at all.
+  assert(FISTS.ammo === undefined && CHAINSAW.ammo === undefined, 'a free weapon spends a reserve')
 })
 
 test('a fist and a saw are in hand on the terms the original gives them', () => {
@@ -6177,6 +6212,129 @@ test('the goggles light what is standing in the room as well as the room', () =>
   const dark = shine(0)
   assert(dark > 0, 'nothing was drawn at all, so the comparison means nothing')
   assert(shine(SIGHT_FLOOR) > dark, 'the goggles left the creatures in the dark')
+})
+
+
+console.log('\nthe arsenal')
+
+test('nine weapons, four reserves, and every weapon draws on one it can reach', () => {
+  assert(WEAPONS.length === 9, `the arsenal holds ${WEAPONS.length} weapons`)
+  assert(AMMO_CAPACITY.length === AMMO_KINDS.length, 'a reserve has no ceiling')
+  assert(STARTING_AMMO.length === AMMO_KINDS.length, 'a reserve is missing from the starting kit')
+  for (const weapon of WEAPONS) {
+    if (weapon.ammo === undefined) {
+      assert(weapon.cost === 0, `${weapon.name} spends no reserve and still costs ${weapon.cost}`)
+      continue
+    }
+    assert(indexOfAmmo(weapon.ammo) >= 0, `${weapon.name} spends a reserve that does not exist`)
+    assert(weapon.cost > 0, `${weapon.name} has a reserve and costs nothing from it`)
+    // A weapon that costs more than the reserve can hold could never be fired.
+    const ceiling = AMMO_CAPACITY[indexOfAmmo(weapon.ammo)] ?? 0
+    assert(weapon.cost <= ceiling, `${weapon.name} costs ${weapon.cost} of a reserve that holds ${ceiling}`)
+  }
+})
+
+test('the two guns of a kind share their reserve rather than each having one', () => {
+  /*
+   * The whole reason this round happened. Reserves were indexed by the weapon
+   * that spent them, so the scattergun and the twin-barrelled one would have had
+   * two separate piles of shells -- and a box of shells would have filled one of
+   * them, chosen by which gun the box was labelled for.
+   */
+  assert(SCATTERGUN.ammo === TWINBORE.ammo, 'the two shotguns do not share a reserve')
+  assert(SIDEARM.ammo === AUTOGUN.ammo, 'the two bullet weapons do not share a reserve')
+  assert(ARC_RIFLE.ammo === CANNON.ammo, 'the two cell weapons do not share a reserve')
+
+  const kit = carrier({ ammo: [0, 0, 0, 0], ammoMax: [200, 50, 50, 300] })
+  collect([pickupAt(0, 0, { kind: 'ammo', ammo: 'shells', amount: 20 })], 0, 0, 0.35, kit)
+  close(heldOf(kit, 'shells'), 20, 1e-9, 'shells from a box of shells')
+
+  // Spent through one gun, gone from the other. Measured by firing rather than by
+  // reading the field, because the trigger is where the two could have differed.
+  const before = heldOf(kit, 'shells')
+  kit.ammo[indexOfAmmo('shells')] = before - TWINBORE.cost
+  close(heldOf(kit, 'shells'), 18, 1e-9, 'shells after both barrels')
+  assert(TWINBORE.cost === 2, 'both barrels cost one shell, which is one barrel')
+})
+
+test('the seven keys reach every weapon, and pressing one twice moves within it', () => {
+  assert(SLOTS.length === 7, `there are ${SLOTS.length} slots rather than the original's seven`)
+  const reached = SLOTS.flat()
+  assert(reached.length === WEAPONS.length, `the slots reach ${reached.length} of ${WEAPONS.length} weapons`)
+  assert(new Set(reached).size === reached.length, 'a weapon is in two slots at once')
+  for (let index = 0; index < WEAPONS.length; index++) {
+    assert(slotOf(index) >= 0, `${WEAPONS[index]!.name} is on no key`)
+  }
+
+  // The fist and the saw share a key, which is the original's arrangement and the
+  // one thing a list of nine weapons on nine keys could not express.
+  const both = new Set([3, 4])
+  assert(weaponInSlot(0, 3, both) === 4, 'pressing the first key while holding a fist did not reach the saw')
+  assert(weaponInSlot(0, 4, both) === 3, 'pressing it again did not come back to the fist')
+  // With only the fist found, the key stays on the fist rather than reaching for
+  // a saw nobody has.
+  assert(weaponInSlot(0, 3, new Set([3])) === 3, 'a slot reached a weapon that was not held')
+  // A slot holding nothing found says so, and the page leaves the weapon alone.
+  assert(weaponInSlot(6, 0, new Set([0])) === -1, 'a slot with nothing in it did not say so')
+})
+
+test('every weapon the files place arrives as itself, with the rounds the original gives it', () => {
+  /*
+   * Nothing is folded any more. Seven weapon numbers in these files used to map
+   * onto three weapons -- both shotguns became the scattergun, the chaingun, the
+   * plasma rifle and the BFG all became the sidearm -- and the ammunition that
+   * came with them went into whichever reserve that weapon happened to spend.
+   */
+  const placed = new Map<number, { weapon: number; ammo: Ammo | null; rounds: number }>([
+    [2001, { weapon: 1, ammo: 'shells', rounds: 8 }],
+    [82, { weapon: 5, ammo: 'shells', rounds: 8 }],
+    [2002, { weapon: 6, ammo: 'bullets', rounds: 20 }],
+    [2003, { weapon: 2, ammo: 'rockets', rounds: 2 }],
+    [2004, { weapon: 7, ammo: 'cells', rounds: 40 }],
+    [2006, { weapon: 8, ammo: 'cells', rounds: 40 }],
+    [2005, { weapon: 4, ammo: null, rounds: 0 }],
+  ])
+  const reached = new Set<number>()
+  for (const [type, want] of placed) {
+    const supply = supplyFor(type)
+    assert(supply?.grant.kind === 'weapon', `thing ${type} is a weapon in the files and is not one here`)
+    const grant = supply.grant
+    assert(grant.weapon === want.weapon, `thing ${type} arrives as weapon ${grant.weapon} rather than ${want.weapon}`)
+    assert(grant.ammo === want.ammo, `thing ${type} comes with ${grant.ammo} rather than ${want.ammo}`)
+    assert(grant.rounds === want.rounds, `thing ${type} comes with ${grant.rounds} rather than ${want.rounds}`)
+    assert(!reached.has(grant.weapon), `two weapon numbers still fold onto weapon ${grant.weapon}`)
+    reached.add(grant.weapon)
+  }
+
+  // And the cells, which were the one supply this importer knowingly dropped:
+  // two hundred and thirty-eight of them stand across these maps.
+  for (const [type, amount] of [[2047, 20], [17, 100]] as const) {
+    const supply = supplyFor(type)
+    assert(supply?.grant.kind === 'ammo', `thing ${type} is cells in the files and leaves nothing here`)
+    assert(supply.grant.ammo === 'cells', `thing ${type} fills ${supply.grant.ammo} rather than cells`)
+    assert(supply.grant.amount === amount, `thing ${type} holds ${supply.grant.amount} rather than ${amount}`)
+  }
+})
+
+test('a cannon shot costs what the reserve can barely hold', () => {
+  // The number that stops it being the answer to everything: three hundred cells
+  // is seven shots, and a check because a cost is the one balance figure here
+  // that has a right answer rather than a feel.
+  const ceiling = AMMO_CAPACITY[indexOfAmmo('cells')] ?? 0
+  const shots = Math.floor(ceiling / CANNON.cost)
+  assert(shots >= 5 && shots <= 9, `a full cell reserve is ${shots} cannon shots`)
+  assert(CANNON.projectile !== undefined, 'the cannon fires a hitscan')
+  assert(ARC_RIFLE.projectile !== undefined, 'the arc rifle fires a hitscan')
+  // Both throw, and the cheap one is the fast one -- which is what makes a
+  // stream a stream and one shot an event.
+  assert(
+    ARC_RIFLE.projectile.speed > CANNON.projectile.speed,
+    'the cannon shell outruns an arc bolt',
+  )
+  assert(
+    ARC_RIFLE.interval < CANNON.interval,
+    'the cannon fires faster than the arc rifle',
+  )
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)

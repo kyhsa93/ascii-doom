@@ -24,12 +24,21 @@
  */
 
 import type { Sprite } from '../columns/sprite.ts'
+import { AMMO_KINDS, indexOfAmmo, type Ammo } from './ammo.ts'
 import { grantPower, holds, type Power } from './powers.ts'
 
 /** What taking one does for you. */
 export type PickupGrant =
   | { readonly kind: 'health'; readonly amount: number }
-  | { readonly kind: 'ammo'; readonly weapon: number; readonly amount: number }
+  /**
+   * Rounds, named by the reserve they go into rather than by a weapon.
+   *
+   * This said `weapon` until there were two guns drawing on the same shells. A
+   * box of shells is a box of shells; which of the two you spend it through is a
+   * decision you make later, and that is the whole reason the second shotgun is
+   * worth finding.
+   */
+  | { readonly kind: 'ammo'; readonly ammo: Ammo; readonly amount: number }
   | { readonly kind: 'key'; readonly key: string }
   /**
    * Armour, which takes a share of what hits you until it is gone.
@@ -57,8 +66,17 @@ export type PickupGrant =
        */
       readonly adds: boolean
     }
-  /** A weapon you did not have. Ammunition for it comes with it, as it does in the original. */
-  | { readonly kind: 'weapon'; readonly weapon: number; readonly ammo: number }
+  /**
+   * A weapon you did not have. Ammunition for it comes with it, as in the original.
+   *
+   * The reserve is named here rather than looked up from the weapon, because
+   * `things.ts` imports this module and `weapons.ts` imports `things.ts` -- a
+   * lookup would close that ring, and a cycle between modules exporting
+   * constants is not a compile error, it is an `undefined` at import time.
+   *
+   * `null` for the two that spend nothing, which come with nothing.
+   */
+  | { readonly kind: 'weapon'; readonly weapon: number; readonly ammo: Ammo | null; readonly rounds: number }
   /**
    * A powerup, which starts a clock rather than adding to a number.
    *
@@ -94,7 +112,7 @@ export interface Pickup {
 export interface Carrier {
   health: number
   readonly maxHealth: number
-  /** Rounds held, indexed the way the weapon list is. */
+  /** What is held of each of the four reserves, in `AMMO_KINDS` order. */
   ammo: number[]
   /**
    * The most of each that can be carried, before the pack.
@@ -136,9 +154,25 @@ export interface Carrier {
  * the pack would have worked in whichever of them was edited and quietly not in
  * the others.
  */
-export function capacityOf(carrier: Carrier, weapon: number): number {
-  const base = carrier.ammoMax[weapon] ?? 0
+export function capacityOf(carrier: Carrier, kind: Ammo): number {
+  const base = carrier.ammoMax[indexOfAmmo(kind)] ?? 0
   return carrier.pack ? base * 2 : base
+}
+
+/** What is held of one reserve. */
+export function heldOf(carrier: Carrier, kind: Ammo): number {
+  return carrier.ammo[indexOfAmmo(kind)] ?? 0
+}
+
+/** Puts rounds into one reserve, stopping at its ceiling. Returns what went in. */
+function addRounds(carrier: Carrier, kind: Ammo, amount: number): number {
+  const at = indexOfAmmo(kind)
+  if (at < 0 || amount <= 0) return 0
+  const cap = capacityOf(carrier, kind)
+  const before = carrier.ammo[at] ?? 0
+  const after = Math.min(cap, before + amount)
+  carrier.ammo[at] = after
+  return after - before
 }
 
 /**
@@ -174,11 +208,14 @@ export function takeDamage(carrier: Carrier, damage: number): void {
 export function isUseful(pickup: Pickup, carrier: Carrier): boolean {
   const grant = pickup.grant
   if (grant.kind === 'health') return carrier.health < carrier.maxHealth
-  if (grant.kind === 'ammo') return (carrier.ammo[grant.weapon] ?? 0) < capacityOf(carrier, grant.weapon)
+  if (grant.kind === 'ammo') return heldOf(carrier, grant.ammo) < capacityOf(carrier, grant.ammo)
   // A weapon you already hold is still worth walking over for the rounds in it,
   // which is the original's rule and the reason this is not just a set test.
   if (grant.kind === 'weapon') {
-    return !carrier.weapons.has(grant.weapon) || (carrier.ammo[grant.weapon] ?? 0) < capacityOf(carrier, grant.weapon)
+    if (!carrier.weapons.has(grant.weapon)) return true
+    // A weapon you hold is still worth walking over for the rounds in it, unless
+    // it spends nothing -- a second saw is a second saw.
+    return grant.ammo !== null && heldOf(carrier, grant.ammo) < capacityOf(carrier, grant.ammo)
   }
   // One place decides, and `collect` does as it is told. The rule lived in both
   // for a while and the copy in `collect` was unreachable -- this one refused
@@ -207,7 +244,10 @@ export function isUseful(pickup: Pickup, carrier: Carrier): boolean {
   // is in it if you have.
   if (grant.kind === 'pack') {
     if (!carrier.pack) return true
-    return grant.rounds.some((amount, weapon) => amount > 0 && (carrier.ammo[weapon] ?? 0) < capacityOf(carrier, weapon))
+    return grant.rounds.some((amount, at) => {
+      const kind = AMMO_KINDS[at]
+      return amount > 0 && kind !== undefined && heldOf(carrier, kind) < capacityOf(carrier, kind)
+    })
   }
   return !carrier.keys.has(grant.key)
 }
@@ -231,8 +271,7 @@ export function collect(pickups: Pickup[], x: number, y: number, radius: number,
     if (grant.kind === 'health') {
       carrier.health = Math.min(carrier.maxHealth, carrier.health + grant.amount)
     } else if (grant.kind === 'ammo') {
-      const cap = capacityOf(carrier, grant.weapon)
-      carrier.ammo[grant.weapon] = Math.min(cap, (carrier.ammo[grant.weapon] ?? 0) + grant.amount)
+      addRounds(carrier, grant.ammo, grant.amount)
     } else if (grant.kind === 'armour') {
       if (grant.adds) {
         // A bit picked up with nothing on starts a jacket of its own class;
@@ -246,8 +285,7 @@ export function collect(pickups: Pickup[], x: number, y: number, radius: number,
       }
     } else if (grant.kind === 'weapon') {
       carrier.weapons.add(grant.weapon)
-      const cap = capacityOf(carrier, grant.weapon)
-      carrier.ammo[grant.weapon] = Math.min(cap, (carrier.ammo[grant.weapon] ?? 0) + grant.ammo)
+      if (grant.ammo !== null) addRounds(carrier, grant.ammo, grant.rounds)
     } else if (grant.kind === 'power') {
       grantPower(carrier.powers, grant.power)
       // The original's berserk fills you up as well as making your fists heavy,
@@ -258,10 +296,9 @@ export function collect(pickups: Pickup[], x: number, y: number, radius: number,
       // one: the original's pack hands you a clip you could not have held a
       // moment earlier.
       carrier.pack = true
-      for (let weapon = 0; weapon < grant.rounds.length; weapon++) {
-        const amount = grant.rounds[weapon] ?? 0
-        if (amount <= 0) continue
-        carrier.ammo[weapon] = Math.min(capacityOf(carrier, weapon), (carrier.ammo[weapon] ?? 0) + amount)
+      for (let at = 0; at < grant.rounds.length; at++) {
+        const kind = AMMO_KINDS[at]
+        if (kind !== undefined) addRounds(carrier, kind, grant.rounds[at] ?? 0)
       }
     } else {
       carrier.keys.add(grant.key)

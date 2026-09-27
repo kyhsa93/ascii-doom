@@ -78,6 +78,15 @@ const SUPPLIES: readonly (readonly [string, string])[] = [
   // The one powerup picture that was missed the first time round, which is why
   // the radiation suit stood in sixty-eight maps as a thing with no art.
   ['SUIT', 'RADIATION_SUIT'],
+  // What the two cell-fed weapons throw. Projectiles were hand-drawn literals
+  // while the only two were a bolt and a slug; these are the file's own, which
+  // is what the rest of the art in here is.
+  // The two the maps place two hundred and thirty-eight of and this game had
+  // nothing to do with, so they were never given pictures either.
+  ['CELL', 'CELL_CHARGE'],
+  ['CELP', 'CELL_PACK'],
+  ['PLSS', 'PLASMA_BOLT'],
+  ['BFS1', 'CANNON_SHELL'],
   ['BAR1', 'BARREL'],
 
   ['BON1', 'BONUS'],
@@ -124,14 +133,13 @@ const INTERFACE: readonly (readonly [string, string, number])[] = [
    * fourteen come out smaller there, which is what you want, because the gun is
    * furniture and the room is the thing being looked at.
    *
-   * Only the five this game has. The chaingun, plasma rifle and BFG are in the
-   * file and would each cost their own kilobytes to say nothing -- there is
-   * nothing here to fire them with.
+   * All nine, which is the original's arsenal.
    *
-   * The fist and the saw joined the list the round they became weapons. They are
-   * the two the sentence above used to exclude for the same reason it still
-   * excludes the other three, which is why it is worth saying that the reason
-   * was never "these are not real weapons".
+   * This comment has now twice said that some of these were left out because
+   * there was nothing here to fire them with -- first the four the maps place
+   * and this game folded away, then the fist and the saw. Both sentences were
+   * true when written and both stopped being true without the comment noticing.
+   * There is nothing left to leave out.
    */
   ['PISGA0', 'SIDEARM_HELD', 14],
   ['PISGB0', 'SIDEARM_FIRING', 14],
@@ -143,6 +151,14 @@ const INTERFACE: readonly (readonly [string, string, number])[] = [
   ['PUNGB0', 'FISTS_FIRING', 14],
   ['SAWGA0', 'CHAINSAW_HELD', 14],
   ['SAWGB0', 'CHAINSAW_FIRING', 14],
+  ['SHT2A0', 'TWINBORE_HELD', 14],
+  ['SHT2B0', 'TWINBORE_FIRING', 14],
+  ['CHGGA0', 'AUTOGUN_HELD', 14],
+  ['CHGGB0', 'AUTOGUN_FIRING', 14],
+  ['PLSGA0', 'ARC_RIFLE_HELD', 14],
+  ['PLSGB0', 'ARC_RIFLE_FIRING', 14],
+  ['BFGGA0', 'CANNON_HELD', 14],
+  ['BFGGB0', 'CANNON_FIRING', 14],
 ]
 
 /**

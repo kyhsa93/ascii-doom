@@ -26,8 +26,18 @@ export interface Intent {
   readonly run: boolean
   readonly fire: boolean
   readonly use: boolean
-  /** Weapon asked for, or -1 for no change. */
+  /** Weapon asked for by position in the weapon list, or -1 for no change. */
   readonly weapon: number
+  /**
+   * Weapon slot asked for, one of the original's seven, or -1 for no change.
+   *
+   * Separate from `weapon` because a slot is not a weapon: two of the seven hold
+   * two guns each and pressing the key again moves between them, so what a slot
+   * resolves to depends on what is held -- which is not something this module
+   * knows. The page resolves it. A phone's one cycling button asks by weapon
+   * instead, because it is already cycling and has nothing to toggle within.
+   */
+  readonly slot: number
   /**
    * Whether the automap is being asked for right now.
    *
@@ -48,6 +58,7 @@ export const IDLE: Intent = {
   fire: false,
   use: false,
   weapon: -1,
+  slot: -1,
   map: false,
 }
 
@@ -82,16 +93,24 @@ export function keyboardIntent(held: ReadonlySet<string>): Intent {
   const look = (down('ArrowUp') ? 1 : 0) - (down('ArrowDown') ? 1 : 0)
   const moved = clampMove(forward, strafe)
 
-  let weapon = -1
-  if (down('1')) weapon = 0
-  else if (down('2')) weapon = 1
-  else if (down('3')) weapon = 2
-  // Four and five, in the order the weapon list gives rather than the order the
-  // original's slots do: the fists and the saw were appended to that list so
-  // that nothing already indexing it had to be renumbered, and the keys follow
-  // the list because the list is what the number means everywhere else.
-  else if (down('4')) weapon = 3
-  else if (down('5')) weapon = 4
+  /*
+   * Seven keys for seven slots, which is the original's arrangement.
+   *
+   * These asked for weapons by position for as long as the weapon list was also
+   * the order you would want to press them in. It is not: the list is
+   * append-only -- everything from a save file to a map's shotgun indexes it --
+   * so the fists ended up fourth and the saw fifth, and the four weapons added
+   * after them ended up wherever there was room. A slot is the thing a key
+   * means, and one press of `1` is the fist while a second is the saw.
+   */
+  let slot = -1
+  if (down('1')) slot = 0
+  else if (down('2')) slot = 1
+  else if (down('3')) slot = 2
+  else if (down('4')) slot = 3
+  else if (down('5')) slot = 4
+  else if (down('6')) slot = 5
+  else if (down('7')) slot = 6
 
   return {
     forward: moved.forward,
@@ -101,7 +120,10 @@ export function keyboardIntent(held: ReadonlySet<string>): Intent {
     run: down('Shift'),
     fire: down(' '),
     use: down('e'),
-    weapon,
+    // The keyboard never asks by position: it has a key per slot, and which
+    // weapon that reaches is the page's to work out.
+    weapon: -1,
+    slot,
     map: down('Tab'),
   }
 }
@@ -149,6 +171,8 @@ export function touchIntent(touch: TouchState): Intent {
     fire: touch.fire,
     use: touch.use,
     weapon: touch.weapon,
+    // A phone has one button that cycles, so it never asks for a slot.
+    slot: -1,
     map: touch.map,
   }
 }
@@ -171,6 +195,7 @@ export function mergeIntents(a: Intent, b: Intent): Intent {
     fire: a.fire || b.fire,
     use: a.use || b.use,
     weapon: a.weapon >= 0 ? a.weapon : b.weapon,
+    slot: a.slot >= 0 ? a.slot : b.slot,
     map: a.map || b.map,
   }
 }

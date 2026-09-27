@@ -19,8 +19,9 @@ import type { Level, Line } from '../columns/level.ts'
 import { damageActor, isAlive, type Actor } from './ai.ts'
 import type { Body } from './player.ts'
 import { spawnProjectile, type Projectile, type ProjectileKind } from './projectiles.ts'
+import type { Ammo } from './ammo.ts'
 import { RAGE_MULTIPLIER } from './powers.ts'
-import { SLUG } from './things.ts'
+import { ARC_BOLT, CANNON_BALL, SLUG } from './things.ts'
 
 export interface Weapon {
   readonly name: string
@@ -36,6 +37,15 @@ export interface Weapon {
   readonly interval: number
   /** Rounds taken from the reserve per pull. */
   readonly cost: number
+  /**
+   * Which of the four reserves it spends, or nothing for one that spends none.
+   *
+   * Not an index into the weapon list any more. Two weapons here draw on the
+   * same shells and two more on the same cells, which is the arrangement that
+   * makes a second gun of a kind worth finding: it is a better way to spend what
+   * you are already carrying rather than a second pile of it.
+   */
+  readonly ammo?: Ammo
   /**
    * What it throws, for the ones that do not arrive instantly.
    *
@@ -74,6 +84,7 @@ export const SIDEARM: Weapon = {
   range: 40,
   interval: 0.28,
   cost: 1,
+  ammo: 'bullets',
 }
 
 /**
@@ -91,6 +102,7 @@ export const SCATTERGUN: Weapon = {
   range: 26,
   interval: 0.85,
   cost: 1,
+  ammo: 'shells',
 }
 
 /**
@@ -108,6 +120,7 @@ export const LAUNCHER: Weapon = {
   range: 0,
   interval: 1.2,
   cost: 1,
+  ammo: 'rockets',
   /*
    * Most of it is the blast rather than the impact, which is what makes a
    * launcher a different weapon rather than a slow rifle.
@@ -171,6 +184,96 @@ export const CHAINSAW: Weapon = {
   melee: true,
 }
 
+/**
+ * Both barrels at once: twenty pellets in a cone half again as wide.
+ *
+ * Two shells a pull out of the same reserve the scattergun draws on, which is
+ * the whole of the decision it poses. It does not give you more shells, it gives
+ * you a way to spend two of them at once -- devastating in a doorway and a waste
+ * across a hall, and it leaves you reloading for a second and a half either way.
+ */
+export const TWINBORE: Weapon = {
+  name: 'twinbore',
+  damage: 6,
+  pellets: 20,
+  spread: 0.25,
+  range: 22,
+  interval: 1.4,
+  cost: 2,
+  ammo: 'shells',
+}
+
+/**
+ * Accurate enough, and ten times a second.
+ *
+ * The same bullets the sidearm spends, at a tenth of the interval and a little
+ * off the line: what it buys is that something already hurt goes down before it
+ * reaches you, and what it costs is the reserve, which it empties in twelve
+ * seconds of holding the trigger.
+ */
+export const AUTOGUN: Weapon = {
+  name: 'autogun',
+  damage: 9,
+  pellets: 1,
+  spread: 0.06,
+  range: 40,
+  interval: 0.1,
+  cost: 1,
+  ammo: 'bullets',
+}
+
+/**
+ * A stream of bolts, each one arriving when it arrives.
+ *
+ * Thrown rather than instant, which at this rate of fire makes it the one weapon
+ * whose shots you can watch cross a room -- and the one that punishes firing
+ * down a corridor you are about to walk into. Cheap per bolt and expensive per
+ * second.
+ */
+export const ARC_RIFLE: Weapon = {
+  name: 'arc rifle',
+  damage: 0,
+  pellets: 1,
+  spread: 0.03,
+  range: 0,
+  interval: 0.11,
+  cost: 1,
+  ammo: 'cells',
+  projectile: {
+    sprite: ARC_BOLT,
+    speed: 26,
+    damage: 12,
+    life: 3,
+  },
+}
+
+/**
+ * Forty cells in one shot, and a blast that does not ask who fired it.
+ *
+ * The most expensive pull of a trigger in the game by a factor of forty, which
+ * is what stops it being the answer to everything: the reserve holds three
+ * hundred at most, so a full one is seven shots. Slow to arrive and enormous
+ * when it does.
+ */
+export const CANNON: Weapon = {
+  name: 'cannon',
+  damage: 0,
+  pellets: 1,
+  spread: 0.01,
+  range: 0,
+  interval: 1.6,
+  cost: 40,
+  ammo: 'cells',
+  projectile: {
+    sprite: CANNON_BALL,
+    speed: 11,
+    damage: 60,
+    life: 5,
+    blastRadius: 9,
+    blastDamage: 260,
+  },
+}
+
 /*
  * The order is append-only on purpose.
  *
@@ -179,7 +282,70 @@ export const CHAINSAW: Weapon = {
  * putting the fists first where the original has them would renumber all of it
  * for the sake of a number nothing shows.
  */
-export const WEAPONS: readonly Weapon[] = [SIDEARM, SCATTERGUN, LAUNCHER, FISTS, CHAINSAW]
+export const WEAPONS: readonly Weapon[] = [
+  SIDEARM,
+  SCATTERGUN,
+  LAUNCHER,
+  FISTS,
+  CHAINSAW,
+  TWINBORE,
+  AUTOGUN,
+  ARC_RIFLE,
+  CANNON,
+]
+
+/**
+ * The seven keys, and which weapons answer to each.
+ *
+ * The original's arrangement, and the reason the weapon list above is not in
+ * this order: two of these keys hold two weapons and pressing one again moves
+ * between them, so "which key" and "which weapon" are different questions and a
+ * single list cannot answer both. Nine weapons on nine keys would also put the
+ * saw on a key of its own, which is a key nobody presses for the first three
+ * levels.
+ *
+ * Positions rather than names, because everything else here indexes weapons by
+ * position -- including a save on somebody's disk.
+ */
+export const SLOTS: readonly (readonly number[])[] = [
+  [3, 4], // fists, then the saw
+  [0], // sidearm
+  [1, 5], // scattergun, then both barrels
+  [6], // autogun
+  [2], // launcher
+  [7], // arc rifle
+  [8], // cannon
+]
+
+/**
+ * What pressing a slot's key selects, given what is held and what is in hand.
+ *
+ * Pressing the key for the slot you are already holding moves to the next
+ * weapon in it, which is how the original moves between a fist and a saw. Held
+ * weapons only: a key for something you have not found does nothing rather than
+ * selecting a gun you cannot fire -- and two of these fire perfectly well
+ * without ammunition, so "can it shoot" is not the test.
+ *
+ * Returns -1 for a slot that has nothing in it yet, which the caller reads as
+ * "leave the weapon alone".
+ */
+export function weaponInSlot(slot: number, holding: number, held: ReadonlySet<number>): number {
+  const inSlot = SLOTS[slot]
+  if (inSlot === undefined) return -1
+  const at = inSlot.indexOf(holding)
+  // Starting the search one past what is in hand, so a slot you are already in
+  // advances and a slot you are not in starts at its first weapon.
+  for (let step = 1; step <= inSlot.length; step++) {
+    const candidate = inSlot[(at + step) % inSlot.length]
+    if (candidate !== undefined && held.has(candidate)) return candidate
+  }
+  return -1
+}
+
+/** Which slot's key would reach this weapon, or -1 if none does. */
+export function slotOf(weapon: number): number {
+  return SLOTS.findIndex((inSlot) => inSlot.includes(weapon))
+}
 
 /**
  * The weapon as it lands, given whether the carrier is raging.

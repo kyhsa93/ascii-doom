@@ -58,16 +58,18 @@ export function startLevel(index: number, carrier: Carrier): LevelState {
  */
 export const STARTING_HEALTH = 100
 /*
- * Two zeroes at the end for the two that cost nothing.
+ * Four numbers rather than one per weapon: bullets, shells, rockets, cells.
  *
- * The fists and the saw are indexed alongside the rest because everything here
- * reads a weapon's reserve by its position, and a weapon left out of these
- * lists would read as one with no ammunition and refuse to fire. A ceiling of
- * zero is right rather than merely harmless: it is what makes a canister
- * useless to them and stops the pack pretending to double something.
+ * These were indexed by the weapon that spent them, which needed a zero for each
+ * weapon that spends nothing and gave two guns of a kind two separate piles. The
+ * ceilings are the original's -- two hundred, fifty, fifty, three hundred --
+ * which the pack doubles, and which are what makes a cannon shot cost something:
+ * a full cell reserve is seven of them.
+ *
+ * No cells to begin with, because nothing you begin with spends them.
  */
-export const STARTING_AMMO: readonly number[] = [60, 24, 8, 0, 0]
-export const AMMO_CAPACITY: readonly number[] = [120, 48, 24, 0, 0]
+export const STARTING_AMMO: readonly number[] = [60, 24, 8, 0]
+export const AMMO_CAPACITY: readonly number[] = [200, 50, 50, 300]
 
 export function freshCarrier(): Carrier {
   return {
@@ -92,8 +94,14 @@ export function freshCarrier(): Carrier {
      * carries even where the weapon itself is already held.
      *
      * The fists are in there too, and cannot be taken out: they are the thing
-     * you still have when the reserves are gone. The saw is not -- it is found,
-     * thirty-seven times across the maps.
+     * you still have when the reserves are gone.
+     *
+     * Four of the nine, then. The saw, both barrels, the autogun, the arc rifle
+     * and the cannon are found -- which is what the original does with all of
+     * them, and which this cannot quite do because the two levels this project
+     * wrote supply ammunition and no guns. Keeping the three means those levels
+     * play as they were built; adding the four new ones to the start would have
+     * emptied every map of anything worth walking to.
      */
     weapons: new Set([0, 1, 2, 3]),
     powers: freshPowers(),
