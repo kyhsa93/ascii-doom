@@ -137,39 +137,26 @@ with every number composited onto it at runtime; averaged down to rows of
 characters it is a stripe of `=` and `%` with nothing legible on it — a
 photograph of an interface, which is worse than an interface.
 
-The face is on it, and it took three goes to become one. It was measured as
-illegible twice — first by reading the baked rows as text, which throws away the
-colour a cell at a time that carries most of a baked picture, and then properly,
-on screen and in colour, at the five rows a six-row bar can give it. A warm blob
-both times.
+There is no face. The original has one and this had one for a day, and taking
+it out is worth as many words as putting it in.
 
-What was wrong was the size, and the number is measurable. An eye in the
-original's face is four pixels across; a cell at five rows covers three and a
-half, so the eye is averaged into the cheek beside it. Baked at five, eight, ten
-and thirteen rows and looked at: a blob, a rounder blob, the structure present
-and reading flat, and then — at thirteen — two eyes with a nose between them and
-a mouth under it.
+It failed on size, which took three attempts to see. An eye in the original's
+face is four pixels across; a cell in a five-row face covers three and a half,
+so the eye is averaged into the cheek beside it — the features are erased rather
+than absent. Baked at five, eight, ten and thirteen rows and looked at on screen
+in colour: a blob, a rounder blob, the structure present and reading flat, and
+then at thirteen an actual face, two eyes with a nose between them.
 
-Thirteen rows will not fit in a six-row bar, and growing the bar to hold them
-costs a sixth of the screen, almost all of it spent on rows the writing leaves
-empty. So the face keeps the bar's floor and stands up out of it, which costs
-about a twentieth. It is on the left rather than in the middle, where the
-original puts it, for a reason the original does not have: its weapon is drawn
-above its bar and this one is drawn in the view, so a face in the middle is a
-face with a shotgun through it. That is what it looked like.
+Thirteen rows will not fit in a six-row bar. It stood up out of the bar instead,
+on the left, because the middle is where the weapon in your hands is drawn — and
+that is where the case fell apart. A fifth of the bar's width and a quarter of
+its height, standing over the picture, to say something the health panel beside
+it already says in two characters. The original can afford it because its face
+is a portrait; ours was a smudge that changed shade as you got hurt.
 
-A status readout standing over the picture is not the same as the file picker
-that used to: one is the game's own display — the original's fullscreen HUD
-draws over the view too — and the other was a browser control.
+So the bar is lettering all the way across, which is what the medium is good at.
 
-The size bought a second thing nobody was looking for. Five health bands, the
-dead face, and the one for nothing being able to touch you: at five rows those
-five bands came out as four pictures, because the original separates its
-healthiest two by an eyebrow and there is no eyebrow in five rows. At thirteen
-there is. The check said four and now says five, both times because that is what
-the pictures were.
-
-What is taken instead is everything that is lettering. The arms display is the
+What is on it is the rest of the original's arrangement. The arms display is the
 original's two rows of slot numbers, a digit for a slot you have something in
 and a dash for one you do not, which is how a single colour says what the
 original says with two. Slot one is left out for the reason the original leaves

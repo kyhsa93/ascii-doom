@@ -62,7 +62,7 @@ import {
   TWINBORE_FIRING,
   TWINBORE_HELD,
 } from '../src/game/freedoomart.ts'
-import { BAR_ROWS, armsRows, centreOf, faceFor, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
+import { BAR_ROWS, armsRows, centreOf, keyRows, layoutBar, stockRows } from '../src/game/statusbar.ts'
 import { chosen, menuLayout, moveCursor, openMenu, type Menu } from '../src/game/menu.ts'
 import { fits, restore, snapshot, SAVE_VERSION, type Save } from '../src/game/save.ts'
 import { effectOf, fresh as noLetters, typeLetter, type Cheat } from '../src/game/cheats.ts'
@@ -2570,15 +2570,6 @@ function frame(now: number): void {
    * then the reserves, then the arms, and keeps what the original would.
    */
   const bar = layoutBar(fb.width, fb.height, [
-    /*
-     * The face, first rather than in the middle.
-     *
-     * The original puts it in the middle and can, because its weapon is drawn
-     * above its bar. Here the weapon is drawn at the foot of the view and the
-     * face is taller than the bar, so a face in the middle is a face with a
-     * shotgun through it -- which is what it looked like.
-     */
-    { label: '', value: '', face: faceFor(carrier.health, carrier.maxHealth, godly), priority: 6 },
     // The weapon's own name for the label, because "AMMO" above a number says
     // less than "TWINBORE" does: the original has a picture of the gun instead.
     { label: weapon.name.toUpperCase(), value: reserve, priority: 6 },
@@ -2609,44 +2600,6 @@ function frame(now: number): void {
     drawText(fb, 0, bar.top, rule, { color: vec3(0.32, 0.3, 0.34) })
     for (const panel of bar.panels) {
       const middleOf = centreOf(panel)
-      if (panel.face !== undefined) {
-        /*
-         * Drawn rather than written, and taller than the bar it sits in.
-         *
-         * A face needs about thirteen rows before it is a face: below that the
-         * eyes and the mouth fall inside single cells and average away, which is
-         * measured -- at five rows it is a warm blob, at eight a rounder one, at
-         * ten the structure is there and flat, and at thirteen there are two eyes
-         * with a nose between them.
-         *
-         * Growing the bar to hold it costs a sixth of the screen, and almost all
-         * of that is spent on rows the text panels leave empty. So the face keeps
-         * the bar's floor and stands up out of it, in its own column, which costs
-         * about a twentieth -- and is wiped behind so the room does not show
-         * through a head.
-         */
-        const wide = panel.face.rows[0]?.length ?? 0
-        const from = bar.top + bar.rows - panel.face.rows.length
-        const left = middleOf - Math.floor(wide / 2)
-        for (let r = from; r < bar.top; r++) {
-          for (let c = left - 1; c <= left + wide; c++) {
-            if (r < 0 || r >= fb.height || c < 0 || c >= fb.width) continue
-            const i = r * fb.width + c
-            fb.chars[i] = 32
-            fb.color[i * 3] = 0
-            fb.color[i * 3 + 1] = 0
-            fb.color[i * 3 + 2] = 0
-          }
-        }
-        drawSprite(fb, panel.face, left, from)
-        if (panel.col > 0) {
-          for (let r = 1; r < bar.rows; r++) {
-            const row = bar.top + r
-            if (row >= 0 && row < fb.height) fb.chars[row * fb.width + panel.col] = 124
-          }
-        }
-        continue
-      }
       drawText(fb, middleOf, bar.top + 1, panel.label, { color: vec3(0.5, 0.48, 0.44), align: 'center' })
       for (let extra = 0; extra < panel.lines.length; extra++) {
         const line = panel.lines[extra]!

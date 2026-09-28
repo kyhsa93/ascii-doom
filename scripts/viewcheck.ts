@@ -3287,18 +3287,18 @@ check('a screen with room for the bar gets it', () => {
   const desktop = fronts.find((f) => f.name === 'desktop')!
   const phone = fronts.find((f) => f.name === 'phone')!
   /*
-   * Eight, which is the original's bar: the ammunition, the health, the arms you
-   * are holding, the face, the armour, the keys, the four reserves, and -- this
-   * game's own -- what you are under.
+   * Seven: the ammunition, the health, the arms you are holding, the armour, the
+   * keys, the four reserves, and -- this game's own -- what you are under.
    *
-   * The face is the only one with no label over it. It is the one panel that
-   * says what it is by being itself, and a word above a face is a word
-   * explaining a face.
+   * The face was an eighth and is gone. It was three rounds of work and it ended
+   * as a warm blob at the size a bar can give it; at thirteen rows it was a face
+   * and at thirteen rows it had to stand out over the picture, which is a lot of
+   * screen to spend on a thing that says what the health panel already says.
    *
-   * The level's name is not among them. The original does not put it on the bar,
-   * and the panel it had been using is the one the arms display needed.
+   * The level's name is not among them either. The original does not put it on
+   * the bar, and the panel it had been using is the one the arms display needed.
    */
-  assert(desktop.playing.panels === 8, `a 163-column grid drew ${desktop.playing.panels} panels`)
+  assert(desktop.playing.panels === 7, `a 163-column grid drew ${desktop.playing.panels} panels`)
   // A phone used to keep the single line because 49 columns cannot hold four
   // panels. Its characters are smaller now and its grid is 80 wide, which is
   // over the seventy-two the bar needs -- so it gets the bar too. The claim
@@ -3325,15 +3325,13 @@ check('a screen with room for the bar gets it', () => {
    * Wall glyphs showing through the bar, which is what an unwiped bar looks
    * like: HEALTH and 93 tangled into a stripe of per-cent signs.
    *
-   * Four in a row used to be the signal and is not any more, because the face
-   * is made of the same characters -- its widest row is `=####%+`, which is four
-   * of them. Eight, because a wall bleeding through does not produce a run of
-   * eight, it produces a run the width of the panel: the wall family is dense at
-   * every step a lit surface reaches, so the failure this catches fills whole
-   * rows rather than making a smudge seven columns wide.
+   * Four in a row, which is what it was before the face -- the face was made of
+   * the same characters and its widest row held four of them, so the threshold
+   * went to eight to let it through. The face is gone, so the check goes back to
+   * being as strict as it was.
    */
   assert(
-    !/[%#]{8}/.test(desktop.playing.foot),
+    !/[%#]{4}/.test(desktop.playing.foot),
     `the bar has wall glyphs run through it: "${desktop.playing.foot}"`,
   )
 })
