@@ -4087,6 +4087,45 @@ test('the summary reads as a clock, a pair of counts, and a way out', () => {
   assert(hidden[4]!.includes('1 / 3'), `secrets rendered as ${JSON.stringify(hidden[4])}`)
 })
 
+test('the controls are the keys under your fingers, not the letters they type', () => {
+  /*
+   * Reported as "the movement keys do nothing on a desktop", and that is exactly
+   * what it was: with a Korean input method switched on, pressing the W key
+   * produces a jamo, so the set of held keys never contained `w` and the walk
+   * never started. The arrows kept turning, because an arrow key produces itself
+   * on every layout -- which is what made it look like half a broken keyboard
+   * rather than a wrong assumption.
+   *
+   * The same fault hits AZERTY and Dvorak, where the letter under the same
+   * finger is a different letter.
+   */
+  const walking = keyboardIntent(new Set(['KeyW']))
+  assert(walking.forward > 0, 'the W key on its own does not walk')
+  // What it typed, for somebody on a layout where that is `w`.
+  assert(keyboardIntent(new Set(['w'])).forward > 0, 'the letter w no longer walks')
+  // And the jamo that key types with a Korean input method on, which is neither
+  // of those and must not walk on its own -- it is not a control, it is a
+  // letter that happened to come out.
+  assert(keyboardIntent(new Set(['ㅈ'])).forward === 0, 'a letter nobody bound walks')
+
+  // Every control, by key and by letter, so the next one added gets both.
+  const both: readonly (readonly [string, string, (i: Intent) => boolean])[] = [
+    ['KeyW', 'w', (i) => i.forward > 0],
+    ['KeyS', 's', (i) => i.forward < 0],
+    ['KeyD', 'd', (i) => i.strafe > 0],
+    ['KeyA', 'a', (i) => i.strafe < 0],
+    ['KeyE', 'e', (i) => i.use],
+    ['Space', ' ', (i) => i.fire],
+    ['ShiftLeft', 'Shift', (i) => i.run],
+    ['Digit1', '1', (i) => i.slot === 0],
+    ['Digit7', '7', (i) => i.slot === 6],
+  ]
+  for (const [code, letter, reads] of both) {
+    assert(reads(keyboardIntent(new Set([code]))), `${code} does nothing`)
+    assert(reads(keyboardIntent(new Set([letter]))), `the letter ${JSON.stringify(letter)} does nothing`)
+  }
+})
+
 test('a finished map offers the one thing the original offers, and names it right', () => {
   /*
    * The whole of what was wrong with this screen: it said what you had done and

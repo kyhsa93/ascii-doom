@@ -860,6 +860,20 @@ const down = (event: KeyboardEvent) => {
   // same keys.
   // Tab would otherwise walk the focus ring out of the game.
   if (event.key.startsWith('Arrow') || event.key === ' ' || event.key === 'Tab') event.preventDefault()
+  /*
+   * The key you pressed as well as the letter it produced.
+   *
+   * `event.key` is what came out, which is not `w` for everybody: with a Korean
+   * input method switched on it is a jamo, and on AZERTY the letter under the
+   * same finger is different again. Reported as "the movement keys do nothing on
+   * a desktop", which is exactly what it is -- the arrows still turned, because
+   * an arrow key produces itself whatever the layout.
+   *
+   * `event.code` is the key itself, `KeyW` wherever it sits and whatever it
+   * types. Both go in: the controls read the code, and the cheat words read the
+   * letters, because a word is what you typed rather than where you typed it.
+   */
+  held.add(event.code)
   held.add(event.key.length === 1 ? event.key.toLowerCase() : event.key)
   /*
    * Out of the level and back to the title, which is what the original's escape
@@ -889,6 +903,7 @@ const down = (event: KeyboardEvent) => {
   }
 }
 const up = (event: KeyboardEvent) => {
+  held.delete(event.code)
   held.delete(event.key.length === 1 ? event.key.toLowerCase() : event.key)
 }
 window.addEventListener('keydown', wakeSpeaker, { once: true })

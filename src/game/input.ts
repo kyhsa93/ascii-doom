@@ -88,12 +88,24 @@ function clampMove(forward: number, strafe: number): { forward: number; strafe: 
 }
 
 /** The intent a set of held keys amounts to. */
+/**
+ * Asked by the key rather than by the letter, and by the letter as well.
+ *
+ * `KeyW` is the key under the finger whatever it types; `w` is what it typed.
+ * Reading both is what makes the controls work with a Korean input method
+ * switched on, where a letter key produces a jamo and `w` never arrives -- the
+ * fault reported as "the movement keys do nothing", with the arrows still
+ * turning because an arrow key produces itself on every layout.
+ *
+ * Both rather than the code alone, because a check that presses `w` is pressing
+ * the thing a person presses and should not have to know this.
+ */
 export function keyboardIntent(held: ReadonlySet<string>): Intent {
-  const down = (key: string) => held.has(key)
+  const down = (...names: readonly string[]) => names.some((name) => held.has(name))
   // Opposing keys cancel rather than one winning, which is what a player
   // pressing both expects and what stops a stuck key pinning you to a wall.
-  const forward = (down('w') ? 1 : 0) - (down('s') ? 1 : 0)
-  const strafe = (down('d') ? 1 : 0) - (down('a') ? 1 : 0)
+  const forward = (down('KeyW', 'w') ? 1 : 0) - (down('KeyS', 's') ? 1 : 0)
+  const strafe = (down('KeyD', 'd') ? 1 : 0) - (down('KeyA', 'a') ? 1 : 0)
   const turn = (down('ArrowLeft') ? 1 : 0) - (down('ArrowRight') ? 1 : 0)
   const look = (down('ArrowUp') ? 1 : 0) - (down('ArrowDown') ? 1 : 0)
   const moved = clampMove(forward, strafe)
@@ -109,22 +121,22 @@ export function keyboardIntent(held: ReadonlySet<string>): Intent {
    * means, and one press of `1` is the fist while a second is the saw.
    */
   let slot = -1
-  if (down('1')) slot = 0
-  else if (down('2')) slot = 1
-  else if (down('3')) slot = 2
-  else if (down('4')) slot = 3
-  else if (down('5')) slot = 4
-  else if (down('6')) slot = 5
-  else if (down('7')) slot = 6
+  if (down('Digit1', '1')) slot = 0
+  else if (down('Digit2', '2')) slot = 1
+  else if (down('Digit3', '3')) slot = 2
+  else if (down('Digit4', '4')) slot = 3
+  else if (down('Digit5', '5')) slot = 4
+  else if (down('Digit6', '6')) slot = 5
+  else if (down('Digit7', '7')) slot = 6
 
   return {
     forward: moved.forward,
     strafe: moved.strafe,
     turn,
     look,
-    run: down('Shift'),
-    fire: down(' '),
-    use: down('e'),
+    run: down('ShiftLeft', 'ShiftRight', 'Shift'),
+    fire: down('Space', ' '),
+    use: down('KeyE', 'e'),
     // The keyboard never asks by position: it has a key per slot, and which
     // weapon that reaches is the page's to work out.
     weapon: -1,
