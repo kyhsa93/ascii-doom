@@ -2570,18 +2570,20 @@ function frame(now: number): void {
    * then the reserves, then the arms, and keeps what the original would.
    */
   const bar = layoutBar(fb.width, fb.height, [
+    /*
+     * The face, first rather than in the middle.
+     *
+     * The original puts it in the middle and can, because its weapon is drawn
+     * above its bar. Here the weapon is drawn at the foot of the view and the
+     * face is taller than the bar, so a face in the middle is a face with a
+     * shotgun through it -- which is what it looked like.
+     */
+    { label: '', value: '', face: faceFor(carrier.health, carrier.maxHealth, godly), priority: 6 },
     // The weapon's own name for the label, because "AMMO" above a number says
     // less than "TWINBORE" does: the original has a picture of the gun instead.
     { label: weapon.name.toUpperCase(), value: reserve, priority: 6 },
     { label: 'HEALTH', value: `${carrier.health}%`, priority: 7 },
     { label: 'ARMS', value: '', lines: armsRows(carrier.weapons), priority: 3 },
-    /*
-     * The face, in the middle, where the original puts it.
-     *
-     * No label over it: it is the one panel that says what it is by being
-     * itself, and a word above a face is a word explaining a face.
-     */
-    { label: '', value: '', face: faceFor(carrier.health, carrier.maxHealth, godly), priority: 6 },
     { label: 'ARMOR', value: `${Math.round(carrier.armour)}%`, priority: 5 },
     { label: 'KEYS', value: '', lines: keyRows(carrier.keys), priority: 4 },
     { label: 'STOCK', value: '', lines: stockRows(carrier), priority: 2 },
@@ -2608,11 +2610,35 @@ function frame(now: number): void {
     for (const panel of bar.panels) {
       const middleOf = centreOf(panel)
       if (panel.face !== undefined) {
-        // Drawn rather than written, and centred on the whole bar below the
-        // rule: it is a picture, so it carries a colour a cell at a time and
-        // `drawText` would flatten it to one.
+        /*
+         * Drawn rather than written, and taller than the bar it sits in.
+         *
+         * A face needs about thirteen rows before it is a face: below that the
+         * eyes and the mouth fall inside single cells and average away, which is
+         * measured -- at five rows it is a warm blob, at eight a rounder one, at
+         * ten the structure is there and flat, and at thirteen there are two eyes
+         * with a nose between them.
+         *
+         * Growing the bar to hold it costs a sixth of the screen, and almost all
+         * of that is spent on rows the text panels leave empty. So the face keeps
+         * the bar's floor and stands up out of it, in its own column, which costs
+         * about a twentieth -- and is wiped behind so the room does not show
+         * through a head.
+         */
         const wide = panel.face.rows[0]?.length ?? 0
-        drawSprite(fb, panel.face, middleOf - Math.floor(wide / 2), bar.top + 1)
+        const from = bar.top + bar.rows - panel.face.rows.length
+        const left = middleOf - Math.floor(wide / 2)
+        for (let r = from; r < bar.top; r++) {
+          for (let c = left - 1; c <= left + wide; c++) {
+            if (r < 0 || r >= fb.height || c < 0 || c >= fb.width) continue
+            const i = r * fb.width + c
+            fb.chars[i] = 32
+            fb.color[i * 3] = 0
+            fb.color[i * 3 + 1] = 0
+            fb.color[i * 3 + 2] = 0
+          }
+        }
+        drawSprite(fb, panel.face, left, from)
         if (panel.col > 0) {
           for (let r = 1; r < bar.rows; r++) {
             const row = bar.top + r

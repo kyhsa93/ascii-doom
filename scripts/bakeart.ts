@@ -144,13 +144,13 @@ const INTERFACE: readonly (readonly [string, string, number])[] = [
    * band at all. Five rows each, which is what is left of a six-row bar under
    * its label.
    */
-  ['STFST00', 'FACE_WELL', 5],
-  ['STFST10', 'FACE_HURT', 5],
-  ['STFST20', 'FACE_WORSE', 5],
-  ['STFST30', 'FACE_BAD', 5],
-  ['STFST40', 'FACE_DYING', 5],
-  ['STFDEAD0', 'FACE_DEAD', 5],
-  ['STFGOD0', 'FACE_UNTOUCHABLE', 5],
+  ['STFST00', 'FACE_WELL', 13],
+  ['STFST10', 'FACE_HURT', 13],
+  ['STFST20', 'FACE_WORSE', 13],
+  ['STFST30', 'FACE_BAD', 13],
+  ['STFST40', 'FACE_DYING', 13],
+  ['STFDEAD0', 'FACE_DEAD', 13],
+  ['STFGOD0', 'FACE_UNTOUCHABLE', 13],
   /*
    * The weapon in your hands, at rest and firing.
    *

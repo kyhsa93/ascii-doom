@@ -7053,11 +7053,17 @@ test('the face says how you are doing, and is not a fifth picture pretending to 
   /*
    * The one thing on this bar that is not lettering, and it took three goes.
    *
-   * It was measured as illegible, and that measurement was made by reading the
-   * baked rows as text -- which throws away the colour a cell at a time that
-   * carries most of a baked picture. Looked at again, on screen, in colour: it
-   * is still a warm blob with no eyes. What it does carry is *change*, and that
-   * is what this checks, because a face that never changes is a decoration.
+   * It was measured as illegible twice: first by reading the baked rows as text,
+   * which throws away the colour that carries most of a baked picture, and then
+   * on screen in colour at the five rows a six-row bar can give it -- a warm blob
+   * either way.
+   *
+   * What was wrong both times was the size. Measured across five bakes of the
+   * same lump: at five rows a blob, at eight a rounder one, at ten the structure
+   * is there and reads flat, and at thirteen there are two eyes with a nose
+   * between them and a mouth under it. Below that the eyes fall inside single
+   * cells and average away -- an eye is four pixels across and a cell at five
+   * rows is three and a half.
    */
   const well = faceFor(100, 100, false)
   const dying = faceFor(10, 100, false)
@@ -7077,15 +7083,15 @@ test('the face says how you are doing, and is not a fifth picture pretending to 
   /*
    * And how many the five bands actually amount to, stated rather than assumed.
    *
-   * Four, at this size: the original separates its healthiest two by an eyebrow
-   * and there is no eyebrow in five rows of characters. The bands stay, because
-   * the arithmetic is the original's and taller art would separate them on its
-   * own -- but a check that said "five" would be describing the intention
-   * instead of the picture.
+   * Five, now. It was four: the original separates its healthiest two by an
+   * eyebrow, and at five rows there was no eyebrow -- the check said four
+   * because four was what the pictures were, whatever the arithmetic intended.
+   * The taller face separated them on its own, which is the second thing the
+   * size bought and the one nobody was looking for.
    */
   const bands = new Set<string>()
   for (let health = 1; health <= 100; health++) bands.add(faceFor(health, 100, false).rows.join('|'))
-  assert(bands.size === 4, `the five health bands come out as ${bands.size} pictures rather than four`)
+  assert(bands.size === 5, `the five health bands come out as ${bands.size} pictures rather than five`)
 
   // Every band is reachable: the top one has to include the maximum itself, or
   // a share of exactly one would index past the end of the list.
@@ -7181,12 +7187,25 @@ test('a panel that is a column is as wide as its longest line, and the clock goe
   assert(labels.includes('SCATTERGUN'), `at ${width} columns the bar dropped the ammunition`)
 })
 
-test('the bar is as deep as its deepest panel and no deeper', () => {
-  // Seven rows left a blank one along the whole bar, which is a sixth of the bar
-  // spent on nothing. The deepest panel is the four reserves, whose first line
-  // shares the row the single numbers use.
+test('the bar is as deep as its deepest written panel and no deeper', () => {
+  /*
+   * Seven rows left a blank one along the whole bar, which is a sixth of it
+   * spent on nothing. The deepest panel of *writing* is the four reserves, whose
+   * first line shares the row the single numbers use.
+   *
+   * The face is deeper than the bar and deliberately does not count here. It
+   * needs thirteen rows to be a face and the bar would have to be more than
+   * twice as tall to hold it -- a sixth of the screen, almost all of it spent on
+   * rows the writing leaves empty. It stands up out of the bar instead, which
+   * costs about a twentieth, and it is on the left rather than in the middle
+   * because the middle is where the weapon in your hands is drawn.
+   */
   const deepest = 4
   assert(BAR_ROWS === 2 + deepest, `the bar is ${BAR_ROWS} rows for a panel ${deepest} lines deep`)
+  assert(
+    faceFor(100, 100, false).rows.length > BAR_ROWS,
+    'the face fits inside the bar, so it is back to being too small to be one',
+  )
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)
