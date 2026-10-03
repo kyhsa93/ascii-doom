@@ -13,6 +13,10 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
     />
     <title>ascii-doom</title>
+    <meta
+      name="description"
+      content="글자로 그리는 1인칭 슈팅 게임. 1993년 슈팅 게임의 렌더링 기법을 문자 격자 위에 구현했고, Freedoom 아트와 맵으로 브라우저에서 키보드나 터치로 플레이합니다."
+    />
 
     <!--
       Installable. Every path here is relative so that it resolves against
@@ -447,5 +451,34 @@
     </div>
 
     <script type="module" src="./main.ts"></script>
+    <!--
+      What a crawler, or a browser with scripts off, reads instead of the game.
+      The page is otherwise a <pre> that main.ts fills, so without this there
+      is next to no text on it. Hidden whenever scripts run, so it costs the
+      game nothing.
+    -->
+    <noscript>
+      <article lang="ko">
+        <h1>ascii-doom — 글자로 그리는 1인칭 슈팅</h1>
+        <p>1993년 1인칭 슈팅 게임의 렌더링 기법과 게임 규칙을 브라우저의 문자 격자 위에 구현한 게임입니다. 벽, 바닥, 괴물, 무기, 아이템이 모두 글자와 색으로 그려집니다. 그림은 3조항 BSD 라이선스로 공개된 Freedoom의 아트를 미리 글자로 변환한 것이고, 상용 게임의 데이터 파일은 필요하지도 않고 쓰지도 않습니다.</p>
+        <h2>무엇을 하는 게임인가</h2>
+        <p>열쇠를 찾아 잠긴 문을 열고, 리프트와 순간이동 장치를 타고, 괴물을 쓰러뜨리며 출구까지 가는 게임입니다. 이 프로젝트를 위해 만든 레벨 두 개(전초기지, 저수조)와 함께 Freedoom의 맵 68개가 실려 있습니다. 자동 지도에는 실제로 본 곳만 그려지고, 체력이 다하면 그 레벨을 시작할 때의 장비로 다시 시작합니다. 진행 상황은 브라우저 저장소에 자동으로 저장되어 타이틀 화면에서 이어 할 수 있습니다.</p>
+        <p>가지고 있는 WAD 파일을 열어 그 파일의 맵을 그 파일의 그림으로 플레이할 수도 있습니다. 파일은 기기 밖으로 나가지 않습니다. 서버 없이 접속 문자열을 서로 복사해 붙여 넣는 방식으로 두 사람이 함께 플레이하는 모드와, 플레이를 녹화하고 다시 보는 기능도 있습니다.</p>
+        <h2>조작법</h2>
+        <ul>
+          <li>W A S D: 이동과 옆걸음, Shift: 달리기</li>
+          <li>← →: 방향 전환, ↑ ↓: 위아래 보기</li>
+          <li>Space: 발사, 1~7: 무기 칸 선택</li>
+          <li>E: 앞에 있는 문이나 스위치 사용, Tab: 자동 지도, Esc: 타이틀로</li>
+        </ul>
+        <p>터치 화면에서는 왼쪽 스틱으로 걷고(끝까지 밀면 달리기), 화면 오른쪽 절반을 끌어 시점을 돌리며, 발사·사용·무기·지도 버튼을 씁니다. 터치에서는 보이는 가장 가까운 괴물에게 자동으로 조준됩니다.</p>
+        <h2>필요한 것</h2>
+        <p>자바스크립트가 켜진 최신 브라우저 하나면 됩니다. 컴퓨터에서는 키보드, 휴대폰과 태블릿에서는 터치로 플레이하며, 설치 없이 바로 실행되고 브라우저 메뉴에서 홈 화면에 앱처럼 설치할 수도 있습니다. 오프라인 플레이는 지원하지 않습니다.</p>
+      </article>
+      <article lang="en">
+        <h2>In English</h2>
+        <p>ascii-doom is a first-person shooter drawn entirely with characters, built on ascii-engine. It plays two levels written for this project and the sixty-eight maps of Freedoom in the browser, with a keyboard (WASD to move, arrows to turn, Space to fire, E to use, Tab for the automap) or with touch controls on a phone. You can also open a WAD file of your own, play with a second person over a copied connection string, and record and replay a run. JavaScript is required to play.</p>
+      </article>
+    </noscript>
   </body>
 </html>
