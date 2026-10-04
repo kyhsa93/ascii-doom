@@ -14,7 +14,7 @@
  *
  * The output is Freedoom's artwork, which is licensed BSD three-clause rather
  * than being anybody's commercial game. The notice that has to travel with it
- * is in `docs/freedoom/`.
+ * is `web/public/COPYING.txt`, served next to the page.
  */
 
 import { readFileSync } from 'node:fs'
@@ -459,8 +459,9 @@ const header = `/**
  * against the same files gives the same bytes back.
  *
  * The pictures are Freedoom's, used under the three-clause BSD licence it is
- * released under; the notice that has to travel with them is in
- * \`docs/freedoom/\`. Nothing here is from a commercial game.
+ * released under; the notice that has to travel with them is
+ * \`web/public/COPYING.txt\`, served next to the page. Nothing here is from a
+ * commercial game.
  *
  * Every picture is baked at a height of one and scaled by whoever draws it, so
  * that how big a thing is stays this game's decision and only how it looks is

@@ -235,8 +235,9 @@ a commercial game rather than taken from one.
 The pictures are turned into characters before the game ships, by
 `scripts/bakeart.ts`, and the result is committed as source: the converter
 reads a file once, at a desk, and what ships is characters rather than
-pictures. The notice the licence asks to travel with the work is in
-`docs/freedoom/`, with the contributors it names.
+pictures. The notice the licence asks to travel with the work is
+`web/public/COPYING.txt`, with the contributors it names in `CREDITS.txt`
+beside it; both are served next to the page and linked from it.
 
 One consequence of shipping maps rather than files is worth stating, because
 it quietly undid something else. A map here is cut down to the five lumps the

@@ -6,8 +6,9 @@
  * the same bytes back.
  *
  * The maps are Freedoom's, used under the three-clause BSD licence it is
- * released under; the notice that has to travel with them is in
- * `docs/freedoom/`. Nothing here is from a commercial game.
+ * released under; the notice that has to travel with them is
+ * `web/public/COPYING.txt`, served next to the page. Nothing here is from a
+ * commercial game.
  *
  * Each map comes out as a WAD of its own rather than as some format invented
  * here, and that is the whole point of the exercise. A format of my own would

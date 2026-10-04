@@ -34,6 +34,9 @@ jobs:
       - run: npm ci
       - run: npx tsc
       - run: npm run build
+      # Freedoom's licence asks that its notice travel with the maps, and the
+      # maps are what this uploads. A build without it does not deploy.
+      - run: test -s dist/COPYING.txt && test -s dist/CREDITS.txt
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

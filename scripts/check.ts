@@ -12,7 +12,7 @@
  * second copy of the projection formula.
  */
 
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { Framebuffer } from '../vendor/ascii-engine/src/core/framebuffer.ts'
 import { squeezed } from '../src/columns/sprite.ts'
 import { luminance, rampChar } from '../vendor/ascii-engine/src/core/ramp.ts'
@@ -7182,6 +7182,20 @@ test('the bar is as deep as its deepest panel and no deeper', () => {
   // shares the row the single numbers use.
   const deepest = 4
   assert(BAR_ROWS === 2 + deepest, `the bar is ${BAR_ROWS} rows for a panel ${deepest} lines deep`)
+})
+
+test('the Freedoom notice ships with the maps and the page links it', () => {
+  // The maps in web/public/maps are Freedoom's in binary form, and its licence
+  // asks that the notice and the contributors travel with them. Whatever is in
+  // web/public is copied into the build as it is, so this is where they go.
+  const notice = { 'COPYING.txt': 'Redistribution and use', 'CREDITS.txt': 'This credits file contains entries' }
+  const page = readFileSync('web/index.html', 'utf8')
+  for (const [file, phrase] of Object.entries(notice)) {
+    assert(readFileSync(`web/public/${file}`, 'utf8').includes(phrase), `web/public/${file} is not the Freedoom notice`)
+    assert(page.includes(`href="${file}"`), `the page does not link ${file}`)
+    // The deploy checks the build too; this catches a stale one on a desk.
+    if (existsSync('dist/index.html')) assert(existsSync(`dist/${file}`), `the build in dist/ lacks ${file}`)
+  }
 })
 
 console.log(failed === 0 ? '\nall checks passed' : `\n${failed} check(s) failed`)
