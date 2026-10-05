@@ -197,7 +197,7 @@ fixed sitting over the grid.
 | `Tab` | the automap |
 | `Esc` | leave the level and go back to the title |
 
-On a touch screen the same controls appear as a stick and three buttons, and
+On a touch screen the same controls appear as a stick and four buttons, and
 the keyboard ones keep working if there is one attached.
 
 | | |
@@ -285,8 +285,8 @@ ship and the maps you open go through exactly the same code and are held to
 exactly the same checks.
 
 That costs something and it is worth saying which: the page was seventeen
-kilobytes gzipped and is about seventy-eight now. Thirty-one of that is the art
-itself; the first figure written here was thirty-one, which was the generated
+kilobytes gzipped and is about a hundred and twenty-seven now. About eighty of
+that is the art itself; the first figure written here was thirty-one, which was the generated
 file measured on its own rather than the page it ends up inside. The rest of
 the climb is rules rather than pictures -- the WAD importer, saving, the typed
 words and demos -- and the number is restated here whenever it moves, because
@@ -340,7 +340,7 @@ one — and the first map in it is drawn by this renderer, with that file's own
 pictures. The page says which it did: how many things it drew from the file, or
 that the file had no pictures in it.
 Nothing is bundled: thirty megabytes of someone else's work has no business in
-a page of fifty-eight kilobytes, and the file never leaves your machine.
+a page of a hundred and twenty-seven kilobytes, and the file never leaves your machine.
 
 An exit in the original is a line rather than a room, and there are two kinds:
 one you walk across and one you press like a switch. Both come across, by two
@@ -832,8 +832,8 @@ There is sound now, and it is synthesised rather than carried. That was a
 measurement rather than a preference: the eighteen noises a game like this needs
 are three hundred and fifty-six kilobytes inside a real file and two hundred and
 forty-six gzipped, because eight-bit PCM is close to incompressible, and the
-whole page is seventy-five. Carrying them would make the download four times
-what the game is, to say things that are a burst of filtered noise and a falling
+whole page is a hundred and twenty-seven. Carrying them would make the download
+nearly three times what the game is, to say things that are a burst of filtered noise and a falling
 tone. An oscillator and a second of random numbers cost a few hundred bytes of
 code instead.
 
